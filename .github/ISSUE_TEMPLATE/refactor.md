@@ -6,7 +6,6 @@ labels: ''
 assignees: ''
 ---
 
-<!-- 제목: [REFACTOR][영역] 개선 대상 -->
 
 ## 🧩 현재 문제
 
