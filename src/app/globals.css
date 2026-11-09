@@ -24,6 +24,13 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-login-surface: color-mix(in oklab, var(--background) 95%, var(--login-brand));
+  --color-login-wordmark: color-mix(in oklab, var(--foreground) 55%, var(--login-brand));
+  --color-login-brand: var(--login-brand);
+  --color-login-kakao: oklch(0.89 0.16 98);
+  --color-login-kakao-foreground: oklch(0.24 0.025 85);
+  --color-login-naver: oklch(0.48 0.12 152);
+  --color-login-badge-light: oklch(0.99 0 0);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -40,6 +47,7 @@
 
 :root {
   --radius: 0.625rem;
+  --login-brand: oklch(0.38 0.08 253);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
