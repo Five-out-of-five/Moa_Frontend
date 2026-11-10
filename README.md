@@ -1,7 +1,7 @@
 # MOA Frontend
 
 > 팀 **오점만점 (Five out of Five)** · MOA (Mind On Agile) 프론트엔드
-> Next.js 16 · React 19 · TypeScript · Tailwind 4 · shadcn/ui
+> Next.js 15 · React 19 · TypeScript · Tailwind 4 · shadcn/ui
 
 ## 빠른 시작
 
@@ -23,7 +23,7 @@ npm run dev
 
 ## 스택
 
-- Next.js 16 (App Router · Server Components · Server Actions)
+- Next.js 15 (App Router · Server Components · Server Actions)
 - React 19 (`useOptimistic`, `useActionState`)
 - TypeScript 5
 - Tailwind CSS 4 + shadcn/ui 4
@@ -64,3 +64,57 @@ src/
 - `.env`, `*.pem`, `*.key` 등은 어떠한 변형이든 **커밋 금지**
 - 공유가 필요하면 `.env.example` 에 **값 없는 키 목록만** 유지
 - `.gitignore` 는 프로젝트 첫 커밋에 올린다 (민감 파일이 들어갈 위험을 먼저 차단)
+
+## 📌 프로젝트 소개
+
+**MOA(Mind On Agile)**는 팀의 회의, 아이디어, 업무, 투표를 **방**에 모으고, 진행 상황을 **대시보드**에서 확인할 수 있도록 만드는 팀 협업 서비스입니다.
+
+### 주요 기능
+
+| 기능 | 설명 |
+| --- | --- |
+| 방 · 대시보드 | 방을 만들거나 참여하고, 팀에 필요한 위젯을 대시보드에 배치합니다. |
+| 상태값 | 팀원이 현재 상태를 공유합니다. |
+| 아이디어 보드 | 팀의 아이디어를 카드로 모아 확인합니다. |
+| 업무 보드 · 진척도 | 업무 상태와 전체 진행 상황을 확인합니다. |
+| 투표 | 팀에서 결정할 안건을 올리고 의견을 모읍니다. |
+| 캐치업 브리핑 | 자리를 비운 사이에 발생한 변경 사항을 확인합니다. |
+| 중재 | 카드에서 발생한 충돌을 확인하고 조율합니다. |
+
+## 🛠️ 개발 환경
+
+- Node.js 22 이상
+- npm 10 이상
+- 환경변수 키 목록은 [`.env.example`](./.env.example)에서 확인합니다.
+- 실서버에 연결할 때는 `.env.local`에서 `NEXT_PUBLIC_USE_MOCK=false`로 설정하고 `BACKEND_BASE_URL`을 지정합니다.
+
+PowerShell에서는 빠른 시작의 `cp` 명령을 아래와 같이 실행할 수 있습니다.
+
+```powershell
+Copy-Item .env.example .env.local
+```
+
+| 명령 | 용도 |
+| --- | --- |
+| `npm run dev` | 개발 서버 실행 |
+| `npm run lint` | ESLint 검사 |
+| `npm run typecheck` | TypeScript 타입 검사 |
+| `npm run build` | 배포용 빌드 |
+
+## 🌿 브랜치 명명 규칙
+
+기능 개발과 UI 작업에는 `feat/`를 사용합니다. 이슈를 먼저 등록한 뒤 발급된 번호를 브랜치명 끝에 붙입니다.
+
+```text
+feat/<도메인>-<작업내용>#<이슈번호>
+```
+
+| 작업 유형 | 접두어 | 브랜치 예시 |
+| --- | --- | --- |
+| 기능 · UI | `feat` | `feat/auth-ui#12` |
+| 버그 수정 | `fix` | `fix/vote-submit#13` |
+| 리팩터링 | `refactor` | `refactor/auth-action#14` |
+| 문서 | `docs` | `docs/readme-guide#15` |
+| 테스트 | `test` | `test/room-permission#16` |
+| 설정 · 인프라 | `chore` | `chore/eslint-config#17` |
+| 릴리스 | `release` | `release/v1-0-0#18` |
