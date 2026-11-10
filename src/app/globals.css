@@ -3,8 +3,24 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/**
+ * MOA 디자인 토큰 — Navy Teal Pro.
+ *
+ * ⚠️ 원본은 Figma Make 의 `src/index.css` 다 (대시보드 디자인 소스).
+ *   값(hex) 은 거기서 그대로 가져왔다. 이 값을 바꾸고 싶으면 두 벌(Figma Make + 여기)을
+ *   함께 맞춘다 — 한쪽만 고치면 모델이 보여 주는 화면과 실제 구현이 어긋난다.
+ *
+ * ⚠️ shadcn/ui 컴포넌트는 `--color-*` 참조로 색을 읽는다 (@theme inline 안의 매핑).
+ *   새 색이 필요하면 **① :root 에 실 값(`--brand: #274c77`) 을 추가** 하고
+ *   **② @theme inline 에 `--color-brand: var(--brand)` 매핑** 을 같이 넣는다.
+ *   하나만 두면 `bg-brand` 같은 유틸이 안 나온다.
+ *
+ * ⚠️ 로그인 전용 색(`--login-*`) 은 공용 토큰을 덮지 않고 **로그인 화면에서만** 쓴다.
+ *   다른 화면에서 `--login-brand` 를 끌어다 쓰기 시작하면 로그인 톤이 전역에 번진다.
+ */
+
 @theme inline {
-  /* 색상 토큰 - shadcn init 이 CSS 변수로 다시 채운다 */
+  /* ===== shadcn 공용 토큰 매핑 ===== */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -24,6 +40,19 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  /* ===== MOA 전용 색 (Navy Teal Pro) ===== */
+  --color-brand: var(--brand);
+  --color-brand-dark: var(--brand-dark);
+  --color-accent-teal: var(--accent-teal);
+  --color-surface: var(--surface);
+  --color-subtle: var(--subtle);
+  --color-border-soft: var(--border-soft);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+
+  /* ===== 로그인 전용 (jia40 도입 — 로그인 화면에서만 사용) ===== */
   --color-login-surface: color-mix(in oklab, var(--background) 95%, var(--login-brand));
   --color-login-wordmark: color-mix(in oklab, var(--foreground) 55%, var(--login-brand));
   --color-login-brand: var(--login-brand);
@@ -31,53 +60,92 @@
   --color-login-kakao-foreground: oklch(0.24 0.025 85);
   --color-login-naver: oklch(0.48 0.12 152);
   --color-login-badge-light: oklch(0.99 0 0);
+
+  /* ===== 반경 ===== */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
+  --radius-card: var(--radius-card-value);
+  --radius-control: var(--radius-control-value);
+
+  /* ===== shadcn Sidebar 컴포넌트용 토큰 ===== */
   --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* ===== 글꼴 ===== */
+  --font-sans: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", -apple-system,
+    "Segoe UI", sans-serif;
 }
 
 :root {
+  /* ===== 반경 / 레이아웃 상수 ===== */
   --radius: 0.625rem;
+  --radius-card-value: 12px;
+  --radius-control-value: 8px;
+  --sidebar-width: 228px;
+  --header-height: 68px;
+
+  /* ===== MOA 브랜드 (Figma Make hex 그대로) ===== */
+  --brand: #274c77;        /* 메인 네이비 */
+  --brand-dark: #1f3d61;   /* 네이비 짙게 */
+  --accent-teal: #4d9de0;  /* 티얼 포인트 */
+
+  /* 로그인 전용 네이비 (jia40 추가) */
   --login-brand: oklch(0.38 0.08 253);
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --sidebar: hsl(0 0% 98%);
-  --sidebar-foreground: hsl(240 5.3% 26.1%);
-  --sidebar-primary: hsl(240 5.9% 10%);
-  --sidebar-primary-foreground: hsl(0 0% 98%);
-  --sidebar-accent: hsl(240 4.8% 95.9%);
-  --sidebar-accent-foreground: hsl(240 5.9% 10%);
-  --sidebar-border: hsl(220 13% 91%);
-  --sidebar-ring: hsl(217.2 91.2% 59.8%);
+
+  /* ===== 기본 배경·텍스트 (Navy Teal 톤) ===== */
+  --background: #f0fbfd;
+  --foreground: #1f2937;
+  --surface: #ffffff;
+  --card: #ffffff;
+  --card-foreground: #1f2937;
+  --popover: #ffffff;
+  --popover-foreground: #1f2937;
+
+  /* ===== 프라이머리 ===== */
+  --primary: #274c77;
+  --primary-foreground: #ffffff;
+  --secondary: #edf4fa;
+  --secondary-foreground: #274c77;
+
+  /* ===== 중립 ===== */
+  --muted: #e8eff4;
+  --muted-foreground: #6b7d8f;
+  --accent: #4d9de0;
+  --accent-foreground: #ffffff;
+  --subtle: #93a4b3;
+  --border: #d7e3ec;
+  --border-soft: #e8eff4;
+  --input: #d7e3ec;
+  --ring: #4d9de0;
+
+  /* ===== 시맨틱 ===== */
+  --success: #4f8f78;
+  --warning: #c8924f;
+  --danger: #c96b6b;
+  --destructive: #c96b6b;
+  --destructive-foreground: #ffffff;
+
+  /* ===== shadcn Sidebar (jia40 도입값 유지) ===== */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1f2937;
+  --sidebar-primary: #274c77;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #edf4fa;
+  --sidebar-accent-foreground: #274c77;
+  --sidebar-border: #d7e3ec;
+  --sidebar-ring: #4d9de0;
 }
 
 .dark {
+  /* 다크 모드는 아직 확정 토큰이 없다. shadcn 기본값을 임시로 둔다. */
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -113,5 +181,6 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-sans);
   }
 }
