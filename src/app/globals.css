@@ -109,11 +109,11 @@
   --popover: #ffffff;
   --popover-foreground: #1f2937;
 
-  /* ===== 프라이머리 ===== */
-  --primary: #274c77;
+  /* ===== 프라이머리 (브랜드 참조) ===== */
+  --primary: var(--brand);
   --primary-foreground: #ffffff;
   --secondary: #edf4fa;
-  --secondary-foreground: #274c77;
+  --secondary-foreground: var(--brand);
 
   /* ===== 중립 ===== */
   --muted: #e8eff4;

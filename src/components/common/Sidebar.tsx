@@ -54,7 +54,7 @@ export function Sidebar() {
   return (
     <nav
       aria-label="주 네비게이션"
-      className="bg-surface flex h-[calc(100vh-var(--header-height))] w-[var(--sidebar-width)] shrink-0 flex-col border-r border-border px-3 py-6"
+      className="bg-surface flex h-[calc(100dvh-var(--header-height))] w-[var(--sidebar-width)] shrink-0 flex-col border-r border-border px-3 py-6"
     >
       <ul className="flex flex-col gap-1">
         {NAV.map(({ href, label, icon: Icon, matchPrefix }) => {
