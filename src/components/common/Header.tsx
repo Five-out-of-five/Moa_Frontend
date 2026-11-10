@@ -4,13 +4,13 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
 /**
- * 상단 바 — 로그인 뒤 전역 셸의 헤더.
+ * 전역 헤더 — 로그인 뒤 모든 화면의 상단 바.
  *
  * ⚠️ 높이는 `--header-height` (68px) 고정. `(shell)` 레이아웃의 본문이 이 높이를 비워 두고
  *    시작하도록 `pt-[var(--header-height)]` 를 레이아웃이 깐다.
  * ⚠️ 알림·검색·프로필은 지금 **버튼만** 있다. 각 기능 구현은 담당자 티켓.
  */
-export function TopBar() {
+export function Header() {
   return (
     <header
       className="border-border-soft bg-surface fixed inset-x-0 top-0 z-30 flex h-[var(--header-height)] items-center border-b"
