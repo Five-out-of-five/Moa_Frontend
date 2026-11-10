@@ -58,8 +58,12 @@ export function Sidebar() {
     >
       <ul className="flex flex-col gap-1">
         {NAV.map(({ href, label, icon: Icon, matchPrefix }) => {
+          // `startsWith` 만 쓰면 `/rooms-archive` 가 `/rooms` 메뉴를 활성화시킨다
+          // (CodeRabbit PR #8 지적). 정확히 같은 경로이거나 그 뒤에 "/" 가 붙은
+          // 하위 경로만 활성화로 본다.
           const isActive = matchPrefix
-            ? pathname.startsWith(matchPrefix)
+            ? pathname === matchPrefix ||
+              pathname.startsWith(`${matchPrefix}/`)
             : pathname === href;
 
           return (
