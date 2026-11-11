@@ -1,7 +1,15 @@
 "use client";
 
-import { ChevronDown, LogOut, Settings2, UserRound } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronDown,
+  LogOut,
+  RefreshCcw,
+  Settings2,
+  UserRound,
+} from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -88,6 +96,11 @@ export function ProfileMenu({ account }: Props) {
   );
 }
 
+/**
+ * 로딩 **대기 중** 전용 스켈레톤. 네트워크 요청이 완전히 실패한 상태라면
+ * 이 fallback 대신 아래 `ProfileMenuErrorState` 로 떨어뜨린다 — 그래야 사용자가
+ * 영원히 "로딩 중" 으로 오해하지 않는다.
+ */
 export function ProfileMenuFallback() {
   return (
     <div className="flex items-center gap-2 px-1.5 py-1">
@@ -97,5 +110,62 @@ export function ProfileMenuFallback() {
         <span className="bg-muted h-3 w-10 animate-pulse rounded" />
       </div>
     </div>
+  );
+}
+
+/**
+ * 프로필 데이터 로드 실패 시의 복구형 상태 — 사용자가 **다시 시도** 하거나
+ * **account-독립 로그아웃** 을 할 수 있는 축소형 드롭다운.
+ *
+ * ⚠️ 로그아웃은 세션 쿠키만 만료시키므로 account 조회가 실패한 상황에서도 동작한다.
+ */
+export function ProfileMenuErrorState() {
+  const router = useRouter();
+  const [, startTransition] = useTransition();
+
+  const handleRetry = () => {
+    router.refresh();
+  };
+
+  const handleLogout = () => {
+    startTransition(() => {
+      void logoutAction();
+    });
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className="hover:bg-secondary focus:ring-ring flex items-center gap-2 rounded-[var(--radius-control)] px-1.5 py-1 text-left transition-colors focus:outline-none focus-visible:ring-2"
+        aria-label="프로필 메뉴 — 계정 정보를 불러오지 못했습니다"
+      >
+        <Avatar className="size-8">
+          <AvatarFallback className="bg-muted text-muted-foreground">
+            <AlertTriangle className="size-4" />
+          </AvatarFallback>
+        </Avatar>
+        <ChevronDown className="text-muted-foreground size-4 shrink-0" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="bg-surface w-56">
+        <div className="text-muted-foreground px-2 py-1.5 text-xs">
+          계정 정보를 불러오지 못했습니다.
+        </div>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={handleRetry}
+          className="flex cursor-pointer items-center gap-2"
+        >
+          <RefreshCcw className="text-muted-foreground size-4" />
+          <span>다시 시도</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={handleLogout}
+          className="text-destructive focus:text-destructive flex cursor-pointer items-center gap-2"
+        >
+          <LogOut className="size-4" />
+          <span>로그아웃</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
