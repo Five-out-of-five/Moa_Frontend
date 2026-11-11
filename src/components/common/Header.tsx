@@ -38,9 +38,9 @@ export function Header() {
         </Link>
       </div>
 
-      {/* 본문 영역: 검색 / 알림 / 프로필 */}
-      <div className="flex flex-1 items-center gap-3 px-6">
-        <div className="relative max-w-xl flex-1">
+      {/* 본문 영역: 검색 (좌) / 알림·프로필 (우측 끝, 로고 좌측 여백과 대칭) */}
+      <div className="flex flex-1 items-center px-6">
+        <div className="relative w-full max-w-xl">
           <Search
             aria-hidden="true"
             className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
@@ -53,13 +53,15 @@ export function Header() {
           />
         </div>
 
-        <Suspense fallback={<NotificationBellFallback />}>
-          <NotificationBellLoader />
-        </Suspense>
+        <div className="ml-auto flex items-center gap-1">
+          <Suspense fallback={<NotificationBellFallback />}>
+            <NotificationBellLoader />
+          </Suspense>
 
-        <Button type="button" variant="ghost" size="icon" aria-label="내 프로필">
-          <User className="size-5" />
-        </Button>
+          <Button type="button" variant="ghost" size="icon" aria-label="내 프로필">
+            <User className="size-5" />
+          </Button>
+        </div>
       </div>
     </header>
   );
