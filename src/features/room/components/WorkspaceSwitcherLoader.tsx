@@ -1,44 +1,26 @@
-import { getMyAccount } from "@/features/account/server";
-
 import { listMyRooms } from "../server";
 import {
   WorkspaceSwitcher,
-  WorkspaceSwitcherFallback,
+  WorkspaceSwitcherErrorState,
 } from "./WorkspaceSwitcher";
 
 /**
  * 헤더 좌측 워크스페이스 드롭다운의 서버 측 로더.
  *
- * ⚠️ 방 목록과 내 계정(마지막 접속 방 fallback 제공용) 을 **독립적으로 대기**한다.
- *    계정 조회가 실패해도 `WorkspaceSwitcher` 는 URL 의 방 ID 또는 첫 방으로 떨어지면
- *    되므로 switcher 자체를 숨길 필요가 없다. 방 목록 조회 자체가 실패할 때만 스켈레톤
- *    fallback 으로 떨어뜨린다.
+ * ⚠️ 방 목록만 기다린다 — `Account.lastRoomId` fallback 은 **부가적**이기 때문에, 그 요청을
+ *    여기서 함께 await 하면 account 가 멈출 때 switcher 전체가 함께 지연된다. 로그인한 뒤
+ *    "어느 방으로 바로 보낼지" 는 랜딩 라우트가 알아서 하면 되고, switcher 는 URL 의
+ *    `/rooms/{id}` 또는 첫 방으로 선택을 떨어뜨릴 수 있다 (`fallbackRoomId={null}`).
+ * ⚠️ 실패 시 로딩 스켈레톤을 유지하지 않는다 — 요청이 끝났는데 스켈레톤을 그대로 두면
+ *    사용자는 switcher 와 그 아래 내비게이션을 영영 쓸 수 없다. 재시도 버튼이 있는
+ *    `WorkspaceSwitcherErrorState` 로 떨어뜨린다.
  */
 export async function WorkspaceSwitcherLoader() {
-  const [roomsResult, meResult] = await Promise.allSettled([
-    listMyRooms(),
-    getMyAccount(),
-  ]);
-
-  if (roomsResult.status === "rejected") {
-    console.error(
-      "WorkspaceSwitcherLoader rooms failed:",
-      roomsResult.reason,
-    );
-    return <WorkspaceSwitcherFallback />;
+  try {
+    const rooms = await listMyRooms();
+    return <WorkspaceSwitcher rooms={rooms} fallbackRoomId={null} />;
+  } catch (error) {
+    console.error("WorkspaceSwitcherLoader failed:", error);
+    return <WorkspaceSwitcherErrorState />;
   }
-
-  if (meResult.status === "rejected") {
-    console.error(
-      "WorkspaceSwitcherLoader me failed:",
-      meResult.reason,
-    );
-  }
-
-  const fallbackRoomId =
-    meResult.status === "fulfilled" ? meResult.value.lastRoomId : null;
-
-  return (
-    <WorkspaceSwitcher rooms={roomsResult.value} fallbackRoomId={fallbackRoomId} />
-  );
 }

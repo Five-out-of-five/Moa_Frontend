@@ -1,8 +1,15 @@
 "use client";
 
-import { Check, ChevronDown, Plus, Settings2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  Plus,
+  RefreshCcw,
+  Settings2,
+} from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useMemo } from "react";
 
 import {
@@ -112,11 +119,34 @@ function WorkspaceAvatar({ name }: { name: string }) {
   );
 }
 
+/**
+ * 로딩 **대기 중** 전용 스켈레톤. 네트워크 요청이 완전히 실패한 상태라면 이 fallback
+ * 대신 아래 `WorkspaceSwitcherErrorState` 로 떨어뜨린다.
+ */
 export function WorkspaceSwitcherFallback() {
   return (
     <div className="flex items-center gap-2 px-2 py-1.5">
       <span className="bg-muted size-6 animate-pulse rounded-[var(--radius-control)]" />
       <span className="bg-muted h-4 w-28 animate-pulse rounded" />
     </div>
+  );
+}
+
+/**
+ * 방 목록 조회 실패 시의 복구형 상태. 사용자가 **다시 시도** 할 수 있는 버튼형 switcher.
+ */
+export function WorkspaceSwitcherErrorState() {
+  const router = useRouter();
+  return (
+    <button
+      type="button"
+      onClick={() => router.refresh()}
+      className="text-muted-foreground hover:text-foreground hover:bg-secondary focus:ring-ring inline-flex items-center gap-1.5 rounded-[var(--radius-control)] px-2 py-1.5 text-sm transition-colors focus:outline-none focus-visible:ring-2"
+      aria-label="워크스페이스 불러오기 실패 — 다시 시도"
+    >
+      <AlertTriangle className="size-4" />
+      <span>워크스페이스를 불러오지 못했습니다</span>
+      <RefreshCcw className="size-3.5" />
+    </button>
   );
 }
