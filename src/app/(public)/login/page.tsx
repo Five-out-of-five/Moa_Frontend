@@ -1,11 +1,14 @@
 import { ArrowRight, ChartNoAxesColumn } from "lucide-react";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
+import { SOCIAL_PROVIDER_NAMES } from "@/features/auth/providers";
+import { getSignupPreviewHref } from "@/features/auth/server";
 
 const SOCIAL_LOGIN_OPTIONS = [
-  { name: "구글", initial: "G", badgeClassName: "border bg-card text-foreground" },
-  { name: "카카오", initial: "K", badgeClassName: "bg-login-kakao text-login-kakao-foreground" },
-  { name: "네이버", initial: "N", badgeClassName: "bg-login-naver text-login-badge-light" },
+  { provider: "GOOGLE", initial: "G", badgeClassName: "border bg-card text-foreground" },
+  { provider: "KAKAO", initial: "K", badgeClassName: "bg-login-kakao text-login-kakao-foreground" },
+  { provider: "NAVER", initial: "N", badgeClassName: "bg-login-naver text-login-badge-light" },
 ] as const;
 
 export default function LoginPage() {
@@ -27,24 +30,34 @@ export default function LoginPage() {
         </p>
 
         <ul className="mt-7 grid gap-2.5">
-          {SOCIAL_LOGIN_OPTIONS.map(({ name, initial, badgeClassName }) => (
-            <li key={name}>
-              <Button
-                type="button"
-                variant="outline"
-                className="bg-card text-card-foreground hover:border-ring/60 focus-visible:ring-ring active:bg-accent-foreground/10 dark:active:bg-accent-foreground/10 grid h-12 w-full grid-cols-[1.5rem_minmax(0,1fr)_1.5rem] justify-items-center rounded-lg px-3 active:shadow-none"
-              >
+          {SOCIAL_LOGIN_OPTIONS.map(({ provider, initial, badgeClassName }) => {
+            const href = getSignupPreviewHref(provider);
+            const content = (
+              <>
                 <span
                   aria-hidden="true"
                   className={`${badgeClassName} grid size-6 place-items-center rounded-full text-xs font-bold`}
                 >
                   {initial}
                 </span>
-                <span>{`${name}로 계속하기`}</span>
+                <span>{`${SOCIAL_PROVIDER_NAMES[provider]}로 계속하기`}</span>
                 <ArrowRight aria-hidden="true" className="text-muted-foreground" />
-              </Button>
-            </li>
-          ))}
+              </>
+            );
+
+            return (
+              <li key={provider}>
+                <Button
+                  asChild={href !== null}
+                  disabled={href === null}
+                  variant="outline"
+                  className="bg-card text-card-foreground hover:border-ring/60 focus-visible:ring-ring active:bg-accent-foreground/10 dark:active:bg-accent-foreground/10 grid h-12 w-full grid-cols-[1.5rem_minmax(0,1fr)_1.5rem] justify-items-center rounded-lg px-3 active:shadow-none"
+                >
+                  {href ? <Link href={href}>{content}</Link> : content}
+                </Button>
+              </li>
+            );
+          })}
         </ul>
 
         <p className="text-muted-foreground mt-7 flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs leading-relaxed">
