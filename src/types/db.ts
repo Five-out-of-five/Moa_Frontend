@@ -255,3 +255,34 @@ export interface CompromiseDraft {
   adoptedCardId: number | null;
   createdAt: string;
 }
+
+// ===== 알림 (NOTIFICATION) =====
+
+/**
+ * 알림 종류 — 명세 §notification.
+ * 각 종류별로 드롭다운에서 다른 아이콘을 쓴다.
+ */
+export type NotificationKind =
+  | "TASK_ASSIGNED"
+  | "TASK_UNASSIGNED"
+  | "TASK_COMMENT"
+  | "IDEA_CARD_COMMENT"
+  | "VOTE_OPENED"
+  | "VOTE_CLOSED"
+  | "ROOM_INVITED"
+  | "ROOM_KICKED"
+  | "CONFLICT_DETECTED"
+  | "MEDIATION_ADOPTED"
+  | "SYSTEM";
+
+export interface Notification {
+  id: number;
+  accountId: number;
+  kind: NotificationKind;
+  /** 화면에 그대로 띄우는 한국어 문장 (BE 가 생성, 코드에서 조립 금지) */
+  message: string;
+  /** 눌렀을 때 이동할 URL. 없으면 알림만 읽음 처리. */
+  targetUrl: string | null;
+  readAt: string | null;
+  createdAt: string;
+}

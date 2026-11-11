@@ -11,6 +11,7 @@ import type {
   MemberRef,
   MoodLevel,
   MoodStatus,
+  Notification,
   Room,
   RoomMember,
   RoomWidget,
@@ -236,14 +237,19 @@ export const tasks: Task[] = sprints.flatMap((sprint) => {
   const roomMembersOfRoom = roomMembers.filter(
     (m) => m.roomId === sprint.roomId,
   );
+  // ⚠️ 방에 멤버가 없는 상황은 시드 설계상 생기지 않지만, 프로덕션 번들이 db.ts 를
+  //    빌드 시점에 평가하면서 혹시라도 빈 배열이 생기면 `[0].accountId` 가 터진다.
+  //    담당자·보고자를 해석할 수 없으면 그 스프린트는 task 를 만들지 않는다.
+  const fallback = roomMembersOfRoom[0];
+  if (!fallback) return [];
+  const reporterAcc = accounts.find((a) => a.id === fallback.accountId) ?? accounts[0];
+  if (!reporterAcc) return [];
+
   const items = Array.from({ length: 10 }, (_, i) => {
-    const status = TASK_STATUSES[i % TASK_STATUSES.length];
-    const reporter = accounts.find(
-      (a) => a.id === roomMembersOfRoom[0].accountId,
-    )!;
-    const assignee = accounts.find(
-      (a) => a.id === pick(roomMembersOfRoom).accountId,
-    )!;
+    const status = TASK_STATUSES[i % TASK_STATUSES.length]!;
+    const assigneeMember = pick(roomMembersOfRoom);
+    const assigneeAcc =
+      accounts.find((a) => a.id === assigneeMember.accountId) ?? reporterAcc;
     return {
       id: seq("task"),
       roomId: sprint.roomId,
@@ -252,8 +258,8 @@ export const tasks: Task[] = sprints.flatMap((sprint) => {
       description: faker.lorem.paragraph({ min: 1, max: 2 }),
       status,
       priority: pick(["LOW", "NORMAL", "HIGH"] as const),
-      assignee: refOf(assignee),
-      reporter: refOf(reporter),
+      assignee: refOf(assigneeAcc),
+      reporter: refOf(reporterAcc),
       dueDate: faker.date.soon({ days: 14 }).toISOString().slice(0, 10),
       sortOrder: i,
       sourceCardId: null,
@@ -365,6 +371,62 @@ export const conflicts: CardConflict[] = rooms.map((room) => {
 });
 
 export const compromiseDrafts: CompromiseDraft[] = [];
+
+// ===== 알림 (NOTIFICATION) =====
+
+const NOTIFICATION_SEED: Array<{
+  kind: Notification["kind"];
+  message: string;
+  targetUrl: string | null;
+  minutesAgo: number;
+  read?: boolean;
+}> = [
+  {
+    kind: "TASK_ASSIGNED",
+    message: "박지은 님이 \"API 매퍼 정비\" 업무를 담당자로 지정했습니다.",
+    targetUrl: "/rooms/1/tasks/1",
+    minutesAgo: 3,
+  },
+  {
+    kind: "VOTE_OPENED",
+    message: "\"다음 스프린트 포커 포인트 산정\" 투표가 시작되었습니다.",
+    targetUrl: "/rooms/1/votes/1",
+    minutesAgo: 25,
+  },
+  {
+    kind: "TASK_COMMENT",
+    message: "김승재 님이 \"상태값 위젯 구현\" 업무에 댓글을 남겼습니다.",
+    targetUrl: "/rooms/1/tasks/2",
+    minutesAgo: 120,
+  },
+  {
+    kind: "CONFLICT_DETECTED",
+    message: "아이디어 보드에서 충돌 가능성이 있는 카드가 감지되었습니다.",
+    targetUrl: "/rooms/1/mediation",
+    minutesAgo: 240,
+    read: true,
+  },
+  {
+    kind: "ROOM_INVITED",
+    message: "최진도 님이 \"26KDT 1팀\" 방에 참여 요청을 보냈습니다.",
+    targetUrl: "/rooms/2",
+    minutesAgo: 1440,
+    read: true,
+  },
+];
+
+export const notifications: Notification[] = NOTIFICATION_SEED.map((seed) => {
+  const createdAt = new Date(Date.now() - seed.minutesAgo * 60_000).toISOString();
+  return {
+    id: seq("notification"),
+    accountId: accounts[0]!.id, // 시드는 홍근 계정으로만
+    kind: seed.kind,
+    message: seed.message,
+    targetUrl: seed.targetUrl,
+    readAt: seed.read ? createdAt : null,
+    createdAt,
+  } satisfies Notification;
+});
 
 /** 특정 방의 모든 상태를 한 번에 돌려주는 헬퍼 — 대시보드 초기 렌더용 */
 export function getRoomSnapshot(roomId: number) {

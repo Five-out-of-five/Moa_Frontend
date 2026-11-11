@@ -1,14 +1,20 @@
-import { Bell, ChartNoAxesColumn, Search, User } from "lucide-react";
+import { ChartNoAxesColumn, Search, User } from "lucide-react";
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  NotificationBellFallback,
+  NotificationBellLoader,
+} from "@/features/notification/components/NotificationBellLoader";
 
 /**
  * 전역 헤더 — 로그인 뒤 모든 화면의 상단 바.
  *
  * ⚠️ 높이는 `--header-height` (68px) 고정. `(shell)` 레이아웃의 본문이 이 높이를 비워 두고
  *    시작하도록 `pt-[var(--header-height)]` 를 레이아웃이 깐다.
- * ⚠️ 알림·검색·프로필은 지금 **버튼만** 있다. 각 기능 구현은 담당자 티켓.
+ * ⚠️ 알림 로딩은 **자체 Suspense 경계** 안에서 한다. 알림 요청이 느리거나 실패해도
+ *    헤더(검색·프로필) 와 쉘 본문은 영향 없이 그려진다.
  */
 export function Header() {
   return (
@@ -34,7 +40,7 @@ export function Header() {
 
       {/* 본문 영역: 검색 / 알림 / 프로필 */}
       <div className="flex flex-1 items-center gap-3 px-6">
-        <div className="relative flex-1 max-w-xl">
+        <div className="relative max-w-xl flex-1">
           <Search
             aria-hidden="true"
             className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
@@ -47,21 +53,11 @@ export function Header() {
           />
         </div>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label="알림"
-        >
-          <Bell className="size-5" />
-        </Button>
+        <Suspense fallback={<NotificationBellFallback />}>
+          <NotificationBellLoader />
+        </Suspense>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label="내 프로필"
-        >
+        <Button type="button" variant="ghost" size="icon" aria-label="내 프로필">
           <User className="size-5" />
         </Button>
       </div>
