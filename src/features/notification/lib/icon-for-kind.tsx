@@ -1,9 +1,8 @@
 import {
-  AlertTriangle,
-  Bell,
-  CheckSquare,
+  ClipboardCheck,
   Handshake,
-  MessageSquare,
+  MessageCircle,
+  ShieldCheck,
   UserMinus,
   UserPlus,
   Vote,
@@ -12,33 +11,32 @@ import {
 import type { NotificationKind } from "@/types/db";
 
 /**
- * 알림 종류별 아이콘 매핑 — 드롭다운 항목 좌측에 쓰인다.
+ * 알림 종류별 아이콘 매핑 — 드로워 각 항목의 좌측 라운드 사각형 안에 들어간다.
  *
- * ⚠️ 하나의 함수에 몰아 두는 이유: 알림 종류가 늘어나면 매핑도 한 곳만 보면 된다.
- *    이모지로 대체하지 않는다 — 다크 모드·접근성·일관성 면에서 Lucide 아이콘이 낫다.
+ * ⚠️ 디자인 기준: Figma Make 알림 드로워. 카테고리 섹션과 톤을 맞춰 Lucide 아이콘을 쓰고,
+ *    이모지로 대체하지 않는다 (다크 모드·접근성·일관성 유지).
  */
 export function iconForNotificationKind(kind: NotificationKind) {
   switch (kind) {
-    case "TASK_ASSIGNED":
-      return CheckSquare;
-    case "TASK_UNASSIGNED":
-      return UserMinus;
-    case "TASK_COMMENT":
     case "IDEA_CARD_COMMENT":
-      return MessageSquare;
+      return MessageCircle;
+    case "TASK_ASSIGNED":
+    case "TASK_UNASSIGNED":
+    case "TASK_COMMENT":
+      return ClipboardCheck;
     case "VOTE_OPENED":
     case "VOTE_CLOSED":
       return Vote;
+    case "CONFLICT_DETECTED":
+      return Handshake;
+    case "MEDIATION_ADOPTED":
+      return Handshake;
     case "ROOM_INVITED":
       return UserPlus;
     case "ROOM_KICKED":
       return UserMinus;
-    case "CONFLICT_DETECTED":
-      return AlertTriangle;
-    case "MEDIATION_ADOPTED":
-      return Handshake;
     case "SYSTEM":
     default:
-      return Bell;
+      return ShieldCheck;
   }
 }
