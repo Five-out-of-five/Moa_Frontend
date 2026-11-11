@@ -71,10 +71,10 @@ function makeAccount(name: string, email: string): Account {
 
 export const accounts: Account[] = [
   makeAccount("이홍근", "zana0422@gmail.com"),
-  makeAccount("박지은", "jieun@example.com"),
-  makeAccount("김승재", "seungjae@example.com"),
-  makeAccount("최진도", "jindo@example.com"),
-  makeAccount("한주은", "jueun@example.com"),
+  makeAccount("이주은", "jueun@example.com"),
+  makeAccount("이하연", "hayeon@example.com"),
+  makeAccount("백승재", "seungjae@example.com"),
+  makeAccount("김진도", "jindo@example.com"),
 ];
 
 function refOf(acc: Account): MemberRef {
@@ -383,7 +383,7 @@ const NOTIFICATION_SEED: Array<{
 }> = [
   {
     kind: "TASK_ASSIGNED",
-    message: "박지은 님이 \"API 매퍼 정비\" 업무를 담당자로 지정했습니다.",
+    message: "이주은 님이 \"API 매퍼 정비\" 업무를 담당자로 지정했습니다.",
     targetUrl: "/rooms/1/tasks/1",
     minutesAgo: 3,
   },
@@ -395,7 +395,7 @@ const NOTIFICATION_SEED: Array<{
   },
   {
     kind: "TASK_COMMENT",
-    message: "김승재 님이 \"상태값 위젯 구현\" 업무에 댓글을 남겼습니다.",
+    message: "이하연 님이 \"상태값 위젯 구현\" 업무에 댓글을 남겼습니다.",
     targetUrl: "/rooms/1/tasks/2",
     minutesAgo: 120,
   },
@@ -408,7 +408,7 @@ const NOTIFICATION_SEED: Array<{
   },
   {
     kind: "ROOM_INVITED",
-    message: "최진도 님이 \"26KDT 1팀\" 방에 참여 요청을 보냈습니다.",
+    message: "김진도 님이 \"26KDT 1팀\" 방에 참여 요청을 보냈습니다.",
     targetUrl: "/rooms/2",
     minutesAgo: 1440,
     read: true,
