@@ -11,6 +11,11 @@ import { Sidebar } from "@/components/common/Sidebar";
  * ⚠️ 본문은 `Header` 높이만큼 위를 비워 두고 시작한다(`pt-[var(--header-height)]`).
  *    `Header` 가 `fixed` 라서 비워 두지 않으면 콘텐츠 상단이 가려진다.
  */
+
+// 쉘 라우트는 로그인한 사용자별 데이터(워크스페이스·알림·프로필) 를 매 요청마다 서버에서
+// 받아 그려야 한다. prerender 되면 헤더 로더가 실패했을 때의 "다시 시도" (router.refresh)
+// 가 캐시된 에러 상태를 그대로 돌려줄 수 있어 복구가 안 된다.
+export const dynamic = "force-dynamic";
 export default function ShellLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
