@@ -55,6 +55,7 @@ export function ChatSidebar({ channels, dms }: Props) {
     return { kind: match[1], id: Number(match[2]) };
   }, [pathname]);
 
+  const isSearching = query.trim().length > 0;
   const nothingToShow =
     visibleChannels.length === 0 && visibleDms.length === 0;
 
@@ -94,6 +95,9 @@ export function ChatSidebar({ channels, dms }: Props) {
 
       <div className="flex-1 overflow-y-auto px-2 py-2">
         {nothingToShow ? (
+          // ⚠️ 전체 결과가 비었을 때만 통합 안내로 떨어뜨린다. 섹션 중 일부만 비었을 때는
+          //    각 섹션이 자체 empty 안내를 띄우도록 아래 분기에서 처리한다 (한쪽만 비었을
+          //    때 "검색 결과 없음" 이 떠서 다른 섹션 결과를 가리는 상황을 막는다).
           <EmptyState query={query} />
         ) : (
           <>
@@ -101,6 +105,11 @@ export function ChatSidebar({ channels, dms }: Props) {
               label="공개 채널"
               count={publicChannels.length}
               onAdd={{ label: "새 공개 채널" }}
+              emptyMessage={
+                isSearching
+                  ? "검색된 공개 채널이 없어요."
+                  : "참여한 공개 채널이 없어요."
+              }
             >
               {publicChannels.map((channel) => (
                 <ChannelRow
@@ -117,6 +126,11 @@ export function ChatSidebar({ channels, dms }: Props) {
               label="비공개 채널"
               count={privateChannels.length}
               onAdd={{ label: "새 비공개 채널" }}
+              emptyMessage={
+                isSearching
+                  ? "검색된 비공개 채널이 없어요."
+                  : "참여한 비공개 채널이 없어요."
+              }
             >
               {privateChannels.map((channel) => (
                 <ChannelRow
@@ -133,6 +147,11 @@ export function ChatSidebar({ channels, dms }: Props) {
               label="1:1 메시지"
               count={visibleDms.length}
               onAdd={{ label: "새 메시지" }}
+              emptyMessage={
+                isSearching
+                  ? "검색된 1:1 메시지가 없어요."
+                  : "진행 중인 1:1 메시지가 없어요."
+              }
             >
               {visibleDms.map((dm) => (
                 <DmRow
@@ -151,21 +170,31 @@ export function ChatSidebar({ channels, dms }: Props) {
   );
 }
 
+/**
+ * 사이드바의 한 섹션(공개 채널·비공개 채널·1:1) 틀. 라벨/카운트/추가 버튼을 가진 헤더와
+ * 아래쪽 리스트 영역을 그린다.
+ *
+ * ⚠️ 자식이 비었을 때 `emptyMessage` 가 있으면 섹션 라벨과 함께 안내 문구를 띄운다.
+ *    둘 다 없으면 섹션 자체를 숨긴다 — 화면 낭비를 피하고, "참여한 섹션 자체가 없음" 을
+ *    상위(ChatSidebar) 의 통합 안내로 처리하게 둔다.
+ */
 function Section({
   label,
   count,
   onAdd,
+  emptyMessage,
   children,
 }: {
   label: string;
   count: number;
   onAdd?: { label: string };
+  emptyMessage?: string;
   children: React.ReactNode;
 }) {
   const hasChildren = Array.isArray(children)
     ? children.some(Boolean)
     : Boolean(children);
-  if (!hasChildren && count === 0) return null;
+  if (!hasChildren && !emptyMessage) return null;
 
   return (
     <section className="mb-3">
@@ -180,11 +209,18 @@ function Section({
           </IconButton>
         )}
       </div>
-      <ul className="flex flex-col gap-0.5">{children}</ul>
+      {hasChildren ? (
+        <ul className="flex flex-col gap-0.5">{children}</ul>
+      ) : (
+        <p className="text-muted-foreground/80 px-2 py-1 text-xs">
+          {emptyMessage}
+        </p>
+      )}
     </section>
   );
 }
 
+/** 채널 한 줄 — `#` 또는 자물쇠 아이콘 + 이름 + 미읽음 뱃지. */
 function ChannelRow({
   channel,
   active,
@@ -213,6 +249,7 @@ function ChannelRow({
   );
 }
 
+/** 1:1 스레드 한 줄 — 이니셜 아바타(접속 상태 점) + 상대 이름 + 미읽음 뱃지. */
 function DmRow({ dm, active }: { dm: DirectMessageThread; active: boolean }) {
   const initial = dm.displayName.slice(0, 1);
   return (
@@ -248,6 +285,7 @@ function DmRow({ dm, active }: { dm: DirectMessageThread; active: boolean }) {
   );
 }
 
+/** 숫자형 미읽음 뱃지 — 99 초과면 "99+" 로 축약. */
 function UnreadBadge({ count }: { count: number }) {
   return (
     <span className="bg-brand inline-flex min-w-[1.1rem] items-center justify-center rounded-full px-1.5 text-[10px] font-semibold text-white">
@@ -256,6 +294,7 @@ function UnreadBadge({ count }: { count: number }) {
   );
 }
 
+/** 사이드바 안 작은 아이콘 전용 버튼 — 섹션 추가(＋), 사이드바 접기 등에서 쓴다. */
 function IconButton({
   label,
   size = "sm",
@@ -279,6 +318,7 @@ function IconButton({
   );
 }
 
+/** 사이드바 전체가 비었을 때 보여 주는 통합 안내 (검색 중 / 아닐 때 문구 분기). */
 function EmptyState({ query }: { query: string }) {
   return (
     <p className="text-muted-foreground px-3 py-10 text-center text-xs">
@@ -289,6 +329,10 @@ function EmptyState({ query }: { query: string }) {
   );
 }
 
+/**
+ * 사이드바 로딩 fallback — ChatSidebarLoader 실패 또는 Suspense 대기 중에
+ * 쉘 레이아웃이 흔들리지 않도록 같은 폭/높이의 스켈레톤을 깐다.
+ */
 export function ChatSidebarFallback() {
   return (
     <aside
