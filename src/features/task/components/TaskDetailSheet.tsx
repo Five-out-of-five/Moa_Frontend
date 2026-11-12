@@ -1,7 +1,7 @@
 "use client";
 
 import { Calendar, History, User } from "lucide-react";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -45,7 +45,12 @@ export function TaskDetailSheet({ roomId, task, open, onOpenChange }: Props) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  // ⚠️ Sheet 가 업무 A → B 로 바뀔 때, A 의 뒤늦은 응답이 B 를 덮거나 B 에 A 의 에러를
+  //    출력하지 않도록 generation 토큰으로 가드.
+  const genRef = useRef(0);
+
   useEffect(() => {
+    genRef.current += 1;
     setLocal(task);
     setError(null);
   }, [task]);
@@ -53,21 +58,25 @@ export function TaskDetailSheet({ roomId, task, open, onOpenChange }: Props) {
   const handleStatusChange = (next: TaskStatus) => {
     if (!local || pending || local.status === next) return;
     setError(null);
+    const requestGen = genRef.current;
     startTransition(async () => {
-      try {
-        const updated = await changeTaskStatusAction({
-          roomId,
-          taskId: local.taskId,
-          status: next,
-          version: local.version,
-        });
-        setLocal(updated);
-      } catch (e) {
-        setError(
-          e instanceof Error
-            ? e.message
-            : "상태 변경에 실패했습니다. 잠시 뒤 다시 시도해 주세요.",
-        );
+      const result = await changeTaskStatusAction({
+        roomId,
+        taskId: local.taskId,
+        status: next,
+        version: local.version,
+      });
+      if (genRef.current !== requestGen) return;
+
+      switch (result.kind) {
+        case "ok":
+          setLocal(result.task);
+          return;
+        case "conflict":
+        case "ok_detail_stale":
+        case "error":
+          setError(result.message);
+          return;
       }
     });
   };

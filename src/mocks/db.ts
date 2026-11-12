@@ -1,5 +1,6 @@
 import { faker } from "@faker-js/faker";
 
+import { computeDDay, computeOverdue } from "@/features/task/lib/d-day";
 import type {
   Account,
   BoardEvent,
@@ -232,15 +233,7 @@ export const sprints: Sprint[] = rooms.map((room) => ({
 
 const TASK_STATUSES: TaskStatus[] = ["TODO", "IN_PROGRESS", "REVIEW", "DONE"];
 
-/** 오늘 자정 기준 남은/지난 일수 — 명세 `dDay` 와 동일한 계산 */
-function computeDDay(dueDate: string | null): number | null {
-  if (!dueDate) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const due = new Date(dueDate);
-  due.setHours(0, 0, 0, 0);
-  return Math.round((due.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
-}
+// dDay/overdue 계산은 features/task/lib/d-day.ts 를 공유 사용 — 타임존 처리 통일.
 
 export const tasks: Array<TaskDetail & { roomId: number; sprintId: number | null }> =
   sprints.flatMap((sprint) => {
@@ -269,7 +262,7 @@ export const tasks: Array<TaskDetail & { roomId: number; sprintId: number | null
         priority: pick(["LOW", "NORMAL", "HIGH"] as const),
         dueDate,
         dDay,
-        overdue: dDay !== null && dDay < 0 && status !== "DONE",
+        overdue: computeOverdue(dueDate, status),
         sortOrder: i,
         version: 1,
         registrant: refOf(reporterAcc),

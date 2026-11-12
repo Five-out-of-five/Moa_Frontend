@@ -25,17 +25,25 @@ export default async function RoomTaskBoardPage({ params }: Props) {
   if (!room) notFound();
 
   const summaries = await listTasksInRoom(roomId);
-  const detailEntries = await Promise.all(
-    summaries.map(async (s) => {
-      const d = await getTaskDetail(roomId, s.taskId);
-      return d ? ([s.taskId, d] as const) : null;
-    }),
+
+  // ⚠️ 상세 1건이 실패해도(예: 그 사이 삭제된 업무) **나머지 업무는 그대로 노출** 되어야
+  //    한다. Promise.all 로 묶으면 1건 실패에 전체 보드가 500 으로 떨어진다 (CodeRabbit).
+  const detailResults = await Promise.allSettled(
+    summaries.map((s) => getTaskDetail(roomId, s.taskId)),
   );
-  const details: Record<number, TaskDetail> = Object.fromEntries(
-    detailEntries.filter(
-      (entry): entry is readonly [number, TaskDetail] => entry !== null,
-    ),
-  );
+  const details: Record<number, TaskDetail> = {};
+  detailResults.forEach((res, i) => {
+    const summary = summaries[i];
+    if (!summary) return;
+    if (res.status === "fulfilled" && res.value) {
+      details[summary.taskId] = res.value;
+    } else if (res.status === "rejected") {
+      console.error(
+        `RoomTaskBoardPage detail fetch failed for taskId=${summary.taskId}:`,
+        res.reason,
+      );
+    }
+  });
 
   return (
     <TaskBoardPageClient

@@ -1,7 +1,6 @@
 "use client";
 
 import { ArrowLeft, Calendar, Plus, Search, Users } from "lucide-react";
-import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
