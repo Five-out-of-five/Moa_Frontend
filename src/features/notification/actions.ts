@@ -5,27 +5,24 @@ import { z } from "zod";
 
 import { api } from "@/lib/api";
 import { isMock } from "@/mocks/config";
-import { notifications } from "@/mocks/db";
+import { deleteNotificationFromMock, notifications } from "@/mocks/db";
 
-const markAsReadSchema = z.object({
+const notificationIdSchema = z.object({
   notificationId: z.number().int().positive(),
 });
 
 /**
  * 알림 하나를 읽음 처리.
  *
- * ⚠️ 알림은 "읽었다" 시점만 기록한다 (readAt). 되돌릴 일이 없는 1회성 동작이라 PATCH 로
- *    두되, 같은 알림을 다시 눌러도 결과가 같도록 **멱등**으로 처리한다 — 이미 읽음이면
- *    아무 일도 안 하고 성공 반환.
+ * ⚠️ 명세의 `read` 는 boolean 이다. 같은 알림을 다시 눌러도 결과가 같도록 **멱등**으로
+ *    처리한다 — 이미 읽음이면 아무 일도 안 하고 성공 반환.
  */
 export async function markNotificationAsReadAction(input: unknown) {
-  const { notificationId } = markAsReadSchema.parse(input);
+  const { notificationId } = notificationIdSchema.parse(input);
 
   if (isMock) {
-    const found = notifications.find((n) => n.id === notificationId);
-    if (found && found.readAt === null) {
-      found.readAt = new Date().toISOString();
-    }
+    const found = notifications.find((n) => n.notificationId === notificationId);
+    if (found && !found.read) found.read = true;
   } else {
     await api<void>(`/api/v1/notifications/${notificationId}/read`, {
       method: "PATCH",
@@ -38,13 +35,30 @@ export async function markNotificationAsReadAction(input: unknown) {
 /** 내 모든 알림을 한 번에 읽음 처리 */
 export async function markAllNotificationsAsReadAction() {
   if (isMock) {
-    const me = 1;
-    const now = new Date().toISOString();
     for (const n of notifications) {
-      if (n.accountId === me && n.readAt === null) n.readAt = now;
+      if (!n.read) n.read = true;
     }
   } else {
     await api<void>("/api/v1/notifications/read-all", { method: "PATCH" });
+  }
+
+  revalidatePath("/", "layout");
+}
+
+/**
+ * 알림 한 건 삭제 — 명세 `DELETE /api/v1/notifications/{notificationId}`.
+ *
+ * ⚠️ 복구 UI 는 없다. 호출 전 사용자 확인 책임은 호출부에 있다.
+ */
+export async function deleteNotificationAction(input: unknown) {
+  const { notificationId } = notificationIdSchema.parse(input);
+
+  if (isMock) {
+    deleteNotificationFromMock(notificationId);
+  } else {
+    await api<void>(`/api/v1/notifications/${notificationId}`, {
+      method: "DELETE",
+    });
   }
 
   revalidatePath("/", "layout");

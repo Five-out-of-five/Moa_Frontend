@@ -14,7 +14,8 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
-    "prepare": "husky"
+    "prepare": "husky",
+    "generate:api": "openapi-typescript \"${BE_SWAGGER_URL:-https://dev.moarang.kro.kr/v3/api-docs}\" -o src/types/api.d.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
@@ -45,6 +46,7 @@
     "eslint-plugin-simple-import-sort": "^12.0.0",
     "husky": "^9.1.7",
     "lint-staged": "^15.0.0",
+    "openapi-typescript": "^7.13.0",
     "prettier": "^3.4.0",
     "prettier-plugin-tailwindcss": "^0.6.0",
     "shadcn": "^2.1.0",

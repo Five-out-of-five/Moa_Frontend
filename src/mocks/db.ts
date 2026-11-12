@@ -375,41 +375,65 @@ export const compromiseDrafts: CompromiseDraft[] = [];
 // ===== 알림 (NOTIFICATION) =====
 
 const NOTIFICATION_SEED: Array<{
-  kind: Notification["kind"];
-  message: string;
-  targetUrl: string | null;
+  group: Notification["group"];
+  type: Notification["type"];
+  title: string;
+  content: string;
+  roomId: number;
+  targetType: string;
+  targetId: number;
   minutesAgo: number;
   read?: boolean;
 }> = [
   {
-    kind: "TASK_ASSIGNED",
-    message: "이주은 님이 \"API 매퍼 정비\" 업무를 담당자로 지정했습니다.",
-    targetUrl: "/rooms/1/tasks/1",
+    group: "TASK",
+    type: "TASK_ASSIGNED",
+    title: "\"API 매퍼 정비\" 담당자로 지정되었어요",
+    content: "이주은 님이 업무를 당신에게 지정했습니다.",
+    roomId: 1,
+    targetType: "task",
+    targetId: 1,
     minutesAgo: 3,
   },
   {
-    kind: "VOTE_OPENED",
-    message: "\"다음 스프린트 포커 포인트 산정\" 투표가 시작되었습니다.",
-    targetUrl: "/rooms/1/votes/1",
+    group: "VOTE",
+    type: "VOTE_OPENED",
+    title: "새 투표가 열렸어요 — 다음 스프린트 포커 포인트",
+    content: "기한은 오늘 자정까지입니다.",
+    roomId: 1,
+    targetType: "vote",
+    targetId: 1,
     minutesAgo: 25,
   },
   {
-    kind: "TASK_COMMENT",
-    message: "이하연 님이 \"상태값 위젯 구현\" 업무에 댓글을 남겼습니다.",
-    targetUrl: "/rooms/1/tasks/2",
+    group: "MY_ACTIVITY",
+    type: "TASK_COMMENT",
+    title: "\"상태값 위젯 구현\" 업무에 새 댓글",
+    content: "이하연 님이 리뷰 의견을 남겼습니다.",
+    roomId: 1,
+    targetType: "task",
+    targetId: 2,
     minutesAgo: 120,
   },
   {
-    kind: "CONFLICT_DETECTED",
-    message: "아이디어 보드에서 충돌 가능성이 있는 카드가 감지되었습니다.",
-    targetUrl: "/rooms/1/mediation",
+    group: "SESSION",
+    type: "CONFLICT_DETECTED",
+    title: "아이디어 보드에서 충돌 가능성 감지",
+    content: "같은 주제를 다룬 카드 2건이 있습니다. 중재에서 확인해 주세요.",
+    roomId: 1,
+    targetType: "mediation",
+    targetId: 1,
     minutesAgo: 240,
     read: true,
   },
   {
-    kind: "ROOM_INVITED",
-    message: "김진도 님이 \"26KDT 1팀\" 방에 참여 요청을 보냈습니다.",
-    targetUrl: "/rooms/2",
+    group: "MEMBER_ROLE",
+    type: "ROOM_INVITED",
+    title: "\"26KDT 1팀\" 참여 요청",
+    content: "김진도 님이 당신을 워크스페이스에 초대했습니다.",
+    roomId: 2,
+    targetType: "room",
+    targetId: 2,
     minutesAgo: 1440,
     read: true,
   },
@@ -417,16 +441,29 @@ const NOTIFICATION_SEED: Array<{
 
 export const notifications: Notification[] = NOTIFICATION_SEED.map((seed) => {
   const createdAt = new Date(Date.now() - seed.minutesAgo * 60_000).toISOString();
+  const room = rooms.find((r) => r.id === seed.roomId) ?? rooms[0]!;
   return {
-    id: seq("notification"),
-    accountId: accounts[0]!.id, // 시드는 홍근 계정으로만
-    kind: seed.kind,
-    message: seed.message,
-    targetUrl: seed.targetUrl,
-    readAt: seed.read ? createdAt : null,
+    notificationId: seq("notification"),
+    group: seed.group,
+    type: seed.type,
+    title: seed.title,
+    content: seed.content,
+    room: { roomId: room.id, name: room.name },
+    targetType: seed.targetType,
+    targetId: seed.targetId,
+    read: seed.read ?? false,
     createdAt,
   } satisfies Notification;
 });
+
+/**
+ * 목 모드 전용 — accounts[0] (홍근) 가 받은 알림만 저장소에 깔아 둔다.
+ * BE 가 붙으면 세션에서 accountId 를 뽑아 목록 API 가 알아서 필터한다.
+ */
+export function deleteNotificationFromMock(notificationId: number): void {
+  const idx = notifications.findIndex((n) => n.notificationId === notificationId);
+  if (idx >= 0) notifications.splice(idx, 1);
+}
 
 /** 특정 방의 모든 상태를 한 번에 돌려주는 헬퍼 — 대시보드 초기 렌더용 */
 export function getRoomSnapshot(roomId: number) {
