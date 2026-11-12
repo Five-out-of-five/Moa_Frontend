@@ -179,30 +179,77 @@ export interface Task {
 
 // ===== 위젯 · 투표 (VOTE) =====
 
-export type VoteType = "SINGLE" | "MULTIPLE" | "APPROVAL";
-export type VoteState = "OPEN" | "CLOSED";
+/** 명세 `voteType`. `APPROVAL` 은 명세의 `YES_NO` 와 동일 (찬반) — BE 명세 용어로 통일. */
+export type VoteType = "SINGLE" | "MULTIPLE" | "YES_NO";
 
+/** 명세 `status` — OPEN / CLOSED. 기존 `state` 네이밍을 명세와 맞춤. */
+export type VoteStatus = "OPEN" | "CLOSED";
+
+/** 명세 `closeReason` — 마감 사유. */
+export type VoteCloseReason =
+  | "DEADLINE"
+  | "ALL_VOTED"
+  | "MANUAL"
+  | "NO_PARTICIPANT";
+
+/**
+ * 투표 옵션 — 명세 `VoteDetailResponse.options[]` 요소.
+ *
+ * ⚠️ `voteCount` 는 **마감 후에만** 서버가 내려준다. 진행 중엔 null/undefined.
+ *    `top` 은 최다 득표 선택지(마감 후). 동점이면 상위 공동 top 모두 true.
+ */
 export interface VoteOption {
-  id: number;
-  voteId: number;
+  optionId: number;
   content: string;
-  tally: number; // 득표 수 (집계된 값만 노출)
+  voteCount?: number;
+  top?: boolean;
 }
 
-export interface Vote {
-  id: number;
-  roomId: number;
+/** 명세 `VoteSummaryResponse` — 목록에서 받는 간이 shape. */
+export interface VoteSummary {
+  voteId: number;
   title: string;
-  description: string | null;
   voteType: VoteType;
-  maxSelections: number;
-  anonymous: boolean;
-  state: VoteState;
-  deadline: string | null;
-  options: VoteOption[];
-  author: MemberRef;
+  status: VoteStatus;
+  deadlineAt: string;
+  participantCount: number;
+  memberCount: number;
+  /** 내가 이미 참여했는가 — 목록 카드의 하단 상태 라벨에 사용 */
+  votedByMe: boolean;
   sourceCardId: number | null;
-  createdAt: string;
+}
+
+/** 투표 원천 카드 — 안건 카드에서 생성된 경우 참조 */
+export interface VoteSourceCard {
+  cardId: number;
+  title: string;
+}
+
+/**
+ * 명세 `VoteDetailResponse` — 상세 조회 / 생성·참여·마감 등 쓰기 응답.
+ *
+ * ⚠️ `participants` 는 익명 투표일 때 빈 배열. 마감 후에도 공개하지 않는다.
+ * ⚠️ `myOptionIds` 가 참여한 선택지 — 재참여 시 UI 초기값.
+ */
+export interface VoteDetail {
+  voteId: number;
+  title: string;
+  voteType: VoteType;
+  maxSelectCount: number;
+  anonymous: boolean;
+  status: VoteStatus;
+  deadlineAt: string;
+  closeReason: VoteCloseReason | null;
+  creator: MemberRef;
+  sourceCard: VoteSourceCard | null;
+  parentVoteId: number | null;
+  version: number;
+  participantCount: number;
+  memberCount: number;
+  participants: MemberRef[];
+  myOptionIds: number[];
+  options: VoteOption[];
+  tied: boolean;
 }
 
 // ===== 위젯 · 캐치업 브리핑 (CATCHUP_BRIEFING) =====

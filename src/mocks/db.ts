@@ -18,8 +18,7 @@ import type {
   Sprint,
   Task,
   TaskStatus,
-  Vote,
-  VoteOption,
+  VoteDetail,
   WidgetType,
 } from "@/types/db";
 
@@ -273,43 +272,144 @@ export const tasks: Task[] = sprints.flatMap((sprint) => {
 
 // ===== 투표 (VOTE) =====
 
-export const votes: Vote[] = rooms.flatMap((room) => {
-  const author = refOf(
+/**
+ * 목 투표. 명세 `VoteDetailResponse` shape 으로 깔아 두고, 목록 조회는
+ * server.ts 에서 `VoteSummary` 로 축소한다.
+ *
+ * ⚠️ 각 방에 유형별(SINGLE / YES_NO / MULTIPLE / CLOSED) 1개씩 섞어서 UI 전부
+ *    확인 가능하도록 깐다.
+ */
+function makeVotes(roomId: number): VoteDetail[] {
+  const members = roomMembers.filter((m) => m.roomId === roomId);
+  const creator = refOf(
     accounts.find(
-      (a) =>
-        a.id ===
-        roomMembers.find((m) => m.roomId === room.id && m.role === "OWNER")!
-          .accountId,
+      (a) => a.id === members.find((m) => m.role === "OWNER")!.accountId,
     )!,
   );
-  return [
-    {
-      id: seq("vote"),
-      roomId: room.id,
-      title: "다음 스프린트 포커 포인트 산정",
-      description: "회고에서 나온 문제 중 우선 해결할 것 선택",
-      voteType: "SINGLE" as const,
-      maxSelections: 1,
-      anonymous: false,
-      state: "OPEN" as const,
-      deadline: faker.date.soon({ days: 3 }).toISOString(),
-      options: ["API 응답 속도", "AI 토큰 비용", "온보딩 UX"].map((c) => ({
-        id: seq("voteOption"),
-        voteId: 0,
-        content: c,
-        tally: faker.number.int({ min: 0, max: 5 }),
-      })) as VoteOption[],
-      author,
-      sourceCardId: null,
-      createdAt: nowIso(),
-    } satisfies Vote,
-  ];
-});
+  const memberCount = members.length;
+  const now = Date.now();
+  const list: VoteDetail[] = [];
 
-// voteOption 의 voteId 뒤에 채운다
-for (const v of votes) {
-  for (const opt of v.options) opt.voteId = v.id;
+  // 1. SINGLE — 진행 중, 내가 아직 참여 안 함
+  list.push({
+    voteId: seq("vote"),
+    title: "다음 스프린트의 최우선 목표를 선택해주세요",
+    voteType: "SINGLE",
+    maxSelectCount: 1,
+    anonymous: false,
+    status: "OPEN",
+    deadlineAt: new Date(now + 6 * 60 * 60 * 1000).toISOString(),
+    closeReason: null,
+    creator,
+    sourceCard: null,
+    parentVoteId: null,
+    version: 1,
+    participantCount: Math.min(8, memberCount),
+    memberCount,
+    participants: members
+      .slice(0, Math.min(8, memberCount))
+      .map((m) => refOf(accounts.find((a) => a.id === m.accountId)!)),
+    myOptionIds: [],
+    options: [
+      { optionId: seq("voteOption"), content: "온보딩 흐름 개선" },
+      { optionId: seq("voteOption"), content: "알림 우선순위 정비" },
+      { optionId: seq("voteOption"), content: "모바일 사용성 개선" },
+    ],
+    tied: false,
+  });
+
+  // 2. YES_NO — 진행 중, 내가 이미 찬성
+  const yesOpt = seq("voteOption");
+  const noOpt = seq("voteOption");
+  list.push({
+    voteId: seq("vote"),
+    title: "정기 회고 시간을 변경할까요?",
+    voteType: "YES_NO",
+    maxSelectCount: 1,
+    anonymous: false,
+    status: "OPEN",
+    deadlineAt: new Date(now + 2 * 24 * 60 * 60 * 1000).toISOString(),
+    closeReason: null,
+    creator,
+    sourceCard: null,
+    parentVoteId: null,
+    version: 1,
+    participantCount: Math.min(8, memberCount),
+    memberCount,
+    participants: members
+      .slice(0, Math.min(8, memberCount))
+      .map((m) => refOf(accounts.find((a) => a.id === m.accountId)!)),
+    myOptionIds: [yesOpt],
+    options: [
+      { optionId: yesOpt, content: "찬성" },
+      { optionId: noOpt, content: "반대" },
+    ],
+    tied: false,
+  });
+
+  // 3. MULTIPLE — 진행 중, 익명
+  list.push({
+    voteId: seq("vote"),
+    title: "다음 팀 워크숍에서 다룰 주제",
+    voteType: "MULTIPLE",
+    maxSelectCount: 2,
+    anonymous: true,
+    status: "OPEN",
+    deadlineAt: new Date(now + 3 * 24 * 60 * 60 * 1000).toISOString(),
+    closeReason: null,
+    creator,
+    sourceCard: null,
+    parentVoteId: null,
+    version: 1,
+    participantCount: Math.min(8, memberCount),
+    memberCount,
+    participants: [], // 익명이라 비노출
+    myOptionIds: [],
+    options: [
+      { optionId: seq("voteOption"), content: "스프린트 회고 포맷 개선" },
+      { optionId: seq("voteOption"), content: "주간 1:1 템플릿" },
+      { optionId: seq("voteOption"), content: "코드 리뷰 규칙" },
+      { optionId: seq("voteOption"), content: "휴가·근무 규정" },
+    ],
+    tied: false,
+  });
+
+  // 4. CLOSED — 마감 완료, 결과 공개 (득표 수 표시)
+  const closedOpts = [
+    { optionId: seq("voteOption"), content: "매주 월요일 오전", voteCount: 2 },
+    { optionId: seq("voteOption"), content: "매주 수요일 오후", voteCount: 6 },
+    { optionId: seq("voteOption"), content: "격주 금요일 오후", voteCount: 1 },
+  ];
+  const maxVote = Math.max(...closedOpts.map((o) => o.voteCount));
+  list.push({
+    voteId: seq("vote"),
+    title: "주간 코드 리뷰 시간 고정",
+    voteType: "SINGLE",
+    maxSelectCount: 1,
+    anonymous: false,
+    status: "CLOSED",
+    deadlineAt: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+    closeReason: "DEADLINE",
+    creator,
+    sourceCard: null,
+    parentVoteId: null,
+    version: 2,
+    participantCount: 9,
+    memberCount,
+    participants: members
+      .slice(0, 9)
+      .map((m) => refOf(accounts.find((a) => a.id === m.accountId)!)),
+    myOptionIds: [closedOpts[1]!.optionId],
+    options: closedOpts.map((o) => ({ ...o, top: o.voteCount === maxVote })),
+    tied: false,
+  });
+
+  return list;
 }
+
+export const votes: Array<VoteDetail & { roomId: number }> = rooms.flatMap(
+  (room) => makeVotes(room.id).map((v) => ({ ...v, roomId: room.id })),
+);
 
 // ===== 캐치업 브리핑 (CATCHUP_BRIEFING) =====
 
