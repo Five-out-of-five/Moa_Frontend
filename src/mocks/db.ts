@@ -108,6 +108,8 @@ export const rooms: Room[] = [
   },
 ];
 
+accounts[0].lastRoomId = rooms[0].id;
+
 export const roomMembers: RoomMember[] = rooms.flatMap((room, i) =>
   accounts.slice(0, i === 0 ? accounts.length : 3).map((acc, idx) => ({
     id: seq("roomMember"),

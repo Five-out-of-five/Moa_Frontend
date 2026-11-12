@@ -59,7 +59,7 @@ export function TermsConsent() {
 
       <Button
         type="button"
-        className="rounded-control h-11 w-full"
+        className="rounded-control enabled:hover:bg-brand-dark dark:enabled:hover:bg-primary/80 h-11 w-full enabled:cursor-pointer"
         disabled={!hasAcceptedAll}
         onClick={() => router.push("/workspaces")}
       >

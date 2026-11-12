@@ -1,8 +1,9 @@
 import "server-only";
 
 import { api } from "@/lib/api";
+import { isActiveMember } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
-import { getRoomSnapshot, rooms } from "@/mocks/db";
+import { accounts, getRoomSnapshot, roomMembers, rooms } from "@/mocks/db";
 import type { Room } from "@/types/db";
 
 /**
@@ -13,8 +14,23 @@ import type { Room } from "@/types/db";
  */
 
 export async function listMyRooms(): Promise<Room[]> {
-  if (isMock) return rooms;
-  return api<Room[]>("/api/v1/rooms");
+  if (isMock) {
+    const memberRoomIds = new Set(
+      roomMembers
+        .filter((member) => member.accountId === accounts[0].id && isActiveMember(member))
+        .map((member) => member.roomId),
+    );
+    return rooms.filter((room) => memberRoomIds.has(room.id));
+  }
+  return api<Room[]>("/api/v1/rooms", { cache: "no-store" });
+}
+
+export async function getWorkspaceSelection() {
+  const workspaces = await listMyRooms();
+  const recentRoomId = isMock ? accounts[0].lastRoomId : null;
+  const recentWorkspace = workspaces.find((room) => room.id === recentRoomId);
+
+  return { workspaces, recentWorkspace };
 }
 
 export async function getRoomDashboard(roomId: number) {
