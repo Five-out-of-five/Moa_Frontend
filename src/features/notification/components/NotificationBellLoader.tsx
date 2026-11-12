@@ -13,30 +13,48 @@ import { NotificationDropdown } from "./NotificationDropdown";
  * 알림 요청이 느리거나 실패할 때 쉘 전체가 함께 멈춘다. Suspense 로 감싸서
  * 종 아이콘 자리에 fallback 을 띄우고, 실패하면 빈 드롭다운으로 떨어뜨린다
  * (헤더의 나머지는 계속 쓸 수 있다).
+ *
+ * ⚠️ **"전체 최근 50 + 읽지 않음 전체"** 두 벌을 미리 가져온다. "읽지 않음" 탭이 전체
+ *    최근 50 안에서만 필터한다면 size 를 초과한 미읽음 알림이 숨어 버리기 때문이다.
+ *    세 요청은 `Promise.allSettled` 로 서로 영향 없이 로드한다 — 하나가 실패해도 다른
+ *    쪽은 그대로 쓴다.
  */
 export async function NotificationBellLoader() {
-  try {
-    const [page, unreadCount] = await Promise.all([
-      // 드로워는 최근 N개만 보여 주지만 "N" 은 호출부(드로워) 가 slice 로 처리한다 —
-      // 서버는 전체 페이지를 돌려주고, 필요하면 호출부에서 size 조정.
-      listMyNotifications({ size: 50 }),
-      getUnreadNotificationCount(),
-    ]);
-    return (
-      <NotificationDropdown
-        initialNotifications={page.content}
-        initialUnreadCount={unreadCount}
-      />
-    );
-  } catch (error) {
-    console.error("NotificationBellLoader failed:", error);
-    return (
-      <NotificationDropdown
-        initialNotifications={[]}
-        initialUnreadCount={0}
-      />
+  const [recentResult, unreadResult, unreadCountResult] = await Promise.allSettled([
+    listMyNotifications({ size: 50 }),
+    listMyNotifications({ unreadOnly: true, size: 50 }),
+    getUnreadNotificationCount(),
+  ]);
+
+  if (recentResult.status === "rejected") {
+    console.error("NotificationBellLoader recent failed:", recentResult.reason);
+  }
+  if (unreadResult.status === "rejected") {
+    console.error("NotificationBellLoader unread failed:", unreadResult.reason);
+  }
+  if (unreadCountResult.status === "rejected") {
+    console.error(
+      "NotificationBellLoader unread-count failed:",
+      unreadCountResult.reason,
     );
   }
+
+  const recent =
+    recentResult.status === "fulfilled" ? recentResult.value.content : [];
+  const unread =
+    unreadResult.status === "fulfilled" ? unreadResult.value.content : [];
+  const unreadCount =
+    unreadCountResult.status === "fulfilled"
+      ? unreadCountResult.value
+      : unread.length;
+
+  return (
+    <NotificationDropdown
+      initialRecent={recent}
+      initialUnread={unread}
+      initialUnreadCount={unreadCount}
+    />
+  );
 }
 
 export function NotificationBellFallback() {

@@ -29,7 +29,11 @@ import { formatRelativeTime } from "../lib/relative-time";
 import { targetUrlOfNotification } from "../lib/target-url";
 
 interface Props {
-  initialNotifications: readonly Notification[];
+  /** 전체 최근 N개 — "전체" 탭에서 그대로 쓴다 */
+  initialRecent: readonly Notification[];
+  /** 읽지 않음 전용 응답 — "읽지 않음" 탭에서 쓴다 (`recent` 와 분리해, size 초과 미읽음이 숨지 않도록) */
+  initialUnread: readonly Notification[];
+  /** 전역 미읽음 카운트 — 뱃지에 사용. `initialUnread.length` 와 다를 수 있다 */
   initialUnreadCount: number;
 }
 
@@ -50,25 +54,30 @@ type TabKey = "all" | "unread";
  * ⚠️ 알림을 **누르면** 읽음 처리하고 targetType+targetId 로 이동한다.
  */
 export function NotificationDropdown({
-  initialNotifications,
+  initialRecent,
+  initialUnread,
   initialUnreadCount,
 }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState(initialNotifications);
-  const [unread, setUnread] = useState(initialUnreadCount);
+  const [recent, setRecent] = useState(initialRecent);
+  const [unreadList, setUnreadList] = useState(initialUnread);
+  const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
   const [tab, setTab] = useState<TabKey>("all");
   const [, startTransition] = useTransition();
 
   useEffect(() => {
     if (open) return;
-    setItems(initialNotifications);
-    setUnread(initialUnreadCount);
-  }, [initialNotifications, initialUnreadCount, open]);
+    setRecent(initialRecent);
+    setUnreadList(initialUnread);
+    setUnreadCount(initialUnreadCount);
+  }, [initialRecent, initialUnread, initialUnreadCount, open]);
 
+  // "전체" 탭은 최근 50 만, "읽지 않음" 탭은 서버가 돌려준 unread 전체를 쓴다.
+  // 이렇게 두 소스를 분리하면 size 를 초과한 미읽음이 "읽지 않음" 탭에서 숨지 않는다.
   const visible = useMemo(
-    () => (tab === "unread" ? items.filter((n) => !n.read) : items),
-    [items, tab],
+    () => (tab === "unread" ? unreadList : recent),
+    [recent, unreadList, tab],
   );
 
   const grouped = useMemo(() => {
@@ -85,18 +94,21 @@ export function NotificationDropdown({
   }, [visible]);
 
   const markOneRead = (id: number) => {
-    const prevItems = items;
-    const prevUnread = unread;
-    setItems(
-      prevItems.map((n) =>
+    const prevRecent = recent;
+    const prevUnreadList = unreadList;
+    const prevUnreadCount = unreadCount;
+    setRecent(
+      prevRecent.map((n) =>
         n.notificationId === id && !n.read ? { ...n, read: true } : n,
       ),
     );
-    setUnread(Math.max(0, prevUnread - 1));
+    setUnreadList(prevUnreadList.filter((n) => n.notificationId !== id));
+    setUnreadCount(Math.max(0, prevUnreadCount - 1));
     startTransition(() => {
       markNotificationAsReadAction({ notificationId: id }).catch(() => {
-        setItems(prevItems);
-        setUnread(prevUnread);
+        setRecent(prevRecent);
+        setUnreadList(prevUnreadList);
+        setUnreadCount(prevUnreadCount);
       });
     });
   };
@@ -108,14 +120,17 @@ export function NotificationDropdown({
   };
 
   const handleMarkAllRead = () => {
-    const prevItems = items;
-    const prevUnread = unread;
-    setItems(prevItems.map((n) => (n.read ? n : { ...n, read: true })));
-    setUnread(0);
+    const prevRecent = recent;
+    const prevUnreadList = unreadList;
+    const prevUnreadCount = unreadCount;
+    setRecent(prevRecent.map((n) => (n.read ? n : { ...n, read: true })));
+    setUnreadList([]);
+    setUnreadCount(0);
     startTransition(() => {
       markAllNotificationsAsReadAction().catch(() => {
-        setItems(prevItems);
-        setUnread(prevUnread);
+        setRecent(prevRecent);
+        setUnreadList(prevUnreadList);
+        setUnreadCount(prevUnreadCount);
       });
     });
   };
@@ -127,16 +142,18 @@ export function NotificationDropdown({
           type="button"
           variant="ghost"
           size="icon"
-          aria-label={unread > 0 ? `알림 (미읽음 ${unread}개)` : "알림"}
+          aria-label={
+            unreadCount > 0 ? `알림 (미읽음 ${unreadCount}개)` : "알림"
+          }
           className="relative"
         >
           <Bell className="size-5" />
-          {unread > 0 && (
+          {unreadCount > 0 && (
             <span
               aria-hidden="true"
               className="bg-danger absolute top-1 right-1 flex min-h-[1.1rem] min-w-[1.1rem] items-center justify-center rounded-full px-1 text-[10px] font-bold text-white"
             >
-              {unread > 99 ? "99+" : unread}
+              {unreadCount > 99 ? "99+" : unreadCount}
             </span>
           )}
         </Button>
@@ -171,13 +188,13 @@ export function NotificationDropdown({
               active={tab === "unread"}
               onClick={() => setTab("unread")}
               label="읽지 않음"
-              badge={unread}
+              badge={unreadCount}
             />
           </div>
           <button
             type="button"
             onClick={handleMarkAllRead}
-            disabled={unread === 0}
+            disabled={unreadCount === 0}
             className="text-accent-teal hover:text-brand disabled:text-muted-foreground inline-flex items-center gap-1 text-xs font-medium disabled:cursor-not-allowed"
           >
             <CheckCheck className="size-3.5" />
