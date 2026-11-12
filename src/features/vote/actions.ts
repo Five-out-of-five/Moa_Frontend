@@ -27,6 +27,12 @@ export async function submitBallotAction(input: unknown): Promise<VoteDetail> {
     const v = votes.find((x) => x.roomId === roomId && x.voteId === voteId);
     if (!v) throw new Error("투표를 찾을 수 없습니다.");
     if (v.status !== "OPEN") throw new Error("이미 마감된 투표입니다.");
+    // 명세상 서버 시각 기준 마감 이후 요청은 거절. 목에서도 동일 가드.
+    if (new Date(v.deadlineAt).getTime() <= Date.now()) {
+      v.status = "CLOSED";
+      v.closeReason = "DEADLINE";
+      throw new Error("마감 시각이 지나 더 이상 참여할 수 없습니다.");
+    }
     const validIds = new Set(v.options.map((o) => o.optionId));
     const cleaned = optionIds.filter((id) => validIds.has(id));
     if (cleaned.length === 0) throw new Error("유효한 선택지가 없습니다.");

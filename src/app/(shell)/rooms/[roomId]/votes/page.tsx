@@ -27,17 +27,26 @@ export default async function RoomVotesPage({ params }: Props) {
   if (!room) notFound();
 
   const page = await listVotesInRoom(roomId);
-  const detailEntries = await Promise.all(
-    page.content.map(async (s) => {
-      const d = await getVoteDetail(roomId, s.voteId);
-      return d ? ([s.voteId, d] as const) : null;
-    }),
+
+  // ⚠️ 상세 요청 하나가 실패해도 **나머지 투표는 그대로 노출**되어야 한다. `Promise.all`
+  //    로 묶으면 1건 실패에 전체 페이지가 500 으로 떨어져 사용자가 모든 투표를 못 본다
+  //    (CodeRabbit). 개별 settle 후 성공한 것만 details map 에 넣는다.
+  const detailResults = await Promise.allSettled(
+    page.content.map((s) => getVoteDetail(roomId, s.voteId)),
   );
-  const details: Record<number, VoteDetail> = Object.fromEntries(
-    detailEntries.filter(
-      (entry): entry is readonly [number, VoteDetail] => entry !== null,
-    ),
-  );
+  const details: Record<number, VoteDetail> = {};
+  detailResults.forEach((res, i) => {
+    const summary = page.content[i];
+    if (!summary) return;
+    if (res.status === "fulfilled" && res.value) {
+      details[summary.voteId] = res.value;
+    } else if (res.status === "rejected") {
+      console.error(
+        `RoomVotesPage detail fetch failed for voteId=${summary.voteId}:`,
+        res.reason,
+      );
+    }
+  });
 
   return (
     <VotesPageClient

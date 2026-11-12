@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckCircle2, EyeOff, History, Users } from "lucide-react";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -42,7 +42,13 @@ export function VoteDetailSheet({ roomId, vote, open, onOpenChange }: Props) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  // ⚠️ Sheet 가 투표 A → B 로 빠르게 전환될 때, A 의 네트워크 응답이 뒤늦게 돌아와
+  //    B 의 상태를 덮는 걸 막기 위한 generation 토큰. `vote` 가 바뀔 때마다 증가하고,
+  //    응답 처리 시 요청 시점의 값과 비교해 다르면 결과를 버린다.
+  const genRef = useRef(0);
+
   useEffect(() => {
+    genRef.current += 1;
     setLocal(vote);
     setSelected(vote?.myOptionIds ?? []);
     setError(null);
@@ -82,6 +88,7 @@ export function VoteDetailSheet({ roomId, vote, open, onOpenChange }: Props) {
   const handleSubmit = () => {
     if (!local || !canSubmit) return;
     setError(null);
+    const requestGen = genRef.current;
     startTransition(async () => {
       try {
         const next = await submitBallotAction({
@@ -89,8 +96,10 @@ export function VoteDetailSheet({ roomId, vote, open, onOpenChange }: Props) {
           voteId: local.voteId,
           optionIds: selected,
         });
+        if (genRef.current !== requestGen) return; // 다른 투표로 넘어간 뒤 돌아온 응답은 버림
         setLocal(next);
       } catch (e) {
+        if (genRef.current !== requestGen) return;
         setError(
           e instanceof Error
             ? e.message
@@ -221,11 +230,16 @@ export function VoteDetailSheet({ roomId, vote, open, onOpenChange }: Props) {
               {!isClosed ? (
                 <Button
                   type="button"
-                  disabled={!canSubmit}
+                  disabled={!canSubmit || pending}
                   onClick={handleSubmit}
+                  aria-busy={pending}
                   className="w-full"
                 >
-                  {local.myOptionIds.length > 0 ? "선택 변경하기" : "투표 제출하기"}
+                  {pending
+                    ? "제출 중…"
+                    : local.myOptionIds.length > 0
+                      ? "선택 변경하기"
+                      : "투표 제출하기"}
                 </Button>
               ) : (
                 <Button type="button" disabled className="w-full">

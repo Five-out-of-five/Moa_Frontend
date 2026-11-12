@@ -75,11 +75,16 @@ export function VotesPageClient({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button type="button" variant="ghost" asChild>
-            <Link href={`/rooms/${roomId}`} className="flex items-center gap-1">
-              <ArrowLeft className="size-4" />
-              대시보드로 돌아가기
-            </Link>
+          {/* ⚠️ /rooms/{roomId} 대시보드 라우트가 아직 없어 링크로 두면 404 로 떨어진다.
+              대시보드 뼈대 PR 전까지 자리만 유지한 비활성 버튼으로 둔다. */}
+          <Button
+            type="button"
+            variant="ghost"
+            disabled
+            title="방 대시보드 화면이 준비되면 이동 링크가 열립니다"
+          >
+            <ArrowLeft className="size-4" />
+            대시보드로 돌아가기
           </Button>
           <Button type="button" disabled title="새 투표 만들기는 다음 작업에서 열립니다">
             <Plus className="size-4" />새 투표

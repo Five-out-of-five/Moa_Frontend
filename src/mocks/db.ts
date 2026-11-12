@@ -314,9 +314,23 @@ function makeVotes(roomId: number): VoteDetail[] {
   );
   const memberCount = members.length;
   const now = Date.now();
+
+  // ⚠️ 시드는 **"내(accounts[0]) 를 제외한 다른 멤버"** 참여를 기본으로 깐다.
+  //    그래야 myOptionIds 가 비어 있을 때 "5/5 참여" 같은 모순이 생기지 않는다
+  //    (CodeRabbit). 참여자 목록도 나(me) 를 빼서 생성한다.
+  const meId = accounts[0]?.id;
+  const othersInRoom = members.filter((m) => m.accountId !== meId);
+  const refOthers = othersInRoom.map((m) =>
+    refOf(accounts.find((a) => a.id === m.accountId)!),
+  );
+  const refMembers = members.map((m) =>
+    refOf(accounts.find((a) => a.id === m.accountId)!),
+  );
+  const openParticipantCount = Math.min(refOthers.length, memberCount - 1);
+
   const list: VoteDetail[] = [];
 
-  // 1. SINGLE — 진행 중, 내가 아직 참여 안 함
+  // 1. SINGLE — 진행 중, 내가 아직 참여 안 함 (나 제외 모두 참여)
   list.push({
     voteId: seq("vote"),
     title: "다음 스프린트의 최우선 목표를 선택해주세요",
@@ -330,11 +344,9 @@ function makeVotes(roomId: number): VoteDetail[] {
     sourceCard: null,
     parentVoteId: null,
     version: 1,
-    participantCount: Math.min(8, memberCount),
+    participantCount: openParticipantCount,
     memberCount,
-    participants: members
-      .slice(0, Math.min(8, memberCount))
-      .map((m) => refOf(accounts.find((a) => a.id === m.accountId)!)),
+    participants: refOthers.slice(0, openParticipantCount),
     myOptionIds: [],
     options: [
       { optionId: seq("voteOption"), content: "온보딩 흐름 개선" },
@@ -344,9 +356,10 @@ function makeVotes(roomId: number): VoteDetail[] {
     tied: false,
   });
 
-  // 2. YES_NO — 진행 중, 내가 이미 찬성
+  // 2. YES_NO — 진행 중, 내가 이미 찬성 (나 + 다른 멤버 일부 포함)
   const yesOpt = seq("voteOption");
   const noOpt = seq("voteOption");
+  const yesNoParticipantCount = Math.min(memberCount, openParticipantCount + 1);
   list.push({
     voteId: seq("vote"),
     title: "정기 회고 시간을 변경할까요?",
@@ -360,11 +373,9 @@ function makeVotes(roomId: number): VoteDetail[] {
     sourceCard: null,
     parentVoteId: null,
     version: 1,
-    participantCount: Math.min(8, memberCount),
+    participantCount: yesNoParticipantCount,
     memberCount,
-    participants: members
-      .slice(0, Math.min(8, memberCount))
-      .map((m) => refOf(accounts.find((a) => a.id === m.accountId)!)),
+    participants: refMembers.slice(0, yesNoParticipantCount),
     myOptionIds: [yesOpt],
     options: [
       { optionId: yesOpt, content: "찬성" },
@@ -373,7 +384,7 @@ function makeVotes(roomId: number): VoteDetail[] {
     tied: false,
   });
 
-  // 3. MULTIPLE — 진행 중, 익명
+  // 3. MULTIPLE — 진행 중, 익명 (참여자 목록은 빈 배열로 비노출)
   list.push({
     voteId: seq("vote"),
     title: "다음 팀 워크숍에서 다룰 주제",
@@ -387,7 +398,7 @@ function makeVotes(roomId: number): VoteDetail[] {
     sourceCard: null,
     parentVoteId: null,
     version: 1,
-    participantCount: Math.min(8, memberCount),
+    participantCount: openParticipantCount,
     memberCount,
     participants: [], // 익명이라 비노출
     myOptionIds: [],
@@ -400,12 +411,22 @@ function makeVotes(roomId: number): VoteDetail[] {
     tied: false,
   });
 
-  // 4. CLOSED — 마감 완료, 결과 공개 (득표 수 표시)
+  // 4. CLOSED — 마감, 결과 공개. 참여/득표 수 모두 memberCount 범위 안에서 구성.
+  const closedTotal = Math.min(memberCount, 5);
   const closedOpts = [
-    { optionId: seq("voteOption"), content: "매주 월요일 오전", voteCount: 2 },
-    { optionId: seq("voteOption"), content: "매주 수요일 오후", voteCount: 6 },
+    { optionId: seq("voteOption"), content: "매주 월요일 오전", voteCount: 1 },
+    {
+      optionId: seq("voteOption"),
+      content: "매주 수요일 오후",
+      voteCount: Math.max(1, closedTotal - 2),
+    },
     { optionId: seq("voteOption"), content: "격주 금요일 오후", voteCount: 1 },
   ];
+  // 득표 합이 closedTotal 과 정확히 맞도록 보정 (참여 수와 득표 합이 어긋나지 않게)
+  const closedSum = closedOpts.reduce((s, o) => s + o.voteCount, 0);
+  if (closedSum !== closedTotal && closedOpts[1]) {
+    closedOpts[1].voteCount += closedTotal - closedSum;
+  }
   const maxVote = Math.max(...closedOpts.map((o) => o.voteCount));
   list.push({
     voteId: seq("vote"),
@@ -420,11 +441,9 @@ function makeVotes(roomId: number): VoteDetail[] {
     sourceCard: null,
     parentVoteId: null,
     version: 2,
-    participantCount: 9,
+    participantCount: closedTotal,
     memberCount,
-    participants: members
-      .slice(0, 9)
-      .map((m) => refOf(accounts.find((a) => a.id === m.accountId)!)),
+    participants: refMembers.slice(0, closedTotal),
     myOptionIds: [closedOpts[1]!.optionId],
     options: closedOpts.map((o) => ({ ...o, top: o.voteCount === maxVote })),
     tied: false,
