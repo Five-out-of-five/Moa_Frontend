@@ -149,7 +149,9 @@ export interface IdeaCard {
 
 export type TaskStatus = "TODO" | "IN_PROGRESS" | "REVIEW" | "DONE";
 export type TaskPriority = "LOW" | "NORMAL" | "HIGH";
+export type TaskSourceType = "NONE" | "CARD" | "VOTE";
 
+/** 명세 `Sprint`. 위젯/진척도용 요약. */
 export interface Sprint {
   id: number;
   roomId: number;
@@ -161,19 +163,67 @@ export interface Sprint {
   doneTasks: number;
 }
 
-export interface Task {
-  id: number;
-  roomId: number;
-  sprintId: number | null; // null = 백로그
+/** 명세 `TaskSource` — 업무가 어느 카드/투표에서 전환됐는지 */
+export interface TaskSource {
+  type: TaskSourceType;
+  id: number | null;
+  title: string | null;
+  writerDisplayName?: string | null;
+}
+
+/**
+ * 명세 `TaskSummaryResponse` — 칸반 보드 각 카드가 쓰는 요약 shape.
+ *
+ * ⚠️ `dDay` 는 BE 가 계산해서 내려 준다 (양수=남음, 0=오늘, 음수=지남).
+ * ⚠️ `assignee` 는 미담당이면 null.
+ */
+export interface TaskSummary {
+  taskId: number;
   title: string;
-  description: string;
   status: TaskStatus;
   priority: TaskPriority;
-  assignee: MemberRef | null;
-  reporter: MemberRef;
-  dueDate: string | null; // yyyy-MM-dd
+  dueDate: string | null;
+  dDay: number | null;
+  overdue: boolean;
   sortOrder: number;
-  sourceCardId: number | null;
+  version: number;
+  registrant: MemberRef;
+  assignee: MemberRef | null;
+  source: TaskSource;
+}
+
+/** 명세 `TaskHistoryItem` — 상태/담당자 변경 이력 */
+export type TaskHistoryType =
+  | "CREATED"
+  | "STATUS_CHANGED"
+  | "ASSIGNEE_CHANGED"
+  | "REJECTED";
+
+export interface TaskHistoryItem {
+  historyType: TaskHistoryType;
+  fromStatus: TaskStatus | null;
+  toStatus: TaskStatus | null;
+  fromAssignee: MemberRef | null;
+  toAssignee: MemberRef | null;
+  actor: MemberRef;
+  createdAt: string;
+}
+
+/** 명세 `FileResponse` — 업무 첨부 (여기선 참조용 필드만 필요한 만큼) */
+export interface TaskFileRef {
+  fileId: number;
+  name: string;
+  byteSize: number;
+  mimeType: string;
+  createdAt: string;
+}
+
+/** 명세 `TaskDetailResponse` — 상세 조회·쓰기 액션 응답 */
+export interface TaskDetail extends TaskSummary {
+  description: string;
+  completedAt: string | null;
+  files: TaskFileRef[];
+  history: TaskHistoryItem[];
   createdAt: string;
 }
 

@@ -16,7 +16,7 @@ import type {
   RoomMember,
   RoomWidget,
   Sprint,
-  Task,
+  TaskDetail,
   TaskStatus,
   VoteDetail,
   WidgetType,
@@ -232,43 +232,69 @@ export const sprints: Sprint[] = rooms.map((room) => ({
 
 const TASK_STATUSES: TaskStatus[] = ["TODO", "IN_PROGRESS", "REVIEW", "DONE"];
 
-export const tasks: Task[] = sprints.flatMap((sprint) => {
-  const roomMembersOfRoom = roomMembers.filter(
-    (m) => m.roomId === sprint.roomId,
-  );
-  // ⚠️ 방에 멤버가 없는 상황은 시드 설계상 생기지 않지만, 프로덕션 번들이 db.ts 를
-  //    빌드 시점에 평가하면서 혹시라도 빈 배열이 생기면 `[0].accountId` 가 터진다.
-  //    담당자·보고자를 해석할 수 없으면 그 스프린트는 task 를 만들지 않는다.
-  const fallback = roomMembersOfRoom[0];
-  if (!fallback) return [];
-  const reporterAcc = accounts.find((a) => a.id === fallback.accountId) ?? accounts[0];
-  if (!reporterAcc) return [];
+/** 오늘 자정 기준 남은/지난 일수 — 명세 `dDay` 와 동일한 계산 */
+function computeDDay(dueDate: string | null): number | null {
+  if (!dueDate) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate);
+  due.setHours(0, 0, 0, 0);
+  return Math.round((due.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+}
 
-  const items = Array.from({ length: 10 }, (_, i) => {
-    const status = TASK_STATUSES[i % TASK_STATUSES.length]!;
-    const assigneeMember = pick(roomMembersOfRoom);
-    const assigneeAcc =
-      accounts.find((a) => a.id === assigneeMember.accountId) ?? reporterAcc;
-    return {
-      id: seq("task"),
-      roomId: sprint.roomId,
-      sprintId: sprint.id,
-      title: faker.lorem.sentence({ min: 3, max: 6 }),
-      description: faker.lorem.paragraph({ min: 1, max: 2 }),
-      status,
-      priority: pick(["LOW", "NORMAL", "HIGH"] as const),
-      assignee: refOf(assigneeAcc),
-      reporter: refOf(reporterAcc),
-      dueDate: faker.date.soon({ days: 14 }).toISOString().slice(0, 10),
-      sortOrder: i,
-      sourceCardId: null,
-      createdAt: nowIso(),
-    } satisfies Task;
+export const tasks: Array<TaskDetail & { roomId: number; sprintId: number | null }> =
+  sprints.flatMap((sprint) => {
+    const roomMembersOfRoom = roomMembers.filter(
+      (m) => m.roomId === sprint.roomId,
+    );
+    const fallback = roomMembersOfRoom[0];
+    if (!fallback) return [];
+    const reporterAcc = accounts.find((a) => a.id === fallback.accountId) ?? accounts[0];
+    if (!reporterAcc) return [];
+
+    const items = Array.from({ length: 10 }, (_, i) => {
+      const status = TASK_STATUSES[i % TASK_STATUSES.length]!;
+      const assigneeMember = pick(roomMembersOfRoom);
+      const assigneeAcc =
+        accounts.find((a) => a.id === assigneeMember.accountId) ?? reporterAcc;
+      const dueDate = faker.date.soon({ days: 14 }).toISOString().slice(0, 10);
+      const dDay = computeDDay(dueDate);
+      return {
+        taskId: seq("task"),
+        roomId: sprint.roomId,
+        sprintId: sprint.id,
+        title: faker.lorem.sentence({ min: 3, max: 6 }),
+        description: faker.lorem.paragraph({ min: 1, max: 2 }),
+        status,
+        priority: pick(["LOW", "NORMAL", "HIGH"] as const),
+        dueDate,
+        dDay,
+        overdue: dDay !== null && dDay < 0 && status !== "DONE",
+        sortOrder: i,
+        version: 1,
+        registrant: refOf(reporterAcc),
+        assignee: refOf(assigneeAcc),
+        source: { type: "NONE" as const, id: null, title: null },
+        completedAt: status === "DONE" ? nowIso() : null,
+        files: [],
+        history: [
+          {
+            historyType: "CREATED" as const,
+            fromStatus: null,
+            toStatus: status,
+            fromAssignee: null,
+            toAssignee: refOf(assigneeAcc),
+            actor: refOf(reporterAcc),
+            createdAt: nowIso(),
+          },
+        ],
+        createdAt: nowIso(),
+      } satisfies TaskDetail & { roomId: number; sprintId: number | null };
+    });
+    sprint.totalTasks = items.length;
+    sprint.doneTasks = items.filter((t) => t.status === "DONE").length;
+    return items;
   });
-  sprint.totalTasks = items.length;
-  sprint.doneTasks = items.filter((t) => t.status === "DONE").length;
-  return items;
-});
 
 // ===== 투표 (VOTE) =====
 
