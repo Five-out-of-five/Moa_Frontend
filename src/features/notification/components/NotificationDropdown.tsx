@@ -14,19 +14,19 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import type { Notification } from "@/types/db";
+import type { Notification, NotificationGroup } from "@/types/db";
 
 import {
   markAllNotificationsAsReadAction,
   markNotificationAsReadAction,
 } from "../actions";
 import {
-  categoryForNotificationKind,
-  NOTIFICATION_CATEGORY_ORDER,
-  type NotificationCategory,
+  NOTIFICATION_GROUP_LABEL,
+  NOTIFICATION_GROUP_ORDER,
 } from "../lib/category-for-kind";
-import { iconForNotificationKind } from "../lib/icon-for-kind";
+import { iconForNotificationGroup } from "../lib/icon-for-kind";
 import { formatRelativeTime } from "../lib/relative-time";
+import { targetUrlOfNotification } from "../lib/target-url";
 
 interface Props {
   initialNotifications: readonly Notification[];
@@ -38,15 +38,16 @@ type TabKey = "all" | "unread";
 /**
  * 헤더의 종 아이콘 + 알림 드로워 (우측 슬라이드).
  *
- * ⚠️ 디자인 기준: Figma Make 의 `Notifications` 화면. Popover 가 아닌 **Sheet** 로 구현한다 —
- *    알림은 한 번에 많이 들어오고 카테고리별로 훑어보는 경우가 많아, 세로로 넓은 공간이 필요하다.
+ * ⚠️ 응답 shape 는 명세 `NotificationResponse` 기준: `group` 으로 섹션 분류, `read`(boolean)
+ *    로 읽음 표시, `title + content` 2줄, 이동 목적지는 `room + targetType + targetId` 조합을
+ *    FE 가 조립해서 사용 (`lib/target-url.ts`).
  *
  * ⚠️ 서버에서 받은 알림을 **낙관적으로** 읽음 처리한다. 클릭 즉시 로컬 미읽음 수가 줄고,
- *    Server Action 이 뒤에서 커밋한다. 실패 롤백은 다음 revalidate 로 자연 복구된다
- *    (되돌릴 거리가 적어 실패시 토스트 없이 다음 조회로 맡긴다).
+ *    Server Action 이 뒤에서 커밋한다. 실패 시 이전 state 로 롤백한다. 드로워가 닫혀 있을
+ *    때만 props 를 재동기해 다른 세션/탭의 변화를 흡수한다 (열려 있는 동안엔 사용자가
+ *    보고 있는 목록을 흔들지 않음).
  *
- * ⚠️ 알림을 **누르면** 읽음 처리하고 targetUrl 로 이동한다. 읽기만 하고 안 가는 별도 버튼은
- *    두지 않는다 — 요구 2단계가 하나의 클릭 안에 담겨야 사용자가 "읽은 건 확인했다" 로 느낀다.
+ * ⚠️ 알림을 **누르면** 읽음 처리하고 targetType+targetId 로 이동한다.
  */
 export function NotificationDropdown({
   initialNotifications,
@@ -59,9 +60,6 @@ export function NotificationDropdown({
   const [tab, setTab] = useState<TabKey>("all");
   const [, startTransition] = useTransition();
 
-  // ⚠️ Server Action 이 revalidatePath 한 뒤 서버에서 새 알림이 넘어오면 props 가 바뀌지만
-  //   useState 초기값은 그대로다. 다른 세션/탭에서 생긴 변화를 반영하려면 수동 sync 가 필요하다.
-  //   open 상태에서는 사용자가 보고 있는 목록이 흔들리지 않도록 닫혀 있을 때만 재동기한다.
   useEffect(() => {
     if (open) return;
     setItems(initialNotifications);
@@ -69,21 +67,21 @@ export function NotificationDropdown({
   }, [initialNotifications, initialUnreadCount, open]);
 
   const visible = useMemo(
-    () => (tab === "unread" ? items.filter((n) => n.readAt === null) : items),
+    () => (tab === "unread" ? items.filter((n) => !n.read) : items),
     [items, tab],
   );
 
   const grouped = useMemo(() => {
-    const map = new Map<NotificationCategory, Notification[]>();
+    const map = new Map<NotificationGroup, Notification[]>();
     for (const n of visible) {
-      const cat = categoryForNotificationKind(n.kind);
-      const bucket = map.get(cat);
+      const bucket = map.get(n.group);
       if (bucket) bucket.push(n);
-      else map.set(cat, [n]);
+      else map.set(n.group, [n]);
     }
-    return NOTIFICATION_CATEGORY_ORDER.filter((cat) => map.has(cat)).map(
-      (cat) => ({ category: cat, items: map.get(cat)! }),
-    );
+    return NOTIFICATION_GROUP_ORDER.filter((g) => map.has(g)).map((group) => ({
+      group,
+      items: map.get(group)!,
+    }));
   }, [visible]);
 
   const markOneRead = (id: number) => {
@@ -91,9 +89,7 @@ export function NotificationDropdown({
     const prevUnread = unread;
     setItems(
       prevItems.map((n) =>
-        n.id === id && n.readAt === null
-          ? { ...n, readAt: new Date().toISOString() }
-          : n,
+        n.notificationId === id && !n.read ? { ...n, read: true } : n,
       ),
     );
     setUnread(Math.max(0, prevUnread - 1));
@@ -106,18 +102,15 @@ export function NotificationDropdown({
   };
 
   const handleItemClick = (n: Notification) => {
-    if (n.readAt === null) markOneRead(n.id);
-    if (n.targetUrl) {
-      setOpen(false);
-      router.push(n.targetUrl);
-    }
+    if (!n.read) markOneRead(n.notificationId);
+    setOpen(false);
+    router.push(targetUrlOfNotification(n));
   };
 
   const handleMarkAllRead = () => {
     const prevItems = items;
     const prevUnread = unread;
-    const now = new Date().toISOString();
-    setItems(prevItems.map((n) => (n.readAt === null ? { ...n, readAt: now } : n)));
+    setItems(prevItems.map((n) => (n.read ? n : { ...n, read: true })));
     setUnread(0);
     startTransition(() => {
       markAllNotificationsAsReadAction().catch(() => {
@@ -160,8 +153,7 @@ export function NotificationDropdown({
           <SheetDescription className="text-muted-foreground mt-0.5 text-xs">
             방마다 쌓인 소식을 한눈에 확인하세요.
           </SheetDescription>
-          {/* ⚠️ 알림 설정 (Settings2) 아이콘은 /account/notifications 설정 페이지가 생길 때 추가한다.
-              설정 화면이 없는 상태에서 미리 노출하면 404 로 이어진다. */}
+          {/* ⚠️ 알림 설정 아이콘은 /account/notifications 전역·방별 설정 페이지가 생길 때 추가한다. */}
         </SheetHeader>
 
         <div className="border-border-soft flex items-center justify-between border-b px-5 py-2">
@@ -197,15 +189,15 @@ export function NotificationDropdown({
           {visible.length === 0 ? (
             <EmptyState tab={tab} />
           ) : (
-            grouped.map(({ category, items: catItems }) => (
-              <section key={category}>
+            grouped.map(({ group, items: groupItems }) => (
+              <section key={group}>
                 <h3 className="text-muted-foreground px-5 pt-4 pb-1.5 text-xs font-medium">
-                  {category}
+                  {NOTIFICATION_GROUP_LABEL[group]}
                 </h3>
                 <ul>
-                  {catItems.map((n) => (
+                  {groupItems.map((n) => (
                     <NotificationItem
-                      key={n.id}
+                      key={n.notificationId}
                       notification={n}
                       onClick={() => handleItemClick(n)}
                     />
@@ -249,9 +241,7 @@ function TabButton({
         <span
           className={cn(
             "inline-flex min-w-[1.1rem] items-center justify-center rounded-full px-1.5 text-[10px] font-semibold",
-            active
-              ? "bg-brand text-white"
-              : "bg-muted text-muted-foreground",
+            active ? "bg-brand text-white" : "bg-muted text-muted-foreground",
           )}
         >
           {badge > 99 ? "99+" : badge}
@@ -268,8 +258,8 @@ function NotificationItem({
   notification: Notification;
   onClick: () => void;
 }) {
-  const Icon = iconForNotificationKind(notification.kind);
-  const isUnread = notification.readAt === null;
+  const Icon = iconForNotificationGroup(notification.group);
+  const isUnread = !notification.read;
 
   return (
     <li>
@@ -288,24 +278,27 @@ function NotificationItem({
           <Icon className="size-4.5" />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-start gap-1.5">
             <p
               className={cn(
-                "text-foreground truncate text-sm leading-snug",
+                "text-foreground flex-1 text-sm leading-snug",
                 isUnread ? "font-semibold" : "font-medium",
               )}
             >
-              {notification.message}
+              {notification.title}
             </p>
             {isUnread && (
               <span
                 aria-label="읽지 않음"
-                className="bg-accent-teal size-1.5 shrink-0 rounded-full"
+                className="bg-accent-teal mt-1.5 size-1.5 shrink-0 rounded-full"
               />
             )}
           </div>
-          <p className="text-muted-foreground mt-1 text-xs">
-            {formatRelativeTime(notification.createdAt)}
+          <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-snug">
+            {notification.content}
+          </p>
+          <p className="text-muted-foreground/80 mt-1 text-[11px]">
+            {notification.room.name} · {formatRelativeTime(notification.createdAt)}
           </p>
         </div>
       </button>

@@ -16,17 +16,20 @@ import { NotificationDropdown } from "./NotificationDropdown";
  */
 export async function NotificationBellLoader() {
   try {
-    const [notifications, unreadCount] = await Promise.all([
-      listMyNotifications(),
+    const [page, unreadCount] = await Promise.all([
+      // 드로워는 최근 N개만 보여 주지만 "N" 은 호출부(드로워) 가 slice 로 처리한다 —
+      // 서버는 전체 페이지를 돌려주고, 필요하면 호출부에서 size 조정.
+      listMyNotifications({ size: 50 }),
       getUnreadNotificationCount(),
     ]);
     return (
       <NotificationDropdown
-        initialNotifications={notifications}
+        initialNotifications={page.content}
         initialUnreadCount={unreadCount}
       />
     );
-  } catch {
+  } catch (error) {
+    console.error("NotificationBellLoader failed:", error);
     return (
       <NotificationDropdown
         initialNotifications={[]}

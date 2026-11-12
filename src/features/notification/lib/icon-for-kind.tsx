@@ -1,42 +1,29 @@
 import {
   ClipboardCheck,
-  Handshake,
   MessageCircle,
   ShieldCheck,
-  UserMinus,
-  UserPlus,
+  Users,
   Vote,
+  Zap,
 } from "lucide-react";
 
-import type { NotificationKind } from "@/types/db";
+import type { NotificationGroup } from "@/types/db";
 
 /**
- * 알림 종류별 아이콘 매핑 — 드로워 각 항목의 좌측 라운드 사각형 안에 들어간다.
+ * 알림 섹션(`group`) 별 좌측 아이콘. 라운드 사각형 안에 들어간다.
  *
- * ⚠️ 디자인 기준: Figma Make 알림 드로워. 카테고리 섹션과 톤을 맞춰 Lucide 아이콘을 쓰고,
- *    이모지로 대체하지 않는다 (다크 모드·접근성·일관성 유지).
+ * ⚠️ type 문자열 enum 이 명세에 명시되지 않아, 아이콘은 **group 단위**로 정한다.
+ *    더 세분화된 매핑은 BE 가 type enum 을 열어 주면 그때 추가한다.
  */
-export function iconForNotificationKind(kind: NotificationKind) {
-  switch (kind) {
-    case "IDEA_CARD_COMMENT":
-      return MessageCircle;
-    case "TASK_ASSIGNED":
-    case "TASK_UNASSIGNED":
-    case "TASK_COMMENT":
-      return ClipboardCheck;
-    case "VOTE_OPENED":
-    case "VOTE_CLOSED":
-      return Vote;
-    case "CONFLICT_DETECTED":
-      return Handshake;
-    case "MEDIATION_ADOPTED":
-      return Handshake;
-    case "ROOM_INVITED":
-      return UserPlus;
-    case "ROOM_KICKED":
-      return UserMinus;
-    case "SYSTEM":
-    default:
-      return ShieldCheck;
-  }
+const ICON_FOR_GROUP: Record<NotificationGroup, typeof MessageCircle> = {
+  MY_ACTIVITY: MessageCircle,
+  TASK: ClipboardCheck,
+  VOTE: Vote,
+  SESSION: Zap,
+  MEMBER_ROLE: Users,
+  SYSTEM: ShieldCheck,
+};
+
+export function iconForNotificationGroup(group: NotificationGroup) {
+  return ICON_FOR_GROUP[group];
 }

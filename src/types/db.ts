@@ -259,30 +259,50 @@ export interface CompromiseDraft {
 // ===== 알림 (NOTIFICATION) =====
 
 /**
- * 알림 종류 — 명세 §notification.
- * 각 종류별로 드롭다운에서 다른 아이콘을 쓴다.
+ * 알림 섹션 분류 — 10/28 명세의 `group` enum. 드로워에서 섹션 라벨로 쓴다.
+ *
+ * ⚠️ BE `/v3/api-docs` URL 이 공유되면 이 타입은 자동 생성된 `src/types/api.d.ts`
+ *    의 `components["schemas"]["NotificationResponse"]["group"]` 로 승격한다
+ *    (지금은 수동 유지).
  */
-export type NotificationKind =
-  | "TASK_ASSIGNED"
-  | "TASK_UNASSIGNED"
-  | "TASK_COMMENT"
-  | "IDEA_CARD_COMMENT"
-  | "VOTE_OPENED"
-  | "VOTE_CLOSED"
-  | "ROOM_INVITED"
-  | "ROOM_KICKED"
-  | "CONFLICT_DETECTED"
-  | "MEDIATION_ADOPTED"
+export type NotificationGroup =
+  | "MY_ACTIVITY"
+  | "TASK"
+  | "VOTE"
+  | "SESSION"
+  | "MEMBER_ROLE"
   | "SYSTEM";
 
+/**
+ * 알림 세부 종류 — BE 가 보내는 type 문자열. 명세에 enum 리스트가 명시되지 않아
+ * string 으로 열어 둔다. FE 는 group 으로만 분류·아이콘을 결정한다 (type 은 추후
+ * 더 세분화된 UI 가 필요할 때 사용).
+ */
+export type NotificationType = string;
+
+export interface NotificationRoomRef {
+  roomId: number;
+  name: string;
+}
+
+/**
+ * 알림 응답 shape — 10/28 명세 `NotificationResponse`.
+ *
+ * ⚠️ 이동 목적지는 `room + targetType + targetId` 조합으로 **FE 가 URL 을 조립**한다
+ *    (명세에 명시). targetType 값은 명세 운영 중 BE 와 함께 enum 화 예정.
+ */
 export interface Notification {
-  id: number;
-  accountId: number;
-  kind: NotificationKind;
-  /** 화면에 그대로 띄우는 한국어 문장 (BE 가 생성, 코드에서 조립 금지) */
-  message: string;
-  /** 눌렀을 때 이동할 URL. 없으면 알림만 읽음 처리. */
-  targetUrl: string | null;
-  readAt: string | null;
+  notificationId: number;
+  group: NotificationGroup;
+  type: NotificationType;
+  /** 드로워 각 항목의 **제목** — BE 가 생성, FE 는 그대로 노출 */
+  title: string;
+  /** 제목 아래 보조 설명 — BE 가 생성 */
+  content: string;
+  room: NotificationRoomRef;
+  /** `task` / `idea` / `vote` / `session` / `briefing` / `mediation` / `room` 등 — FE 가 URL 조립에 사용 */
+  targetType: string;
+  targetId: number;
+  read: boolean;
   createdAt: string;
 }
