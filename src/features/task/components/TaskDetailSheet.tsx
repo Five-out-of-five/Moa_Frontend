@@ -1,7 +1,7 @@
 "use client";
 
 import { Calendar, History, User } from "lucide-react";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -45,7 +45,12 @@ export function TaskDetailSheet({ roomId, task, open, onOpenChange }: Props) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  // ⚠️ Sheet 가 업무 A → B 로 바뀔 때, A 의 뒤늦은 응답이 B 를 덮거나 B 에 A 의 에러를
+  //    출력하지 않도록 generation 토큰으로 가드.
+  const genRef = useRef(0);
+
   useEffect(() => {
+    genRef.current += 1;
     setLocal(task);
     setError(null);
   }, [task]);
@@ -53,21 +58,39 @@ export function TaskDetailSheet({ roomId, task, open, onOpenChange }: Props) {
   const handleStatusChange = (next: TaskStatus) => {
     if (!local || pending || local.status === next) return;
     setError(null);
+    const requestGen = genRef.current;
     startTransition(async () => {
+      // ⚠️ Server Action 호출 자체가 reject 될 수 있다(네트워크 끊김 · 타임아웃 등). 그대로
+      //    두면 React 가 startTransition 안의 rejection 을 상위 error boundary 로 올려
+      //    Sheet 가 통째로 교체될 수 있다. 여기서 받아 **retryable 에러**로 사용자에게 보여준다
+      //    (CodeRabbit).
+      let result;
       try {
-        const updated = await changeTaskStatusAction({
+        result = await changeTaskStatusAction({
           roomId,
           taskId: local.taskId,
           status: next,
           version: local.version,
         });
-        setLocal(updated);
       } catch (e) {
+        if (genRef.current !== requestGen) return;
+        console.error("TaskDetailSheet changeTaskStatusAction rejected:", e);
         setError(
-          e instanceof Error
-            ? e.message
-            : "상태 변경에 실패했습니다. 잠시 뒤 다시 시도해 주세요.",
+          "요청을 보내지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
         );
+        return;
+      }
+      if (genRef.current !== requestGen) return;
+
+      switch (result.kind) {
+        case "ok":
+          setLocal(result.task);
+          return;
+        case "conflict":
+        case "ok_detail_stale":
+        case "error":
+          setError(result.message);
+          return;
       }
     });
   };

@@ -5,6 +5,8 @@ import { isMock } from "@/mocks/config";
 import { tasks } from "@/mocks/db";
 import type { TaskDetail, TaskSummary } from "@/types/db";
 
+import { computeDDay, computeOverdue } from "./lib/d-day";
+
 function stripRoomAndSprint(
   t: TaskDetail & { roomId: number; sprintId: number | null },
 ): TaskDetail {
@@ -12,6 +14,18 @@ function stripRoomAndSprint(
   void _room;
   void _sprint;
   return detail;
+}
+
+/**
+ * **읽을 때마다 `dDay`·`overdue` 를 재계산** 한다. 목 저장소는 모듈 초기화 1번만
+ * 실행되므로 그때 계산한 값은 시간이 흐르면 stale 해진다 (CodeRabbit). 서버가 실제로
+ * 내려주는 BE 응답은 요청 시점에 계산되는 값이므로, 목 쪽도 reader 에서 재계산해
+ * 동일한 동작을 흉내 낸다.
+ */
+function withFreshDDay<T extends TaskSummary>(t: T): T {
+  const dDay = computeDDay(t.dueDate);
+  const overdue = computeOverdue(t.dueDate, t.status);
+  return { ...t, dDay, overdue };
 }
 
 function toSummary(t: TaskDetail): TaskSummary {
@@ -43,9 +57,10 @@ export async function listTasksInRoom(roomId: number): Promise<TaskSummary[]> {
   if (isMock) {
     return tasks
       .filter((t) => t.roomId === roomId)
-      .map((t) => toSummary(stripRoomAndSprint(t)));
+      .map((t) => withFreshDDay(toSummary(stripRoomAndSprint(t))));
   }
-  return api<TaskSummary[]>(`/api/v1/rooms/${roomId}/tasks`);
+  const list = await api<TaskSummary[]>(`/api/v1/rooms/${roomId}/tasks`);
+  return list.map(withFreshDDay);
 }
 
 /** 업무 상세 조회 — 명세 `GET /api/v1/rooms/{roomId}/tasks/{taskId}`. */
@@ -55,7 +70,10 @@ export async function getTaskDetail(
 ): Promise<TaskDetail | null> {
   if (isMock) {
     const t = tasks.find((x) => x.roomId === roomId && x.taskId === taskId);
-    return t ? stripRoomAndSprint(t) : null;
+    return t ? withFreshDDay(stripRoomAndSprint(t)) : null;
   }
-  return api<TaskDetail>(`/api/v1/rooms/${roomId}/tasks/${taskId}`);
+  const detail = await api<TaskDetail>(
+    `/api/v1/rooms/${roomId}/tasks/${taskId}`,
+  );
+  return withFreshDDay(detail);
 }

@@ -31,13 +31,18 @@ export async function listMyNotifications(
     const sorted = [...base].sort((a, b) =>
       b.createdAt.localeCompare(a.createdAt),
     );
+    const effectiveSize = Math.max(1, size);
+    const totalElements = sorted.length;
+    const totalPages = Math.max(1, Math.ceil(totalElements / effectiveSize));
+    const start = page * effectiveSize;
+    const content = sorted.slice(start, start + effectiveSize);
     return {
-      content: sorted,
-      page: 0,
-      size: sorted.length,
-      totalElements: sorted.length,
-      totalPages: 1,
-      hasNext: false,
+      content,
+      page,
+      size: effectiveSize,
+      totalElements,
+      totalPages,
+      hasNext: page + 1 < totalPages,
     };
   }
 

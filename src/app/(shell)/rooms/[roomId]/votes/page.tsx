@@ -7,6 +7,7 @@ import type { VoteDetail } from "@/types/db";
 
 interface Props {
   params: Promise<{ roomId: string }>;
+  searchParams: Promise<{ open?: string | string[] }>;
 }
 
 /**
@@ -16,10 +17,19 @@ interface Props {
  *    Sheet 열 때마다 왕복하지 않아도 되고, 목에서는 서버 왕복 자체가 없다. 실서버로 전환
  *    했을 때 비용이 커지면 `getVoteDetailAction` 으로 lazy 전환하면 된다.
  */
-export default async function RoomVotesPage({ params }: Props) {
+export default async function RoomVotesPage({ params, searchParams }: Props) {
   const { roomId: roomIdParam } = await params;
+  const { open: openRaw } = await searchParams;
   const roomId = Number(roomIdParam);
   if (!Number.isFinite(roomId)) notFound();
+
+  // 알림 등에서 `?open={voteId}` 로 들어오면 그 투표의 Sheet 를 바로 연다.
+  // 배열로 들어오면 첫 값, 숫자 아니면 null.
+  const openParam = Array.isArray(openRaw) ? openRaw[0] : openRaw;
+  const openVoteId =
+    openParam && Number.isFinite(Number(openParam))
+      ? Number(openParam)
+      : null;
 
   // listMyRooms 는 사이드바·헤더 작업에서 이미 공용으로 쓰이는 조회 — 방 이름만 뽑아 쓴다.
   const rooms = await listMyRooms();
@@ -27,17 +37,26 @@ export default async function RoomVotesPage({ params }: Props) {
   if (!room) notFound();
 
   const page = await listVotesInRoom(roomId);
-  const detailEntries = await Promise.all(
-    page.content.map(async (s) => {
-      const d = await getVoteDetail(roomId, s.voteId);
-      return d ? ([s.voteId, d] as const) : null;
-    }),
+
+  // ⚠️ 상세 요청 하나가 실패해도 **나머지 투표는 그대로 노출**되어야 한다. `Promise.all`
+  //    로 묶으면 1건 실패에 전체 페이지가 500 으로 떨어져 사용자가 모든 투표를 못 본다
+  //    (CodeRabbit). 개별 settle 후 성공한 것만 details map 에 넣는다.
+  const detailResults = await Promise.allSettled(
+    page.content.map((s) => getVoteDetail(roomId, s.voteId)),
   );
-  const details: Record<number, VoteDetail> = Object.fromEntries(
-    detailEntries.filter(
-      (entry): entry is readonly [number, VoteDetail] => entry !== null,
-    ),
-  );
+  const details: Record<number, VoteDetail> = {};
+  detailResults.forEach((res, i) => {
+    const summary = page.content[i];
+    if (!summary) return;
+    if (res.status === "fulfilled" && res.value) {
+      details[summary.voteId] = res.value;
+    } else if (res.status === "rejected") {
+      console.error(
+        `RoomVotesPage detail fetch failed for voteId=${summary.voteId}:`,
+        res.reason,
+      );
+    }
+  });
 
   return (
     <VotesPageClient
@@ -45,6 +64,7 @@ export default async function RoomVotesPage({ params }: Props) {
       roomName={room.name}
       summaries={page.content}
       details={details}
+      initialOpenVoteId={openVoteId}
     />
   );
 }

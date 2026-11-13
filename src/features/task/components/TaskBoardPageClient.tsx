@@ -2,7 +2,7 @@
 
 import { ArrowLeft, Calendar, Plus, Search, User } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -23,6 +23,16 @@ interface Props {
   roomName: string;
   summaries: readonly TaskSummary[];
   details: Readonly<Record<number, TaskDetail>>;
+  /**
+   * URL `?open={taskId}` 로 들어왔을 때 자동으로 열 업무 — 알림 클릭 등 외부 진입 경로.
+   * 같은 라우트에서 쿼리만 바뀌어도 다시 반영된다.
+   */
+  initialOpenTaskId?: number | null;
+  /**
+   * 상세 fetch 가 실패해 details 에 포함되지 못한 taskId 목록. 카드에 "불러오기 실패"
+   * 뱃지를 노출하고, 사용자가 **페이지 새로고침으로 재조회** 할 수 있음을 안내한다.
+   */
+  unavailableTaskIds?: readonly number[];
 }
 
 /**
@@ -39,12 +49,23 @@ export function TaskBoardPageClient({
   roomName,
   summaries,
   details,
+  initialOpenTaskId = null,
+  unavailableTaskIds = [],
 }: Props) {
   const [query, setQuery] = useState("");
   const [onlyMine, setOnlyMine] = useState(false);
-  const [openTaskId, setOpenTaskId] = useState<number | null>(null);
+  const [openTaskId, setOpenTaskId] = useState<number | null>(initialOpenTaskId);
+  const unavailableSet = useMemo(
+    () => new Set(unavailableTaskIds),
+    [unavailableTaskIds],
+  );
   const detail: TaskDetail | null =
     openTaskId !== null ? (details[openTaskId] ?? null) : null;
+
+  // URL `?open=` 값이 바뀌면 Sheet 를 다시 연다 (알림 두 번째 클릭 등).
+  useEffect(() => {
+    if (initialOpenTaskId !== null) setOpenTaskId(initialOpenTaskId);
+  }, [initialOpenTaskId]);
 
   const visible = useMemo(() => {
     let list = summaries;
@@ -153,6 +174,7 @@ export function TaskBoardPageClient({
                     <li key={t.taskId}>
                       <TaskCard
                         summary={t}
+                        unavailable={unavailableSet.has(t.taskId)}
                         onClick={() => setOpenTaskId(t.taskId)}
                       />
                     </li>
@@ -178,18 +200,32 @@ export function TaskBoardPageClient({
 
 function TaskCard({
   summary,
+  unavailable = false,
   onClick,
 }: {
   summary: TaskSummary;
+  unavailable?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="border-border bg-surface hover:border-brand flex w-full flex-col gap-2 rounded-[var(--radius-control)] border px-3 py-3 text-left transition-colors"
+      disabled={unavailable}
+      title={unavailable ? "상세를 불러오지 못했어요 — 페이지를 새로고침 해 주세요" : undefined}
+      className={cn(
+        "border-border bg-surface flex w-full flex-col gap-2 rounded-[var(--radius-control)] border px-3 py-3 text-left transition-colors",
+        unavailable
+          ? "cursor-not-allowed opacity-60"
+          : "hover:border-brand",
+      )}
     >
       <div className="flex items-center gap-1.5">
+        {unavailable && (
+          <span className="bg-muted text-muted-foreground inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium">
+            불러오기 실패
+          </span>
+        )}
         <span
           className={cn(
             "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium",

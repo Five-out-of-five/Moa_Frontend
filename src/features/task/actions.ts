@@ -3,46 +3,92 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { isMock } from "@/mocks/config";
 import { tasks } from "@/mocks/db";
 import type { TaskDetail, TaskStatus } from "@/types/db";
+
+import { computeDDay, computeOverdue } from "./lib/d-day";
 
 const changeStatusSchema = z.object({
   roomId: z.number().int().positive(),
   taskId: z.number().int().positive(),
   status: z.enum(["TODO", "IN_PROGRESS", "REVIEW", "DONE"]),
-  /** 칸 안 위치 — 명세. 이번 범위는 간단히 끝(맨 위) 으로 떨어뜨린다 (toIndex=0). */
+  /** 칸 안 위치. 기본 0 (맨 위) */
   toIndex: z.number().int().nonnegative().optional(),
   version: z.number().int().nonnegative(),
 });
 
 /**
- * 업무 상태 변경 (칸반 이동) — 명세 `PATCH /api/v1/rooms/{roomId}/tasks/{taskId}/status`.
+ * 상태 변경 Server Action 응답 — **에러를 throw 하지 않고 kind 로 구분해서 리턴**한다.
  *
- * ⚠️ 명세 응답은 **"바뀐 칸들의 업무 목록"** (`TaskSummaryResponse[]`) 이다. 이 PR 에선
- *    상세에서만 상태를 바꾸므로 여기서는 돌려받은 상세로 로컬 state 를 덮는 것만 호출부가
- *    쓰고 (useOptimistic 과 혼합 가능), 목 쪽은 해당 Task 를 직접 수정한다.
- * ⚠️ `version` 이 불일치하면 서버가 409 를 던진다 — 호출부는 UI 에 "다른 사용자가 먼저
- *    업데이트했어요" 안내로 떨어뜨리는 게 명세 가이드.
+ * ⚠️ production React 는 Server Action 이 throw 한 메시지를 generic error text 로
+ *    덮는다. "다른 사용자가 먼저 바꿨어요" 같은 안내가 그대로 UI 에 도달하려면 **데이터로**
+ *    돌려주고 호출부가 kind 로 분기하는 형태가 안전 (CodeRabbit).
+ *
+ * - `ok` : 정상 적용, `task` 로 최신 상세
+ * - `conflict` : version 불일치 (409). UI 는 "새로고침 후 다시 시도" 안내로 떨어뜨림
+ * - `ok_detail_stale` : PATCH 는 성공했지만 직후 상세 refetch 가 실패. 변경은 서버에
+ *   들어갔으므로 UI 는 재조회로 복구해야 하며 **재시도 하면 안 됨**
+ * - `error` : 그 외 실패
  */
+export type ChangeTaskStatusResult =
+  | { kind: "ok"; task: TaskDetail }
+  | { kind: "conflict"; message: string }
+  | { kind: "ok_detail_stale"; message: string }
+  | { kind: "error"; message: string };
+
+const CONFLICT_MSG =
+  "다른 사용자가 먼저 업데이트했어요. 새로고침 후 다시 시도해 주세요.";
+const DETAIL_STALE_MSG =
+  "상태는 바뀌었지만 최신 정보를 불러오지 못했어요. 잠시 뒤 새로고침해 주세요.";
+
 export async function changeTaskStatusAction(
   input: unknown,
-): Promise<TaskDetail> {
-  const { roomId, taskId, status, toIndex, version } =
-    changeStatusSchema.parse(input);
+): Promise<ChangeTaskStatusResult> {
+  let parsed: z.infer<typeof changeStatusSchema>;
+  try {
+    parsed = changeStatusSchema.parse(input);
+  } catch {
+    return { kind: "error", message: "요청 형식이 올바르지 않습니다." };
+  }
+  const { roomId, taskId, status, toIndex, version } = parsed;
+  const insertAt = toIndex ?? 0;
 
   if (isMock) {
     const t = tasks.find((x) => x.roomId === roomId && x.taskId === taskId);
-    if (!t) throw new Error("업무를 찾을 수 없습니다.");
-    if (t.version !== version) {
-      throw new Error("다른 사용자가 먼저 업데이트했어요. 새로고침 후 다시 시도해 주세요.");
+    if (!t) {
+      return { kind: "error", message: "업무를 찾을 수 없습니다." };
     }
+    if (t.version !== version) {
+      return { kind: "conflict", message: CONFLICT_MSG };
+    }
+
+    // ⚠️ 대상 컬럼을 **sortOrder 오름차순으로 정렬한 뒤 array 위치 기준으로 reindex** 한다.
+    //    기존 sortOrder 가 0, 4, 8 처럼 sparse 하면 단순히 ">= insertAt" 으로 +1 하는 로직은
+    //    요청 "toIndex=2" 를 올바른 위치에 꽂지 못한다 (CodeRabbit). 순서를 정하고 0..N 로
+    //    재번호하면 array index 와 sortOrder 가 일치해 정렬이 안정됨.
     const previousStatus: TaskStatus = t.status;
+    const siblings = tasks
+      .filter(
+        (x) =>
+          x.roomId === roomId && x.status === status && x.taskId !== taskId,
+      )
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const clampedIndex = Math.min(insertAt, siblings.length);
+    const reordered = [
+      ...siblings.slice(0, clampedIndex),
+      t,
+      ...siblings.slice(clampedIndex),
+    ];
+    reordered.forEach((task, i) => {
+      task.sortOrder = i;
+    });
+
     t.status = status;
     t.completedAt = status === "DONE" ? new Date().toISOString() : null;
-    t.overdue = t.dDay !== null && t.dDay < 0 && status !== "DONE";
-    t.sortOrder = toIndex ?? 0;
+    t.dDay = computeDDay(t.dueDate);
+    t.overdue = computeOverdue(t.dueDate, status);
     t.version += 1;
     t.history = [
       ...t.history,
@@ -60,20 +106,42 @@ export async function changeTaskStatusAction(
     const { roomId: _r, sprintId: _s, ...detail } = t;
     void _r;
     void _s;
-    return detail;
+    return { kind: "ok", task: detail };
   }
 
-  await api<unknown>(
-    `/api/v1/rooms/${roomId}/tasks/${taskId}/status`,
-    {
+  try {
+    await api<unknown>(`/api/v1/rooms/${roomId}/tasks/${taskId}/status`, {
       method: "PATCH",
-      json: { status, toIndex: toIndex ?? 0, version },
-    },
-  );
-  // 명세상 status 변경 응답은 Summary[] 지만, UI 는 직후 상세를 다시 받아 history 를 보여준다.
-  const detail = await api<TaskDetail>(
-    `/api/v1/rooms/${roomId}/tasks/${taskId}`,
-  );
+      json: { status, toIndex: insertAt, version },
+    });
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409) {
+      return { kind: "conflict", message: CONFLICT_MSG };
+    }
+    return {
+      kind: "error",
+      message: e instanceof Error ? e.message : "상태 변경에 실패했습니다.",
+    };
+  }
+
+  // ⚠️ PATCH 는 성공한 상태. 이 다음 GET 실패까지 error 로 묶으면 UI 가 재시도를
+  //    권유해 409 로 이어진다. 분리된 kind 로 알린다 (CodeRabbit).
   revalidatePath(`/rooms/${roomId}/boards/task`, "page");
-  return detail;
+  try {
+    const detail = await api<TaskDetail>(
+      `/api/v1/rooms/${roomId}/tasks/${taskId}`,
+    );
+    // API 응답의 dDay·overdue 는 서버 타임존 영향을 받을 수 있어 server.ts 와 같은 규칙으로
+    // 재계산해 UI 전역의 D-day 와 일관성을 맞춘다 (CodeRabbit).
+    return {
+      kind: "ok",
+      task: {
+        ...detail,
+        dDay: computeDDay(detail.dueDate),
+        overdue: computeOverdue(detail.dueDate, detail.status),
+      },
+    };
+  } catch {
+    return { kind: "ok_detail_stale", message: DETAIL_STALE_MSG };
+  }
 }

@@ -1,8 +1,7 @@
 "use client";
 
 import { ArrowLeft, Calendar, Plus, Search, Users } from "lucide-react";
-import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -22,6 +21,11 @@ interface Props {
    * 쓰면 된다.
    */
   details: Readonly<Record<number, VoteDetail>>;
+  /**
+   * URL `?open={voteId}` 로 들어왔을 때 자동으로 열 투표 — 알림 클릭 등 외부 진입 경로.
+   * 페이지가 mount 된 뒤 바뀌어도(동일 라우트에서 쿼리만 변경) 다시 반영된다.
+   */
+  initialOpenVoteId?: number | null;
 }
 
 type TabKey = "OPEN" | "CLOSED";
@@ -38,12 +42,18 @@ export function VotesPageClient({
   roomName,
   summaries,
   details,
+  initialOpenVoteId = null,
 }: Props) {
   const [tab, setTab] = useState<TabKey>("OPEN");
   const [query, setQuery] = useState("");
-  const [openVoteId, setOpenVoteId] = useState<number | null>(null);
+  const [openVoteId, setOpenVoteId] = useState<number | null>(initialOpenVoteId);
   const detail: VoteDetail | null =
     openVoteId !== null ? (details[openVoteId] ?? null) : null;
+
+  // URL `?open=` 값이 바뀌면 Sheet 를 다시 연다 (같은 페이지 머무르면서 다른 알림 클릭 등).
+  useEffect(() => {
+    if (initialOpenVoteId !== null) setOpenVoteId(initialOpenVoteId);
+  }, [initialOpenVoteId]);
 
   const counts = useMemo(() => {
     const open = summaries.filter((v) => v.status === "OPEN").length;
@@ -75,11 +85,16 @@ export function VotesPageClient({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button type="button" variant="ghost" asChild>
-            <Link href={`/rooms/${roomId}`} className="flex items-center gap-1">
-              <ArrowLeft className="size-4" />
-              대시보드로 돌아가기
-            </Link>
+          {/* ⚠️ /rooms/{roomId} 대시보드 라우트가 아직 없어 링크로 두면 404 로 떨어진다.
+              대시보드 뼈대 PR 전까지 자리만 유지한 비활성 버튼으로 둔다. */}
+          <Button
+            type="button"
+            variant="ghost"
+            disabled
+            title="방 대시보드 화면이 준비되면 이동 링크가 열립니다"
+          >
+            <ArrowLeft className="size-4" />
+            대시보드로 돌아가기
           </Button>
           <Button type="button" disabled title="새 투표 만들기는 다음 작업에서 열립니다">
             <Plus className="size-4" />새 투표

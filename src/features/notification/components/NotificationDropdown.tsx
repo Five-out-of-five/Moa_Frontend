@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import type { Notification, NotificationGroup } from "@/types/db";
 
 import {
+  loadMoreUnreadNotificationsAction,
   markAllNotificationsAsReadAction,
   markNotificationAsReadAction,
 } from "../actions";
@@ -29,8 +30,14 @@ import { formatRelativeTime } from "../lib/relative-time";
 import { targetUrlOfNotification } from "../lib/target-url";
 
 interface Props {
-  initialNotifications: readonly Notification[];
+  /** 전체 최근 N개 — "전체" 탭에서 그대로 쓴다 */
+  initialRecent: readonly Notification[];
+  /** 읽지 않음 전용 응답 — "읽지 않음" 탭에서 쓴다 (`recent` 와 분리해, size 초과 미읽음이 숨지 않도록) */
+  initialUnread: readonly Notification[];
+  /** 전역 미읽음 카운트 — 뱃지에 사용. `initialUnread.length` 와 다를 수 있다 */
   initialUnreadCount: number;
+  /** 서버가 전달한 "읽지 않음" 첫 페이지의 hasNext — true 면 "더 불러오기" 버튼 노출 */
+  initialUnreadHasNext: boolean;
 }
 
 type TabKey = "all" | "unread";
@@ -50,25 +57,44 @@ type TabKey = "all" | "unread";
  * ⚠️ 알림을 **누르면** 읽음 처리하고 targetType+targetId 로 이동한다.
  */
 export function NotificationDropdown({
-  initialNotifications,
+  initialRecent,
+  initialUnread,
   initialUnreadCount,
+  initialUnreadHasNext,
 }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState(initialNotifications);
-  const [unread, setUnread] = useState(initialUnreadCount);
+  const [recent, setRecent] = useState(initialRecent);
+  const [unreadList, setUnreadList] = useState(initialUnread);
+  const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
+  const [unreadHasNext, setUnreadHasNext] = useState(initialUnreadHasNext);
+  const [unreadNextPage, setUnreadNextPage] = useState(1);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabKey>("all");
+  const [pendingLoadMore, startLoadMoreTransition] = useTransition();
   const [, startTransition] = useTransition();
 
   useEffect(() => {
     if (open) return;
-    setItems(initialNotifications);
-    setUnread(initialUnreadCount);
-  }, [initialNotifications, initialUnreadCount, open]);
+    setRecent(initialRecent);
+    setUnreadList(initialUnread);
+    setUnreadCount(initialUnreadCount);
+    setUnreadHasNext(initialUnreadHasNext);
+    setUnreadNextPage(1);
+    setLoadMoreError(null);
+  }, [
+    initialRecent,
+    initialUnread,
+    initialUnreadCount,
+    initialUnreadHasNext,
+    open,
+  ]);
 
+  // "전체" 탭은 최근 50 만, "읽지 않음" 탭은 서버가 돌려준 unread 전체를 쓴다.
+  // 이렇게 두 소스를 분리하면 size 를 초과한 미읽음이 "읽지 않음" 탭에서 숨지 않는다.
   const visible = useMemo(
-    () => (tab === "unread" ? items.filter((n) => !n.read) : items),
-    [items, tab],
+    () => (tab === "unread" ? unreadList : recent),
+    [recent, unreadList, tab],
   );
 
   const grouped = useMemo(() => {
@@ -85,18 +111,21 @@ export function NotificationDropdown({
   }, [visible]);
 
   const markOneRead = (id: number) => {
-    const prevItems = items;
-    const prevUnread = unread;
-    setItems(
-      prevItems.map((n) =>
+    const prevRecent = recent;
+    const prevUnreadList = unreadList;
+    const prevUnreadCount = unreadCount;
+    setRecent(
+      prevRecent.map((n) =>
         n.notificationId === id && !n.read ? { ...n, read: true } : n,
       ),
     );
-    setUnread(Math.max(0, prevUnread - 1));
+    setUnreadList(prevUnreadList.filter((n) => n.notificationId !== id));
+    setUnreadCount(Math.max(0, prevUnreadCount - 1));
     startTransition(() => {
       markNotificationAsReadAction({ notificationId: id }).catch(() => {
-        setItems(prevItems);
-        setUnread(prevUnread);
+        setRecent(prevRecent);
+        setUnreadList(prevUnreadList);
+        setUnreadCount(prevUnreadCount);
       });
     });
   };
@@ -107,15 +136,41 @@ export function NotificationDropdown({
     router.push(targetUrlOfNotification(n));
   };
 
+  const handleLoadMoreUnread = () => {
+    if (pendingLoadMore || !unreadHasNext) return;
+    setLoadMoreError(null);
+    const requestedPage = unreadNextPage;
+    startLoadMoreTransition(async () => {
+      try {
+        const { items, hasNext } = await loadMoreUnreadNotificationsAction({
+          page: requestedPage,
+        });
+        // 이미 있는 id 를 제외하고 append — 사용자가 중간에 읽음 처리한 알림이 겹치지 않도록.
+        setUnreadList((prev) => {
+          const existing = new Set(prev.map((n) => n.notificationId));
+          const next = items.filter((n) => !existing.has(n.notificationId));
+          return [...prev, ...next];
+        });
+        setUnreadHasNext(hasNext);
+        setUnreadNextPage(requestedPage + 1);
+      } catch {
+        setLoadMoreError("이전 알림을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.");
+      }
+    });
+  };
+
   const handleMarkAllRead = () => {
-    const prevItems = items;
-    const prevUnread = unread;
-    setItems(prevItems.map((n) => (n.read ? n : { ...n, read: true })));
-    setUnread(0);
+    const prevRecent = recent;
+    const prevUnreadList = unreadList;
+    const prevUnreadCount = unreadCount;
+    setRecent(prevRecent.map((n) => (n.read ? n : { ...n, read: true })));
+    setUnreadList([]);
+    setUnreadCount(0);
     startTransition(() => {
       markAllNotificationsAsReadAction().catch(() => {
-        setItems(prevItems);
-        setUnread(prevUnread);
+        setRecent(prevRecent);
+        setUnreadList(prevUnreadList);
+        setUnreadCount(prevUnreadCount);
       });
     });
   };
@@ -127,16 +182,18 @@ export function NotificationDropdown({
           type="button"
           variant="ghost"
           size="icon"
-          aria-label={unread > 0 ? `알림 (미읽음 ${unread}개)` : "알림"}
+          aria-label={
+            unreadCount > 0 ? `알림 (미읽음 ${unreadCount}개)` : "알림"
+          }
           className="relative"
         >
           <Bell className="size-5" />
-          {unread > 0 && (
+          {unreadCount > 0 && (
             <span
               aria-hidden="true"
               className="bg-danger absolute top-1 right-1 flex min-h-[1.1rem] min-w-[1.1rem] items-center justify-center rounded-full px-1 text-[10px] font-bold text-white"
             >
-              {unread > 99 ? "99+" : unread}
+              {unreadCount > 99 ? "99+" : unreadCount}
             </span>
           )}
         </Button>
@@ -171,13 +228,13 @@ export function NotificationDropdown({
               active={tab === "unread"}
               onClick={() => setTab("unread")}
               label="읽지 않음"
-              badge={unread}
+              badge={unreadCount}
             />
           </div>
           <button
             type="button"
             onClick={handleMarkAllRead}
-            disabled={unread === 0}
+            disabled={unreadCount === 0}
             className="text-accent-teal hover:text-brand disabled:text-muted-foreground inline-flex items-center gap-1 text-xs font-medium disabled:cursor-not-allowed"
           >
             <CheckCheck className="size-3.5" />
@@ -189,22 +246,42 @@ export function NotificationDropdown({
           {visible.length === 0 ? (
             <EmptyState tab={tab} />
           ) : (
-            grouped.map(({ group, items: groupItems }) => (
-              <section key={group}>
-                <h3 className="text-muted-foreground px-5 pt-4 pb-1.5 text-xs font-medium">
-                  {NOTIFICATION_GROUP_LABEL[group]}
-                </h3>
-                <ul>
-                  {groupItems.map((n) => (
-                    <NotificationItem
-                      key={n.notificationId}
-                      notification={n}
-                      onClick={() => handleItemClick(n)}
-                    />
-                  ))}
-                </ul>
-              </section>
-            ))
+            <>
+              {grouped.map(({ group, items: groupItems }) => (
+                <section key={group}>
+                  <h3 className="text-muted-foreground px-5 pt-4 pb-1.5 text-xs font-medium">
+                    {NOTIFICATION_GROUP_LABEL[group]}
+                  </h3>
+                  <ul>
+                    {groupItems.map((n) => (
+                      <NotificationItem
+                        key={n.notificationId}
+                        notification={n}
+                        onClick={() => handleItemClick(n)}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              ))}
+              {tab === "unread" && unreadHasNext && (
+                <div className="border-border-soft flex flex-col items-center gap-1 border-t px-5 py-3">
+                  <button
+                    type="button"
+                    onClick={handleLoadMoreUnread}
+                    disabled={pendingLoadMore}
+                    aria-busy={pendingLoadMore}
+                    className="text-brand hover:text-brand-dark disabled:text-muted-foreground text-xs font-medium disabled:cursor-not-allowed"
+                  >
+                    {pendingLoadMore ? "불러오는 중…" : "이전 알림 더 보기"}
+                  </button>
+                  {loadMoreError && (
+                    <p className="text-destructive text-[11px]">
+                      {loadMoreError}
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       </SheetContent>
