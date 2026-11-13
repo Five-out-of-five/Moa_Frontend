@@ -162,68 +162,115 @@ export function VoteDetailSheet({ roomId, vote, open, onOpenChange }: Props) {
                 </p>
               )}
 
-              <ul className="flex flex-col gap-2">
-                {local.options.map((opt) => {
-                  const picked = selected.includes(opt.optionId);
-                  const alreadyVoted = local.myOptionIds.includes(opt.optionId);
-                  const share =
-                    isClosed && totalCount > 0
-                      ? Math.round(((opt.voteCount ?? 0) / totalCount) * 100)
-                      : 0;
-                  return (
-                    <li key={opt.optionId}>
-                      <button
-                        type="button"
-                        onClick={() => toggleOption(opt.optionId)}
-                        disabled={isClosed}
+              {/* ⚠️ 입력은 **native `<input type="radio"|"checkbox">` + `<label>`** 로 구성한다.
+                  스크린리더가 선택 상태·그룹·단축키(화살표·Space) 를 자동 해석하고,
+                  브라우저 기본 키보드 포커스 룰이 그대로 작동한다 (CodeRabbit).
+                  input 자체는 sr-only 로 숨기고 label 스타일로 Figma 디자인을 유지한다.
+                  MULTIPLE 은 체크박스, SINGLE / YES_NO 는 같은 name 의 라디오 그룹.
+                  마감된 투표는 input 없이 결과 표시 전용 div 로 렌더. */}
+              {isClosed ? (
+                <ul className="flex flex-col gap-2">
+                  {local.options.map((opt) => {
+                    const share =
+                      totalCount > 0
+                        ? Math.round(((opt.voteCount ?? 0) / totalCount) * 100)
+                        : 0;
+                    return (
+                      <li
+                        key={opt.optionId}
                         className={cn(
-                          "border-border bg-surface flex w-full flex-col gap-1 rounded-[var(--radius-control)] border px-3 py-2 text-left transition-colors",
-                          !isClosed && "hover:border-brand hover:bg-background",
-                          picked &&
-                            !isClosed &&
-                            "border-brand bg-background ring-brand/20 ring-2",
-                          isClosed && "cursor-default",
+                          "border-border bg-surface flex flex-col gap-1 rounded-[var(--radius-control)] border px-3 py-2",
                         )}
                       >
                         <div className="flex items-center gap-2">
                           <OptionIndicator
-                            picked={picked}
+                            picked={false}
                             multiple={isMultiple}
-                            closed={isClosed}
+                            closed
                             top={opt.top}
                           />
                           <span
                             className={cn(
                               "text-foreground flex-1 text-sm",
-                              picked && !isClosed && "font-medium",
-                              opt.top && isClosed && "font-semibold",
+                              opt.top && "font-semibold",
                             )}
                           >
                             {opt.content}
                           </span>
-                          {isClosed && (
-                            <span className="text-muted-foreground text-xs font-medium">
-                              {opt.voteCount ?? 0}표 · {share}%
-                            </span>
-                          )}
-                          {!isClosed && alreadyVoted && (
-                            <CheckCircle2 className="text-accent-teal size-4" />
-                          )}
+                          <span className="text-muted-foreground text-xs font-medium">
+                            {opt.voteCount ?? 0}표 · {share}%
+                          </span>
                         </div>
-                        {isClosed && (
-                          <Progress
-                            value={share}
-                            className={cn(
-                              "h-1.5",
-                              opt.top && "[&>[data-slot=progress-indicator]]:bg-brand",
-                            )}
+                        <Progress
+                          value={share}
+                          className={cn(
+                            "h-1.5",
+                            opt.top &&
+                              "[&>[data-slot=progress-indicator]]:bg-brand",
+                          )}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <ul
+                  role={isMultiple ? "group" : "radiogroup"}
+                  aria-label={local.title}
+                  className="flex flex-col gap-2"
+                >
+                  {local.options.map((opt) => {
+                    const picked = selected.includes(opt.optionId);
+                    const alreadyVoted = local.myOptionIds.includes(
+                      opt.optionId,
+                    );
+                    const inputId = `vote-${local.voteId}-opt-${opt.optionId}`;
+                    return (
+                      <li key={opt.optionId}>
+                        <label
+                          htmlFor={inputId}
+                          className={cn(
+                            "border-border bg-surface flex cursor-pointer items-center gap-2 rounded-[var(--radius-control)] border px-3 py-2 transition-colors",
+                            "hover:border-brand hover:bg-background",
+                            picked &&
+                              "border-brand bg-background ring-brand/20 ring-2",
+                            "has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-offset-0",
+                          )}
+                        >
+                          <input
+                            id={inputId}
+                            type={isMultiple ? "checkbox" : "radio"}
+                            name={`vote-${local.voteId}`}
+                            value={opt.optionId}
+                            checked={picked}
+                            onChange={() => toggleOption(opt.optionId)}
+                            className="sr-only"
                           />
-                        )}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+                          <OptionIndicator
+                            picked={picked}
+                            multiple={isMultiple}
+                            closed={false}
+                          />
+                          <span
+                            className={cn(
+                              "text-foreground flex-1 text-sm",
+                              picked && "font-medium",
+                            )}
+                          >
+                            {opt.content}
+                          </span>
+                          {alreadyVoted && (
+                            <CheckCircle2
+                              aria-hidden="true"
+                              className="text-accent-teal size-4"
+                            />
+                          )}
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
 
               {!isClosed && (
                 <p className="text-muted-foreground mt-3 text-xs">
