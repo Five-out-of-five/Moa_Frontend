@@ -5,10 +5,32 @@ import { z } from "zod";
 
 import { api } from "@/lib/api";
 import { isMock } from "@/mocks/config";
-import { deleteNotificationFromMock, notifications } from "@/mocks/db";
+import { deleteNotificationFromMock, notificationPreferences, notifications } from "@/mocks/db";
 import type { Notification } from "@/types/db";
 
+import { getMyAccount } from "../account/server";
+import type { SettingsResult } from "../account/settings-types";
+import { NOTIFICATION_GROUP_ORDER } from "./lib/category-for-kind";
 import { listMyNotifications } from "./server";
+
+export async function updateGlobalNotificationPreferencesAction(
+  _previous: SettingsResult,
+  formData: FormData,
+): Promise<SettingsResult> {
+  if (!isMock) {
+    return { success: false, message: "현재 환경에서는 알림 설정을 저장할 수 없습니다." };
+  }
+
+  const { id } = await getMyAccount();
+  notificationPreferences.set(
+    id,
+    Object.fromEntries(
+      NOTIFICATION_GROUP_ORDER.map((group) => [group, group === "SYSTEM" || formData.get(group) === "on"]),
+    ),
+  );
+  revalidatePath("/account/settings");
+  return { success: true, message: "알림 설정을 저장했습니다." };
+}
 
 const notificationIdSchema = z.object({
   notificationId: z.number().int().positive(),

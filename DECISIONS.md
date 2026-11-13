@@ -20,3 +20,8 @@
 - 도메인별 `actions.ts` 전수 작성 (`mood/actions.ts` 만 샘플로 깔림)
 - `src/components/common/Sidebar` · `Header` 구현
 - `src/lib/error-tag.ts` · `src/lib/loki.ts` (관측) 이식
+
+## 2026-11-13 · 계정 및 전역 알림 설정
+
+- 기존 헤더 메뉴 경로인 `/account`와 `/account/settings`를 각각 계정 및 프로필, 전역 알림 설정에 사용한다.
+- ⚠️ 전역 알림의 목 기본값은 전체 수신이다. 개발 Swagger에서 BE 초기값과 저장 API 계약을 확인하면 맞춘다.
