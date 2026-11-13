@@ -29,7 +29,6 @@ export default async function SignupPage({ params }: { params: Promise<{ ticket:
   return (
     <section aria-labelledby="signup-title" className="grid gap-3">
       <header className="mb-4 text-center">
-        <p className="text-primary text-xs font-semibold">처음 방문하셨군요</p>
         <h1 id="signup-title" className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
           {`${provider} 계정으로 로그인했어요`}
         </h1>
