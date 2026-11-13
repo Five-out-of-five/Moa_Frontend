@@ -5,14 +5,207 @@ import { z } from "zod";
 
 import { api, ApiError } from "@/lib/api";
 import { isMock } from "@/mocks/config";
-import { votes } from "@/mocks/db";
-import type { VoteDetail } from "@/types/db";
+import { accounts, roomMembers, votes } from "@/mocks/db";
+import type { MemberRef, VoteDetail, VoteType } from "@/types/db";
 
 const submitBallotSchema = z.object({
   roomId: z.number().int().positive(),
   voteId: z.number().int().positive(),
   optionIds: z.array(z.number().int().positive()).min(1),
 });
+
+/**
+ * 새 투표 생성 입력 — Figma Make 의 생성 다이얼로그가 보내는 shape.
+ *
+ * ⚠️ `YES_NO` 는 "찬성/반대" 두 선택지가 **서버에서 고정**이라 클라이언트가 보낸
+ *    options 는 무시된다 (BE 명세에도 동일). `MULTIPLE` 만 `maxSelectCount` 를
+ *    씀. `SINGLE` / `YES_NO` 는 저장 전에 1 로 정규화한다.
+ * ⚠️ `deadlineAt` 은 ISO-8601 (브라우저 로컬 → `toISOString()`). 서버 시각 기준
+ *    "미래" 여야 하고, 30일 뒤까지만 허용 — 영원히 열어두는 투표는 UX 실수에
+ *    가까워 BE 가 400 을 돌려줄 때 FE 가 먼저 막는다.
+ */
+const createVoteSchema = z
+  .object({
+    roomId: z.number().int().positive(),
+    title: z
+      .string()
+      .trim()
+      .min(1, "투표 제목을 입력해 주세요.")
+      .max(120, "투표 제목은 120자 이하로 입력해 주세요."),
+    voteType: z.enum(["SINGLE", "MULTIPLE", "YES_NO"] as const satisfies readonly VoteType[]),
+    options: z
+      .array(z.string().trim().min(1).max(60))
+      .max(10, "선택지는 최대 10개까지 등록할 수 있어요."),
+    maxSelectCount: z.number().int().min(1).max(10),
+    deadlineAt: z.string().datetime({ offset: true }),
+    anonymous: z.boolean(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.voteType !== "YES_NO" && v.options.length < 2) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["options"],
+        message: "선택지는 2개 이상 입력해 주세요.",
+      });
+    }
+    if (v.voteType === "MULTIPLE" && v.maxSelectCount > v.options.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["maxSelectCount"],
+        message: "최대 선택 수는 선택지 수를 넘을 수 없어요.",
+      });
+    }
+    const dueMs = Date.parse(v.deadlineAt);
+    if (!Number.isFinite(dueMs)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["deadlineAt"],
+        message: "마감 일시가 올바르지 않습니다.",
+      });
+      return;
+    }
+    if (dueMs <= Date.now()) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["deadlineAt"],
+        message: "마감 일시는 현재 이후로 설정해 주세요.",
+      });
+    }
+    if (dueMs - Date.now() > 30 * 24 * 60 * 60 * 1000) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["deadlineAt"],
+        message: "마감 일시는 30일 이내로 설정해 주세요.",
+      });
+    }
+  });
+
+/**
+ * 투표 생성 결과 — 참여 액션과 같이 **throw 하지 않고 kind 로 구분해서 리턴**한다.
+ * - `ok` : 생성 성공, `vote` 신규 상세 (상세 Sheet 자동 오픈용)
+ * - `error` : 검증 실패 or 서버 거절 — `message` 를 폼 하단에 그대로 띄우면 된다
+ *   (`fieldErrors` 는 zod 가 잡은 필드 단위 메시지, 있을 때만 전달)
+ */
+export type CreateVoteResult =
+  | { kind: "ok"; vote: VoteDetail }
+  | { kind: "error"; message: string; fieldErrors?: Record<string, string> };
+
+/**
+ * 새 투표 생성 — 명세 `POST /api/v1/rooms/{roomId}/votes` → `VoteDetailResponse`.
+ *
+ * 목 모드에선 `mocks/db.ts` 저장소 끝에 push 하고, 생성자는 홍근 (accounts[0]) 로 가정.
+ * `YES_NO` 는 선택지 "찬성"/"반대" 를 서버에서 자동으로 깔아 준다 (BE 명세).
+ */
+export async function createVoteAction(
+  input: unknown,
+): Promise<CreateVoteResult> {
+  const parsed = createVoteSchema.safeParse(input);
+  if (!parsed.success) {
+    const fieldErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      const path = issue.path.join(".");
+      if (path && !fieldErrors[path]) fieldErrors[path] = issue.message;
+    }
+    return {
+      kind: "error",
+      message: parsed.error.issues[0]?.message ?? "요청 형식이 올바르지 않습니다.",
+      fieldErrors,
+    };
+  }
+  const { roomId, title, voteType, options, maxSelectCount, deadlineAt, anonymous } =
+    parsed.data;
+
+  // YES_NO 는 선택지를 서버가 고정으로 깔고 maxSelectCount 도 1 로 강제.
+  const normalizedOptions =
+    voteType === "YES_NO" ? ["찬성", "반대"] : options;
+  const normalizedMax = voteType === "MULTIPLE" ? maxSelectCount : 1;
+
+  if (isMock) {
+    const me = accounts[0];
+    if (!me) {
+      return { kind: "error", message: "현재 계정을 확인하지 못했습니다." };
+    }
+    // 방 멤버가 아니면 생성 금지 (BE 가 403 을 돌려줄 케이스를 FE 에서 먼저 반사).
+    const belongs = roomMembers.some(
+      (m) => m.roomId === roomId && m.accountId === me.id && m.state === "ACTIVE",
+    );
+    if (!belongs) {
+      return { kind: "error", message: "이 방의 멤버만 투표를 만들 수 있어요." };
+    }
+    const memberCount = roomMembers.filter(
+      (m) => m.roomId === roomId && m.state === "ACTIVE",
+    ).length;
+    const creator: MemberRef = {
+      accountId: me.id,
+      displayName: me.name,
+      profileImageUrl: null,
+      memberStatus: "ACTIVE",
+    };
+    const newVoteId = nextMockId(votes.map((v) => v.voteId));
+    const existingOptionIds = votes.flatMap((v) => v.options.map((o) => o.optionId));
+    let nextOptId = nextMockId(existingOptionIds);
+    const detail: VoteDetail = {
+      voteId: newVoteId,
+      title,
+      voteType,
+      maxSelectCount: normalizedMax,
+      anonymous,
+      status: "OPEN",
+      deadlineAt,
+      closeReason: null,
+      creator,
+      sourceCard: null,
+      parentVoteId: null,
+      version: 1,
+      participantCount: 0,
+      memberCount,
+      // 익명이든 아니든 생성 직후엔 참여자가 0 이라 둘 다 빈 배열.
+      participants: [],
+      myOptionIds: [],
+      options: normalizedOptions.map((content) => ({
+        optionId: nextOptId++,
+        content,
+      })),
+      tied: false,
+    };
+    votes.push({ ...detail, roomId });
+    revalidatePath(`/rooms/${roomId}/votes`, "page");
+    return { kind: "ok", vote: detail };
+  }
+
+  try {
+    const res = await api<VoteDetail>(`/api/v1/rooms/${roomId}/votes`, {
+      method: "POST",
+      json: {
+        title,
+        voteType,
+        options: normalizedOptions,
+        maxSelectCount: normalizedMax,
+        deadlineAt,
+        anonymous,
+      },
+    });
+    revalidatePath(`/rooms/${roomId}/votes`, "page");
+    return { kind: "ok", vote: res };
+  } catch (e) {
+    if (e instanceof ApiError) {
+      return { kind: "error", message: e.message };
+    }
+    return {
+      kind: "error",
+      message: "투표 생성에 실패했습니다. 잠시 뒤 다시 시도해 주세요.",
+    };
+  }
+}
+
+/**
+ * 목 저장소의 다음 사용 가능한 id. seq 발급기 (`mocks/db.ts`) 를 공유하지 않고
+ * 기존 최대값 +1 을 쓰는 이유: 액션 모듈에서 seq 를 import 하면 순환 참조가 생기고,
+ * 새 투표/옵션 id 는 단조 증가만 유지되면 충분하기 때문.
+ */
+function nextMockId(existing: readonly number[]): number {
+  return existing.length === 0 ? 1 : Math.max(...existing) + 1;
+}
 
 /**
  * 투표 참여 결과 — **에러를 throw 하지 않고 kind 로 구분해서 리턴**한다 (task 와 같은 패턴).

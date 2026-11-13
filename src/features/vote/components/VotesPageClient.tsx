@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import type { VoteDetail, VoteSummary } from "@/types/db";
 
 import { timeRemainingUntil } from "../lib/time-remaining";
+import { VoteCreateDialog } from "./VoteCreateDialog";
 import { VoteDetailSheet } from "./VoteDetailSheet";
 
 interface Props {
@@ -47,8 +48,18 @@ export function VotesPageClient({
   const [tab, setTab] = useState<TabKey>("OPEN");
   const [query, setQuery] = useState("");
   const [openVoteId, setOpenVoteId] = useState<number | null>(initialOpenVoteId);
+  const [createOpen, setCreateOpen] = useState(false);
+
+  // 생성 직후 revalidate 응답이 돌아오기 전까지 UI 공백을 메우기 위해 로컬 보강 상태를
+  // 둔다. props 로 들어온 서버 데이터가 바뀌면 (`revalidatePath` 완료) 그 값으로
+  // 되돌려, 서버가 항상 "진짜" 가 되도록 한다.
+  const [localSummaries, setLocalSummaries] = useState(summaries);
+  const [localDetails, setLocalDetails] = useState(details);
+  useEffect(() => setLocalSummaries(summaries), [summaries]);
+  useEffect(() => setLocalDetails(details), [details]);
+
   const detail: VoteDetail | null =
-    openVoteId !== null ? (details[openVoteId] ?? null) : null;
+    openVoteId !== null ? (localDetails[openVoteId] ?? null) : null;
 
   // URL `?open=` 값이 바뀌면 Sheet 를 다시 연다 (같은 페이지 머무르면서 다른 알림 클릭 등).
   useEffect(() => {
@@ -56,20 +67,41 @@ export function VotesPageClient({
   }, [initialOpenVoteId]);
 
   const counts = useMemo(() => {
-    const open = summaries.filter((v) => v.status === "OPEN").length;
-    const closed = summaries.filter((v) => v.status === "CLOSED").length;
+    const open = localSummaries.filter((v) => v.status === "OPEN").length;
+    const closed = localSummaries.filter((v) => v.status === "CLOSED").length;
     return { OPEN: open, CLOSED: closed };
-  }, [summaries]);
+  }, [localSummaries]);
 
   const visible = useMemo(() => {
-    const byTab = summaries.filter((v) => v.status === tab);
+    const byTab = localSummaries.filter((v) => v.status === tab);
     if (!query.trim()) return byTab;
     const q = query.trim().toLowerCase();
     return byTab.filter((v) => v.title.toLowerCase().includes(q));
-  }, [summaries, tab, query]);
+  }, [localSummaries, tab, query]);
 
   const openCard = (voteId: number) => {
     setOpenVoteId(voteId);
+  };
+
+  const handleCreated = (vote: VoteDetail) => {
+    // 서버 리런 전까지 신규 상세·요약을 바로 보여 주고 상세 Sheet 도 자동으로 열어 준다.
+    setLocalDetails((prev) => ({ ...prev, [vote.voteId]: vote }));
+    setLocalSummaries((prev) => [
+      {
+        voteId: vote.voteId,
+        title: vote.title,
+        voteType: vote.voteType,
+        status: vote.status,
+        deadlineAt: vote.deadlineAt,
+        participantCount: vote.participantCount,
+        memberCount: vote.memberCount,
+        votedByMe: false,
+        sourceCardId: vote.sourceCard?.cardId ?? null,
+      },
+      ...prev,
+    ]);
+    setTab("OPEN");
+    setOpenVoteId(vote.voteId);
   };
 
   return (
@@ -96,7 +128,7 @@ export function VotesPageClient({
             <ArrowLeft className="size-4" />
             대시보드로 돌아가기
           </Button>
-          <Button type="button" disabled title="새 투표 만들기는 다음 작업에서 열립니다">
+          <Button type="button" onClick={() => setCreateOpen(true)}>
             <Plus className="size-4" />새 투표
           </Button>
         </div>
@@ -156,6 +188,13 @@ export function VotesPageClient({
         onOpenChange={(o) => {
           if (!o) setOpenVoteId(null);
         }}
+      />
+
+      <VoteCreateDialog
+        roomId={roomId}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={handleCreated}
       />
     </div>
   );
