@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowLeft, Calendar, Plus, Search, Users } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,11 @@ interface Props {
    * 쓰면 된다.
    */
   details: Readonly<Record<number, VoteDetail>>;
+  /**
+   * URL `?open={voteId}` 로 들어왔을 때 자동으로 열 투표 — 알림 클릭 등 외부 진입 경로.
+   * 페이지가 mount 된 뒤 바뀌어도(동일 라우트에서 쿼리만 변경) 다시 반영된다.
+   */
+  initialOpenVoteId?: number | null;
 }
 
 type TabKey = "OPEN" | "CLOSED";
@@ -37,12 +42,18 @@ export function VotesPageClient({
   roomName,
   summaries,
   details,
+  initialOpenVoteId = null,
 }: Props) {
   const [tab, setTab] = useState<TabKey>("OPEN");
   const [query, setQuery] = useState("");
-  const [openVoteId, setOpenVoteId] = useState<number | null>(null);
+  const [openVoteId, setOpenVoteId] = useState<number | null>(initialOpenVoteId);
   const detail: VoteDetail | null =
     openVoteId !== null ? (details[openVoteId] ?? null) : null;
+
+  // URL `?open=` 값이 바뀌면 Sheet 를 다시 연다 (같은 페이지 머무르면서 다른 알림 클릭 등).
+  useEffect(() => {
+    if (initialOpenVoteId !== null) setOpenVoteId(initialOpenVoteId);
+  }, [initialOpenVoteId]);
 
   const counts = useMemo(() => {
     const open = summaries.filter((v) => v.status === "OPEN").length;

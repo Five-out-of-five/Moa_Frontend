@@ -64,25 +64,31 @@ export async function changeTaskStatusAction(
       return { kind: "conflict", message: CONFLICT_MSG };
     }
 
-    // ⚠️ 대상 컬럼의 기존 task 들 sortOrder 를 재배치한다. insertAt 위치 이상의
-    //    task 는 모두 +1. 기존 로직은 무조건 0 으로 세팅해 기존 첫 task 와 타이가 났음
-    //    (CodeRabbit).
-    const columnTasks = tasks.filter(
-      (x) =>
-        x.roomId === roomId && x.status === status && x.taskId !== taskId,
-    );
-    for (const other of columnTasks) {
-      if (other.sortOrder >= insertAt) {
-        other.sortOrder += 1;
-      }
-    }
-
+    // ⚠️ 대상 컬럼을 **sortOrder 오름차순으로 정렬한 뒤 array 위치 기준으로 reindex** 한다.
+    //    기존 sortOrder 가 0, 4, 8 처럼 sparse 하면 단순히 ">= insertAt" 으로 +1 하는 로직은
+    //    요청 "toIndex=2" 를 올바른 위치에 꽂지 못한다 (CodeRabbit). 순서를 정하고 0..N 로
+    //    재번호하면 array index 와 sortOrder 가 일치해 정렬이 안정됨.
     const previousStatus: TaskStatus = t.status;
+    const siblings = tasks
+      .filter(
+        (x) =>
+          x.roomId === roomId && x.status === status && x.taskId !== taskId,
+      )
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const clampedIndex = Math.min(insertAt, siblings.length);
+    const reordered = [
+      ...siblings.slice(0, clampedIndex),
+      t,
+      ...siblings.slice(clampedIndex),
+    ];
+    reordered.forEach((task, i) => {
+      task.sortOrder = i;
+    });
+
     t.status = status;
     t.completedAt = status === "DONE" ? new Date().toISOString() : null;
     t.dDay = computeDDay(t.dueDate);
     t.overdue = computeOverdue(t.dueDate, status);
-    t.sortOrder = insertAt;
     t.version += 1;
     t.history = [
       ...t.history,
@@ -125,7 +131,16 @@ export async function changeTaskStatusAction(
     const detail = await api<TaskDetail>(
       `/api/v1/rooms/${roomId}/tasks/${taskId}`,
     );
-    return { kind: "ok", task: detail };
+    // API 응답의 dDay·overdue 는 서버 타임존 영향을 받을 수 있어 server.ts 와 같은 규칙으로
+    // 재계산해 UI 전역의 D-day 와 일관성을 맞춘다 (CodeRabbit).
+    return {
+      kind: "ok",
+      task: {
+        ...detail,
+        dDay: computeDDay(detail.dueDate),
+        overdue: computeOverdue(detail.dueDate, detail.status),
+      },
+    };
   } catch {
     return { kind: "ok_detail_stale", message: DETAIL_STALE_MSG };
   }

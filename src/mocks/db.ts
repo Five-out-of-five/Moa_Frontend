@@ -421,6 +421,7 @@ function makeVotes(roomId: number): VoteDetail[] {
     closedOpts[1].voteCount += closedTotal - closedSum;
   }
   const maxVote = Math.max(...closedOpts.map((o) => o.voteCount));
+  const topCount = closedOpts.filter((o) => o.voteCount === maxVote).length;
   list.push({
     voteId: seq("vote"),
     title: "주간 코드 리뷰 시간 고정",
@@ -439,7 +440,10 @@ function makeVotes(roomId: number): VoteDetail[] {
     participants: refMembers.slice(0, closedTotal),
     myOptionIds: [closedOpts[1]!.optionId],
     options: closedOpts.map((o) => ({ ...o, top: o.voteCount === maxVote })),
-    tied: false,
+    // ⚠️ 최다 득표 선택지가 둘 이상이면 동점 (CodeRabbit). 1·1·1 같은 작은 방 케이스에서
+    //    세 옵션 모두 top=true 가 되는데 tied 를 false 로 두면 UI 가 동점 안내를 안 띄워
+    //    사용자가 top 세 개를 보고 혼란스러워 한다.
+    tied: topCount > 1,
   });
 
   return list;

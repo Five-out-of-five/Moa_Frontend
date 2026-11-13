@@ -7,6 +7,7 @@ import type { VoteDetail } from "@/types/db";
 
 interface Props {
   params: Promise<{ roomId: string }>;
+  searchParams: Promise<{ open?: string | string[] }>;
 }
 
 /**
@@ -16,10 +17,19 @@ interface Props {
  *    Sheet 열 때마다 왕복하지 않아도 되고, 목에서는 서버 왕복 자체가 없다. 실서버로 전환
  *    했을 때 비용이 커지면 `getVoteDetailAction` 으로 lazy 전환하면 된다.
  */
-export default async function RoomVotesPage({ params }: Props) {
+export default async function RoomVotesPage({ params, searchParams }: Props) {
   const { roomId: roomIdParam } = await params;
+  const { open: openRaw } = await searchParams;
   const roomId = Number(roomIdParam);
   if (!Number.isFinite(roomId)) notFound();
+
+  // 알림 등에서 `?open={voteId}` 로 들어오면 그 투표의 Sheet 를 바로 연다.
+  // 배열로 들어오면 첫 값, 숫자 아니면 null.
+  const openParam = Array.isArray(openRaw) ? openRaw[0] : openRaw;
+  const openVoteId =
+    openParam && Number.isFinite(Number(openParam))
+      ? Number(openParam)
+      : null;
 
   // listMyRooms 는 사이드바·헤더 작업에서 이미 공용으로 쓰이는 조회 — 방 이름만 뽑아 쓴다.
   const rooms = await listMyRooms();
@@ -54,6 +64,7 @@ export default async function RoomVotesPage({ params }: Props) {
       roomName={room.name}
       summaries={page.content}
       details={details}
+      initialOpenVoteId={openVoteId}
     />
   );
 }

@@ -90,21 +90,37 @@ export function VoteDetailSheet({ roomId, vote, open, onOpenChange }: Props) {
     setError(null);
     const requestGen = genRef.current;
     startTransition(async () => {
+      let result;
       try {
-        const next = await submitBallotAction({
+        result = await submitBallotAction({
           roomId,
           voteId: local.voteId,
           optionIds: selected,
         });
-        if (genRef.current !== requestGen) return; // 다른 투표로 넘어간 뒤 돌아온 응답은 버림
-        setLocal(next);
       } catch (e) {
+        // Server Action 호출 자체 reject (네트워크 등). 상위 error boundary 로 나가지
+        // 않도록 여기서 받는다 (CodeRabbit).
         if (genRef.current !== requestGen) return;
+        console.error("VoteDetailSheet submitBallotAction rejected:", e);
         setError(
-          e instanceof Error
-            ? e.message
-            : "투표 제출에 실패했습니다. 잠시 뒤 다시 시도해 주세요.",
+          "요청을 보내지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
         );
+        return;
+      }
+      if (genRef.current !== requestGen) return; // 다른 투표로 전환된 뒤 돌아온 응답은 버림
+
+      switch (result.kind) {
+        case "ok":
+          setLocal(result.vote);
+          return;
+        case "closed":
+          // 서버가 "이미/방금 마감" 으로 전환됐음을 알린 상태. Sheet 도 CLOSED 결과 화면으로 전환.
+          setLocal(result.vote);
+          setError(result.message);
+          return;
+        case "error":
+          setError(result.message);
+          return;
       }
     });
   };

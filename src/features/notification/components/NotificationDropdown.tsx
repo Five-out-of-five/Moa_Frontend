@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import type { Notification, NotificationGroup } from "@/types/db";
 
 import {
+  loadMoreUnreadNotificationsAction,
   markAllNotificationsAsReadAction,
   markNotificationAsReadAction,
 } from "../actions";
@@ -35,6 +36,8 @@ interface Props {
   initialUnread: readonly Notification[];
   /** 전역 미읽음 카운트 — 뱃지에 사용. `initialUnread.length` 와 다를 수 있다 */
   initialUnreadCount: number;
+  /** 서버가 전달한 "읽지 않음" 첫 페이지의 hasNext — true 면 "더 불러오기" 버튼 노출 */
+  initialUnreadHasNext: boolean;
 }
 
 type TabKey = "all" | "unread";
@@ -57,13 +60,18 @@ export function NotificationDropdown({
   initialRecent,
   initialUnread,
   initialUnreadCount,
+  initialUnreadHasNext,
 }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [recent, setRecent] = useState(initialRecent);
   const [unreadList, setUnreadList] = useState(initialUnread);
   const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
+  const [unreadHasNext, setUnreadHasNext] = useState(initialUnreadHasNext);
+  const [unreadNextPage, setUnreadNextPage] = useState(1);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabKey>("all");
+  const [pendingLoadMore, startLoadMoreTransition] = useTransition();
   const [, startTransition] = useTransition();
 
   useEffect(() => {
@@ -71,7 +79,16 @@ export function NotificationDropdown({
     setRecent(initialRecent);
     setUnreadList(initialUnread);
     setUnreadCount(initialUnreadCount);
-  }, [initialRecent, initialUnread, initialUnreadCount, open]);
+    setUnreadHasNext(initialUnreadHasNext);
+    setUnreadNextPage(1);
+    setLoadMoreError(null);
+  }, [
+    initialRecent,
+    initialUnread,
+    initialUnreadCount,
+    initialUnreadHasNext,
+    open,
+  ]);
 
   // "전체" 탭은 최근 50 만, "읽지 않음" 탭은 서버가 돌려준 unread 전체를 쓴다.
   // 이렇게 두 소스를 분리하면 size 를 초과한 미읽음이 "읽지 않음" 탭에서 숨지 않는다.
@@ -117,6 +134,29 @@ export function NotificationDropdown({
     if (!n.read) markOneRead(n.notificationId);
     setOpen(false);
     router.push(targetUrlOfNotification(n));
+  };
+
+  const handleLoadMoreUnread = () => {
+    if (pendingLoadMore || !unreadHasNext) return;
+    setLoadMoreError(null);
+    const requestedPage = unreadNextPage;
+    startLoadMoreTransition(async () => {
+      try {
+        const { items, hasNext } = await loadMoreUnreadNotificationsAction({
+          page: requestedPage,
+        });
+        // 이미 있는 id 를 제외하고 append — 사용자가 중간에 읽음 처리한 알림이 겹치지 않도록.
+        setUnreadList((prev) => {
+          const existing = new Set(prev.map((n) => n.notificationId));
+          const next = items.filter((n) => !existing.has(n.notificationId));
+          return [...prev, ...next];
+        });
+        setUnreadHasNext(hasNext);
+        setUnreadNextPage(requestedPage + 1);
+      } catch {
+        setLoadMoreError("이전 알림을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.");
+      }
+    });
   };
 
   const handleMarkAllRead = () => {
@@ -206,22 +246,42 @@ export function NotificationDropdown({
           {visible.length === 0 ? (
             <EmptyState tab={tab} />
           ) : (
-            grouped.map(({ group, items: groupItems }) => (
-              <section key={group}>
-                <h3 className="text-muted-foreground px-5 pt-4 pb-1.5 text-xs font-medium">
-                  {NOTIFICATION_GROUP_LABEL[group]}
-                </h3>
-                <ul>
-                  {groupItems.map((n) => (
-                    <NotificationItem
-                      key={n.notificationId}
-                      notification={n}
-                      onClick={() => handleItemClick(n)}
-                    />
-                  ))}
-                </ul>
-              </section>
-            ))
+            <>
+              {grouped.map(({ group, items: groupItems }) => (
+                <section key={group}>
+                  <h3 className="text-muted-foreground px-5 pt-4 pb-1.5 text-xs font-medium">
+                    {NOTIFICATION_GROUP_LABEL[group]}
+                  </h3>
+                  <ul>
+                    {groupItems.map((n) => (
+                      <NotificationItem
+                        key={n.notificationId}
+                        notification={n}
+                        onClick={() => handleItemClick(n)}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              ))}
+              {tab === "unread" && unreadHasNext && (
+                <div className="border-border-soft flex flex-col items-center gap-1 border-t px-5 py-3">
+                  <button
+                    type="button"
+                    onClick={handleLoadMoreUnread}
+                    disabled={pendingLoadMore}
+                    aria-busy={pendingLoadMore}
+                    className="text-brand hover:text-brand-dark disabled:text-muted-foreground text-xs font-medium disabled:cursor-not-allowed"
+                  >
+                    {pendingLoadMore ? "불러오는 중…" : "이전 알림 더 보기"}
+                  </button>
+                  {loadMoreError && (
+                    <p className="text-destructive text-[11px]">
+                      {loadMoreError}
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       </SheetContent>
