@@ -8,4 +8,5 @@ export interface FirstProfileResult {
 export interface FirstRoomProfile {
   nickname: string | null;
   imageUrl: string | null;
+  position?: string | null;
 }
