@@ -1,6 +1,7 @@
-import { ArrowRight, ChartNoAxesColumn } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 
+import { MoaLogo } from "@/components/common/MoaLogo";
 import { Button } from "@/components/ui/button";
 import { SOCIAL_PROVIDER_NAMES } from "@/features/auth/providers";
 import { getSignupPreviewHref } from "@/features/auth/server";
@@ -15,12 +16,7 @@ export default function LoginPage() {
   return (
     <main className="bg-login-surface grid min-h-dvh place-items-center px-5 py-10 sm:py-14">
       <section aria-labelledby="login-title" className="w-full max-w-md text-center">
-        <div className="text-login-wordmark flex items-center justify-center gap-2 font-bold">
-          <span className="bg-login-brand text-login-badge-light grid size-8 place-items-center rounded-lg">
-            <ChartNoAxesColumn aria-hidden="true" className="size-5" strokeWidth={3} />
-          </span>
-          <span>MOA</span>
-        </div>
+        <MoaLogo />
 
         <h1 id="login-title" className="mt-9 text-2xl font-bold tracking-tight sm:text-3xl">
           함께 일하는 순간을 더 선명하게
