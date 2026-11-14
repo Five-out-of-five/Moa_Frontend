@@ -9,11 +9,12 @@ import { ChatSidebar, ChatSidebarFallback } from "./ChatSidebar";
  */
 export async function ChatSidebarLoader() {
   try {
-    const [channels, dms] = await Promise.all([
+    const [channels, dms, profiles] = await Promise.all([
       listMyChannels(),
       listMyDmThreads(),
+      listMyRoomProfiles().catch(() => []),
     ]);
-    return <ChatSidebar channels={channels} dms={dms} />;
+    return <ChatSidebar channels={channels} dms={dms} profiles={profiles} />;
   } catch (error) {
     // 조용히 삼키면 BE/네트워크 문제를 운영 지표로 잡을 수 없다 — 서버 로그에만 남기고
     // 사용자 UI 는 스켈레톤으로 떨어뜨린다 (쉘 본문은 영향받지 않음).
@@ -21,3 +22,4 @@ export async function ChatSidebarLoader() {
     return <ChatSidebarFallback />;
   }
 }
+import { listMyRoomProfiles } from "@/features/room/profile/server";
