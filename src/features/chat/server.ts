@@ -1,6 +1,7 @@
 import "server-only";
 
 import { api } from "@/lib/api";
+import { isActiveMember } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
 import { roomMembers } from "@/mocks/db";
 
@@ -18,7 +19,7 @@ export async function listMyChannels(): Promise<ChatChannel[]> {
   if (isMock) {
     const me = 1;
     const myRoomIds = new Set(
-      roomMembers.filter((m) => m.accountId === me).map((m) => m.roomId),
+      roomMembers.filter((m) => m.accountId === me && isActiveMember(m)).map((m) => m.roomId),
     );
     return CHAT_CHANNELS.filter((c) => myRoomIds.has(c.roomId));
   }

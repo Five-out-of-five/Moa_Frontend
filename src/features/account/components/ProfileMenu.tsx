@@ -71,7 +71,7 @@ export function ProfileMenu({ account }: Props) {
         <DropdownMenuItem asChild>
           <Link href="/account" className="flex cursor-pointer items-center gap-2">
             <UserRound className="text-muted-foreground size-4" />
-            <span>내 프로필</span>
+            <span>계정 및 프로필</span>
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
@@ -80,7 +80,7 @@ export function ProfileMenu({ account }: Props) {
             className="flex cursor-pointer items-center gap-2"
           >
             <Settings2 className="text-muted-foreground size-4" />
-            <span>개인 설정</span>
+            <span>알림 설정</span>
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

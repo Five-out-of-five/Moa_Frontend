@@ -13,6 +13,7 @@ import type {
   MoodLevel,
   MoodStatus,
   Notification,
+  NotificationGroup,
   Room,
   RoomMember,
   RoomWidget,
@@ -33,6 +34,17 @@ import type {
  */
 
 faker.seed(2026_11_05);
+
+// 라우트와 Server Action이 다른 번들에서 실행돼도 같은 목 상태를 읽는다.
+const mockRuntime = globalThis as typeof globalThis & {
+  moaSettingsMock?: Map<string, unknown>;
+};
+const settingsMock = (mockRuntime.moaSettingsMock ??= new Map());
+
+function shareSettingsMock<T>(key: string, seed: T): T {
+  if (!settingsMock.has(key)) settingsMock.set(key, seed);
+  return settingsMock.get(key) as T;
+}
 
 // ===== 공통 ID 발급기 =====
 
@@ -69,18 +81,27 @@ function makeAccount(name: string, email: string): Account {
   };
 }
 
-export const accounts: Account[] = [
+export const accounts: Account[] = shareSettingsMock("accounts", [
   makeAccount("이홍근", "zana0422@gmail.com"),
   makeAccount("이주은", "jueun@example.com"),
   makeAccount("이하연", "hayeon@example.com"),
   makeAccount("백승재", "seungjae@example.com"),
   makeAccount("김진도", "jindo@example.com"),
-];
+]);
 
-function refOf(acc: Account): MemberRef {
+export const notificationPreferences = shareSettingsMock(
+  "notificationPreferences",
+  new Map<number, Partial<Record<NotificationGroup, boolean>>>(),
+);
+
+function refOf(acc: Account, roomId: number): MemberRef {
   return {
     accountId: acc.id,
-    displayName: acc.name,
+    get displayName() {
+      return roomMembers.find(
+        (member) => member.accountId === acc.id && member.roomId === roomId,
+      )?.nickname ?? acc.name;
+    },
     profileImageUrl: null,
     memberStatus: "ACTIVE",
   };
@@ -88,7 +109,7 @@ function refOf(acc: Account): MemberRef {
 
 // ===== 방 + 방 멤버 =====
 
-export const rooms: Room[] = [
+const seededRooms: Room[] = [
   {
     id: seq("room"),
     name: "MOA 코어팀",
@@ -109,21 +130,23 @@ export const rooms: Room[] = [
   },
 ];
 
-accounts[0].lastRoomId = rooms[0].id;
+const roomsWereSeeded = settingsMock.has("rooms");
+export const rooms = shareSettingsMock("rooms", seededRooms);
+if (!roomsWereSeeded) accounts[0].lastRoomId = rooms[0].id;
 
-export const roomMembers: RoomMember[] = rooms.flatMap((room, i) =>
+export const roomMembers: RoomMember[] = shareSettingsMock("roomMembers", rooms.flatMap((room, i) =>
   accounts.slice(0, i === 0 ? accounts.length : 3).map((acc, idx) => ({
     id: seq("roomMember"),
     roomId: room.id,
     accountId: acc.id,
     nickname: null,
-    role: idx === 0 ? ("OWNER" as const) : ("MEMBER" as const),
+    role: idx === i ? ("OWNER" as const) : ("MEMBER" as const),
     state: "ACTIVE" as const,
     notificationMuted: false,
     lastBriefingCheckedAt: null,
     joinedAt: nowIso(),
   })),
-);
+));
 
 // ===== 위젯 배치 (방당 7종) =====
 
@@ -209,7 +232,7 @@ export const ideaCards: IdeaCard[] = boardSessions.flatMap((session) =>
         cardType: type,
         title: faker.lorem.sentence({ min: 3, max: 7 }),
         content: faker.lorem.paragraph({ min: 1, max: 3 }),
-        author: refOf(author),
+        author: refOf(author, session.roomId),
         sortOrder: i,
         commentCount: faker.number.int({ min: 0, max: 4 }),
         reactionCount: faker.number.int({ min: 0, max: 8 }),
@@ -238,7 +261,7 @@ const TASK_STATUSES: TaskStatus[] = ["TODO", "IN_PROGRESS", "REVIEW", "DONE"];
 // dDay/overdue 계산은 features/task/lib/d-day.ts 를 공유 사용 — 타임존 처리 통일.
 
 export const tasks: Array<TaskDetail & { roomId: number; sprintId: number | null }> =
-  sprints.flatMap((sprint) => {
+  shareSettingsMock("tasks", sprints.flatMap((sprint) => {
     const roomMembersOfRoom = roomMembers.filter(
       (m) => m.roomId === sprint.roomId,
     );
@@ -267,8 +290,8 @@ export const tasks: Array<TaskDetail & { roomId: number; sprintId: number | null
         overdue: computeOverdue(dueDate, status),
         sortOrder: i,
         version: 1,
-        registrant: refOf(reporterAcc),
-        assignee: refOf(assigneeAcc),
+        registrant: refOf(reporterAcc, sprint.roomId),
+        assignee: refOf(assigneeAcc, sprint.roomId),
         source: { type: "NONE" as const, id: null, title: null },
         completedAt: status === "DONE" ? nowIso() : null,
         files: [],
@@ -278,8 +301,8 @@ export const tasks: Array<TaskDetail & { roomId: number; sprintId: number | null
             fromStatus: null,
             toStatus: status,
             fromAssignee: null,
-            toAssignee: refOf(assigneeAcc),
-            actor: refOf(reporterAcc),
+            toAssignee: refOf(assigneeAcc, sprint.roomId),
+            actor: refOf(reporterAcc, sprint.roomId),
             createdAt: nowIso(),
           },
         ],
@@ -289,7 +312,7 @@ export const tasks: Array<TaskDetail & { roomId: number; sprintId: number | null
     sprint.totalTasks = items.length;
     sprint.doneTasks = items.filter((t) => t.status === "DONE").length;
     return items;
-  });
+  }));
 
 // ===== 투표 (VOTE) =====
 
@@ -306,6 +329,7 @@ function makeVotes(roomId: number): VoteDetail[] {
     accounts.find(
       (a) => a.id === members.find((m) => m.role === "OWNER")!.accountId,
     )!,
+    roomId,
   );
   const memberCount = members.length;
   const now = Date.now();
@@ -316,10 +340,10 @@ function makeVotes(roomId: number): VoteDetail[] {
   const meId = accounts[0]?.id;
   const othersInRoom = members.filter((m) => m.accountId !== meId);
   const refOthers = othersInRoom.map((m) =>
-    refOf(accounts.find((a) => a.id === m.accountId)!),
+    refOf(accounts.find((a) => a.id === m.accountId)!, roomId),
   );
   const refMembers = members.map((m) =>
-    refOf(accounts.find((a) => a.id === m.accountId)!),
+    refOf(accounts.find((a) => a.id === m.accountId)!, roomId),
   );
   const openParticipantCount = Math.min(refOthers.length, memberCount - 1);
 
@@ -464,6 +488,7 @@ export const boardEvents: BoardEvent[] = rooms.flatMap((room) => {
         a.id ===
         roomMembers.find((m) => m.roomId === room.id)!.accountId,
     )!,
+    room.id,
   );
   const base = [
     {

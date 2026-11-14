@@ -1,10 +1,22 @@
 import "server-only";
 
 import { api } from "@/lib/api";
-import { isActiveMember } from "@/lib/permission";
+import { isActiveMember, isRoomOwner } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
 import { accounts, getRoomSnapshot, roomMembers, rooms } from "@/mocks/db";
 import type { Room } from "@/types/db";
+
+export async function listMyRoomsForSettings() {
+  const myRooms = await listMyRooms();
+  return myRooms.map((room) => {
+    const member = isMock
+      ? roomMembers.find((member) =>
+          member.roomId === room.id && member.accountId === accounts[0].id && isActiveMember(member),
+        )
+      : undefined;
+    return { ...room, isOwner: member ? isRoomOwner(member) : null };
+  });
+}
 
 /**
  * 방 도메인 서버 사이드 조회.

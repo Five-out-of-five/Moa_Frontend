@@ -2,8 +2,27 @@ import "server-only";
 
 import { api } from "@/lib/api";
 import { isMock } from "@/mocks/config";
-import { notifications } from "@/mocks/db";
+import { notificationPreferences, notifications } from "@/mocks/db";
 import type { Notification, PageResponse } from "@/types/db";
+
+import { getMyAccount } from "../account/server";
+import type { NotificationPreferences } from "./lib/preferences";
+
+export async function getGlobalNotificationPreferences(): Promise<NotificationPreferences | null> {
+  if (!isMock) return null;
+
+  const { id } = await getMyAccount();
+  const preferences = notificationPreferences.get(id);
+  return {
+    MY_ACTIVITY: true,
+    TASK: true,
+    VOTE: true,
+    SESSION: true,
+    MEMBER_ROLE: true,
+    ...preferences,
+    SYSTEM: true,
+  };
+}
 
 /**
  * 알림 목록 — 명세 `GET /api/v1/notifications`, `PageResponse<NotificationResponse>`.
