@@ -29,7 +29,7 @@ export default async function RoomPage({ params }: { params: Promise<{ roomId: s
           )}
           <p className="text-sm">
             <span className="text-muted-foreground mr-2">내 워크스페이스 프로필</span>
-            {profile.nickname ?? setup.member.nickname ?? setup.account.name}
+            {profile.nickname ?? setup.account.name}
           </p>
         </div>
       )}

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { RoomProfileLink } from "@/features/room/profile/RoomProfileLink";
+import type { RoomProfileSummary } from "@/features/room/profile/types";
 import { cn } from "@/lib/utils";
 
 import type { ChatChannel, DirectMessageThread } from "../types";
@@ -12,6 +14,7 @@ import type { ChatChannel, DirectMessageThread } from "../types";
 interface Props {
   channels: readonly ChatChannel[];
   dms: readonly DirectMessageThread[];
+  profiles: readonly RoomProfileSummary[];
 }
 
 /**
@@ -22,7 +25,7 @@ interface Props {
  * ⚠️ 검색·사이드바 접기 토글은 전부 **클라이언트 state**. 서버는 채널·DM 목록만 돌려준다.
  * ⚠️ 사이드바 접힌 상태는 후속 이슈로 남기고, 이번엔 토글 버튼 자리만 둔다.
  */
-export function ChatSidebar({ channels, dms }: Props) {
+export function ChatSidebar({ channels, dms, profiles }: Props) {
   const pathname = usePathname();
   const [query, setQuery] = useState("");
 
@@ -30,6 +33,8 @@ export function ChatSidebar({ channels, dms }: Props) {
     const match = pathname.match(/^\/rooms\/(\d+)(?:\/|$)/);
     return match ? Number(match[1]) : null;
   }, [pathname]);
+
+  const profile = profiles.find(({ roomId }) => roomId === currentRoomId);
 
   const visibleChannels = useMemo(() => {
     const base = currentRoomId
@@ -166,6 +171,7 @@ export function ChatSidebar({ channels, dms }: Props) {
           </>
         )}
       </div>
+      {profile && <RoomProfileLink profile={profile} />}
     </nav>
   );
 }

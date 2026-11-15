@@ -51,3 +51,7 @@ export function isNicknameTaken(roomId: number, accountId: number, nickname: str
 export function completeMockFirstRoomProfile(key: string, profile: FirstRoomProfile) {
   if (!profiles.has(key)) profiles.set(key, profile);
 }
+
+export function updateMockRoomProfile(key: string, profile: FirstRoomProfile) {
+  profiles.set(key, profile);
+}
