@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import { MOCK_ACCOUNT_COOKIE } from "@/features/auth/mock-session";
 import { api } from "@/lib/api";
 import { isMock } from "@/mocks/config";
 
@@ -41,6 +43,7 @@ export async function updateAccountNameAction(
  *    `POST /auth/logout` 을 거친다.
  */
 export async function logoutAction() {
+  if (isMock) (await cookies()).delete(MOCK_ACCOUNT_COOKIE);
   if (!isMock) {
     try {
       await api("/api/v1/auth/logout", { method: "POST" });

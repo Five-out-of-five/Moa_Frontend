@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { MoaLogo } from "@/components/common/MoaLogo";
 import { Button } from "@/components/ui/button";
+import { getInviteReturnPath } from "@/features/auth/mock-session";
 import { SOCIAL_PROVIDER_NAMES } from "@/features/auth/providers";
 import { getSignupPreviewHref } from "@/features/auth/server";
 
@@ -12,7 +13,8 @@ const SOCIAL_LOGIN_OPTIONS = [
   { provider: "NAVER", initial: "N", badgeClassName: "bg-login-naver text-login-badge-light" },
 ] as const;
 
-export default function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
+  const next = getInviteReturnPath((await searchParams).next);
   return (
     <main className="bg-login-surface grid min-h-dvh place-items-center px-5 py-10 sm:py-14">
       <section aria-labelledby="login-title" className="w-full max-w-md text-center">
@@ -27,7 +29,8 @@ export default function LoginPage() {
 
         <ul className="mt-7 grid gap-2.5">
           {SOCIAL_LOGIN_OPTIONS.map(({ provider, initial, badgeClassName }) => {
-            const href = getSignupPreviewHref(provider);
+            const signup = getSignupPreviewHref(provider);
+            const href = signup && next ? `${signup}?next=${encodeURIComponent(next)}` : signup;
             const content = (
               <>
                 <span

@@ -6,8 +6,9 @@ import { getMyAccount } from "@/features/account/server";
 import { listMyRooms } from "@/features/room/server";
 import { isActiveMember } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
-import { roomMembers, rooms } from "@/mocks/db";
+import { roomMembers } from "@/mocks/db";
 
+import { roomManagementMock } from "../management/mock-state";
 import type { FirstRoomProfile } from "./types";
 
 const runtime = globalThis as typeof globalThis & {
@@ -38,7 +39,7 @@ export const getFirstRoomProfile = cache(async (roomId: string) => {
   const key = membershipKey(member);
   const profile = profiles.get(key);
   // 두 번째 워크스페이스는 승인 직후 상태를 재현하는 목 시드다.
-  const needsSetup = room.id === rooms[1]?.id && !profile;
+  const needsSetup = (room.id === 2 || roomManagementMock.newMemberships.has(member.id)) && !profile;
   return { room, setup: { account, member, key, profile, needsSetup } };
 });
 
