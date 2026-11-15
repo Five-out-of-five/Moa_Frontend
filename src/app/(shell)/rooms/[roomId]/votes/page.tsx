@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { getMyAccount } from "@/features/account/server";
 import { listMyRooms } from "@/features/room/server";
 import { VotesPageClient } from "@/features/vote/components/VotesPageClient";
 import { getVoteDetail, listVotesInRoom } from "@/features/vote/server";
@@ -36,7 +37,20 @@ export default async function RoomVotesPage({ params, searchParams }: Props) {
   const room = rooms.find((r) => r.id === roomId);
   if (!room) notFound();
 
-  const page = await listVotesInRoom(roomId);
+  // ⚠️ 내 계정 조회가 실패해도 **투표 목록은 열려야** 한다 — 작성자 전용 관리 메뉴만
+  //    노출이 숨겨질 뿐 조회·참여는 정상. 업무 보드 #40 과 같은 fallback 패턴.
+  const [page, meResult] = await Promise.all([
+    listVotesInRoom(roomId),
+    (async (): Promise<number | null> => {
+      try {
+        const me = await getMyAccount();
+        return me.id;
+      } catch (e) {
+        console.error("RoomVotesPage getMyAccount failed:", e);
+        return null;
+      }
+    })(),
+  ]);
 
   // ⚠️ 상세 요청 하나가 실패해도 **나머지 투표는 그대로 노출**되어야 한다. `Promise.all`
   //    로 묶으면 1건 실패에 전체 페이지가 500 으로 떨어져 사용자가 모든 투표를 못 본다
@@ -64,6 +78,7 @@ export default async function RoomVotesPage({ params, searchParams }: Props) {
       roomName={room.name}
       summaries={page.content}
       details={details}
+      meAccountId={meResult}
       initialOpenVoteId={openVoteId}
     />
   );
