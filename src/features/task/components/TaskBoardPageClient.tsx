@@ -6,7 +6,13 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { MemberRef, TaskDetail, TaskStatus, TaskSummary } from "@/types/db";
+import type {
+  MemberRef,
+  Sprint,
+  TaskDetail,
+  TaskStatus,
+  TaskSummary,
+} from "@/types/db";
 
 import {
   formatDDay,
@@ -28,6 +34,11 @@ interface Props {
   members: readonly MemberRef[];
   /** 로그인 사용자의 accountId. 생성 시 기본 담당자로 지정. */
   meAccountId: number | null;
+  /**
+   * 방의 활성 스프린트 — Figma Make 디자인의 스프린트 셀렉터에 노출. null 이면
+   * "활성 스프린트 없음" 비활성 상태로 보여 준다.
+   */
+  activeSprint: Sprint | null;
   /**
    * URL `?open={taskId}` 로 들어왔을 때 자동으로 열 업무 — 알림 클릭 등 외부 진입 경로.
    * 같은 라우트에서 쿼리만 바뀌어도 다시 반영된다.
@@ -56,6 +67,7 @@ export function TaskBoardPageClient({
   details,
   members,
   meAccountId,
+  activeSprint,
   initialOpenTaskId = null,
   unavailableTaskIds = [],
 }: Props) {
@@ -235,6 +247,7 @@ export function TaskBoardPageClient({
         roomId={roomId}
         members={members}
         defaultAssigneeAccountId={meAccountId}
+        activeSprint={activeSprint}
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={handleCreated}

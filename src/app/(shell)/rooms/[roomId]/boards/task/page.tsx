@@ -3,8 +3,12 @@ import { notFound } from "next/navigation";
 import { getMyAccount } from "@/features/account/server";
 import { listMyRooms, listRoomMembers } from "@/features/room/server";
 import { TaskBoardPageClient } from "@/features/task/components/TaskBoardPageClient";
-import { getTaskDetail, listTasksInRoom } from "@/features/task/server";
-import type { MemberRef, TaskDetail } from "@/types/db";
+import {
+  getActiveSprint,
+  getTaskDetail,
+  listTasksInRoom,
+} from "@/features/task/server";
+import type { MemberRef, Sprint, TaskDetail } from "@/types/db";
 
 interface Props {
   params: Promise<{ roomId: string }>;
@@ -43,26 +47,35 @@ export default async function RoomTaskBoardPage({
   // ⚠️ 멤버/내 계정 조회가 실패해도 **보드 자체는 열려야** 한다 — 상세 fetch 를
   //    Promise.allSettled 로 돌리는 것과 같은 이유. 실패 시 빈 리스트 / null 로 fallback
   //    하고, 생성 다이얼로그는 "담당자 선택 불가" 상태로 자연스럽게 떨어진다.
-  const [summaries, membersResult, meResult] = await Promise.all([
-    listTasksInRoom(roomId),
-    (async (): Promise<MemberRef[]> => {
-      try {
-        return await listRoomMembers(roomId);
-      } catch (e) {
-        console.error(`RoomTaskBoardPage listRoomMembers failed (roomId=${roomId}):`, e);
-        return [];
-      }
-    })(),
-    (async (): Promise<number | null> => {
-      try {
-        const me = await getMyAccount();
-        return me.id;
-      } catch (e) {
-        console.error("RoomTaskBoardPage getMyAccount failed:", e);
-        return null;
-      }
-    })(),
-  ]);
+  const [summaries, membersResult, meResult, activeSprintResult] =
+    await Promise.all([
+      listTasksInRoom(roomId),
+      (async (): Promise<MemberRef[]> => {
+        try {
+          return await listRoomMembers(roomId);
+        } catch (e) {
+          console.error(`RoomTaskBoardPage listRoomMembers failed (roomId=${roomId}):`, e);
+          return [];
+        }
+      })(),
+      (async (): Promise<number | null> => {
+        try {
+          const me = await getMyAccount();
+          return me.id;
+        } catch (e) {
+          console.error("RoomTaskBoardPage getMyAccount failed:", e);
+          return null;
+        }
+      })(),
+      (async (): Promise<Sprint | null> => {
+        try {
+          return await getActiveSprint(roomId);
+        } catch (e) {
+          console.error(`RoomTaskBoardPage getActiveSprint failed (roomId=${roomId}):`, e);
+          return null;
+        }
+      })(),
+    ]);
 
   // ⚠️ 상세 1건이 실패해도(예: 그 사이 삭제된 업무) **나머지 업무는 그대로 노출** 되어야
   //    한다. Promise.all 로 묶으면 1건 실패에 전체 보드가 500 으로 떨어진다 (CodeRabbit).
@@ -96,6 +109,7 @@ export default async function RoomTaskBoardPage({
       details={details}
       members={membersResult}
       meAccountId={meResult}
+      activeSprint={activeSprintResult}
       initialOpenTaskId={openTaskId}
       unavailableTaskIds={unavailableTaskIds}
     />

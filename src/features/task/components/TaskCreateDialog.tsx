@@ -1,5 +1,6 @@
 "use client";
 
+import { User } from "lucide-react";
 import { useEffect, useId, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type {
   MemberRef,
+  Sprint,
   TaskDetail,
   TaskPriority,
   TaskStatus,
@@ -34,6 +36,12 @@ interface Props {
   members: readonly MemberRef[];
   /** 기본 담당자 (보통 "나"). null 이면 "미담당" 이 기본값. */
   defaultAssigneeAccountId: number | null;
+  /**
+   * 방의 활성 스프린트. Figma Make 디자인의 스프린트 셀렉터에 노출.
+   * null 이면 "활성 스프린트 없음" 비활성 상태로 노출된다.
+   * ⚠️ BE 명세 확정 전까지는 **선택이 아니라 표시 전용** — 서버 호출엔 포함하지 않는다.
+   */
+  activeSprint: Sprint | null;
   /** 생성 다이얼로그 기본 상태 — 칸 별 "+ 추가" 버튼이 생기면 쓸 수 있도록 prop 으로. */
   defaultStatus?: TaskStatus;
   open: boolean;
@@ -65,6 +73,7 @@ export function TaskCreateDialog({
   roomId,
   members,
   defaultAssigneeAccountId,
+  activeSprint,
   defaultStatus = "TODO",
   open,
   onOpenChange,
@@ -88,6 +97,7 @@ export function TaskCreateDialog({
   const assigneeInputId = useId();
   const priorityInputId = useId();
   const dueInputId = useId();
+  const sprintInputId = useId();
 
   const resetState = () => {
     setTitle("");
@@ -259,14 +269,38 @@ export function TaskCreateDialog({
             </div>
           </div>
 
+          {/* 스프린트 — Figma Make 디자인의 활성 스프린트 표시 영역.
+              ⚠️ BE 명세 확정 전까지는 선택 UI 가 아니라 **표시 전용** (disabled).
+                 활성 스프린트가 없으면 "활성 스프린트 없음" 으로 노출. */}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={sprintInputId}>스프린트</Label>
+            <SelectNative
+              id={sprintInputId}
+              value="active"
+              onChange={() => {
+                /* readonly */
+              }}
+              disabled
+            >
+              <option value="active">
+                {activeSprint ? activeSprint.name : "활성 스프린트 없음"}
+              </option>
+            </SelectNative>
+          </div>
+
           {error && (
             <p role="alert" className="text-destructive text-sm">
               {error}
             </p>
           )}
 
-          <p className="text-muted-foreground text-xs">
-            담당자는 지금 바꿔도 되고, 생성 뒤 상세에서 다시 지정할 수도 있어요.
+          {/* 안내 문구 — Figma Make 디자인에선 "업무량 기준 담당자 추천" 안내. 추천 로직은
+              후속 작업이라 여기선 "담당자는 직접 선택할 수 있어요" 로 축약해 고지만 둔다. */}
+          <p className="text-muted-foreground border-border bg-background flex items-start gap-2 rounded-[var(--radius-control)] border px-3 py-2 text-xs">
+            <User aria-hidden="true" className="size-3.5 shrink-0 mt-0.5" />
+            <span>
+              담당자는 직접 선택할 수 있어요. 생성 뒤 상세에서도 바꿀 수 있습니다.
+            </span>
           </p>
         </div>
 
@@ -316,19 +350,22 @@ function SelectNative({
   value,
   onChange,
   children,
+  disabled,
   ...rest
 }: {
   id?: string;
   value: string;
   onChange(value: string): void;
   children: React.ReactNode;
+  disabled?: boolean;
 } & React.AriaAttributes) {
   return (
     <select
       id={id}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="border-border bg-background focus:ring-ring h-9 rounded-[var(--radius-control)] border px-2 text-sm outline-none focus:ring-2"
+      disabled={disabled}
+      className="border-border bg-background focus:ring-ring h-9 rounded-[var(--radius-control)] border px-2 text-sm outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
       {...rest}
     >
       {children}
