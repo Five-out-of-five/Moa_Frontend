@@ -22,6 +22,8 @@ interface Props {
    * 쓰면 된다.
    */
   details: Readonly<Record<number, VoteDetail>>;
+  /** 로그인 사용자 — 상세 Sheet 의 작성자 전용 관리 메뉴 노출 판정에 쓴다. */
+  meAccountId: number | null;
   /**
    * URL `?open={voteId}` 로 들어왔을 때 자동으로 열 투표 — 알림 클릭 등 외부 진입 경로.
    * 페이지가 mount 된 뒤 바뀌어도(동일 라우트에서 쿼리만 변경) 다시 반영된다.
@@ -43,6 +45,7 @@ export function VotesPageClient({
   roomName,
   summaries,
   details,
+  meAccountId,
   initialOpenVoteId = null,
 }: Props) {
   const [tab, setTab] = useState<TabKey>("OPEN");
@@ -83,25 +86,44 @@ export function VotesPageClient({
     setOpenVoteId(voteId);
   };
 
+  const toSummary = (vote: VoteDetail, prev?: VoteSummary): VoteSummary => ({
+    voteId: vote.voteId,
+    title: vote.title,
+    voteType: vote.voteType,
+    status: vote.status,
+    deadlineAt: vote.deadlineAt,
+    participantCount: vote.participantCount,
+    memberCount: vote.memberCount,
+    // 수정 액션은 참여 여부를 바꾸지 않으므로 이전 값을 유지. 신규 생성은 false.
+    votedByMe: prev?.votedByMe ?? vote.myOptionIds.length > 0,
+    sourceCardId: vote.sourceCard?.cardId ?? null,
+  });
+
   const handleCreated = (vote: VoteDetail) => {
     // 서버 리런 전까지 신규 상세·요약을 바로 보여 주고 상세 Sheet 도 자동으로 열어 준다.
     setLocalDetails((prev) => ({ ...prev, [vote.voteId]: vote }));
-    setLocalSummaries((prev) => [
-      {
-        voteId: vote.voteId,
-        title: vote.title,
-        voteType: vote.voteType,
-        status: vote.status,
-        deadlineAt: vote.deadlineAt,
-        participantCount: vote.participantCount,
-        memberCount: vote.memberCount,
-        votedByMe: false,
-        sourceCardId: vote.sourceCard?.cardId ?? null,
-      },
-      ...prev,
-    ]);
+    setLocalSummaries((prev) => [toSummary(vote), ...prev]);
     setTab("OPEN");
     setOpenVoteId(vote.voteId);
+  };
+
+  const handleUpdated = (vote: VoteDetail) => {
+    // 수정 · 수동 마감 공용 핸들러. 상세와 요약을 모두 신선한 값으로 교체.
+    setLocalDetails((prev) => ({ ...prev, [vote.voteId]: vote }));
+    setLocalSummaries((prev) =>
+      prev.map((s) => (s.voteId === vote.voteId ? toSummary(vote, s) : s)),
+    );
+  };
+
+  const handleDeleted = (voteId: number) => {
+    setLocalDetails((prev) => {
+      const next = { ...prev };
+      delete next[voteId];
+      return next;
+    });
+    setLocalSummaries((prev) => prev.filter((s) => s.voteId !== voteId));
+    // Sheet 닫기는 VoteDetailSheet 쪽에서 이미 onOpenChange(false) 로 처리.
+    setOpenVoteId((prev) => (prev === voteId ? null : prev));
   };
 
   return (
@@ -184,10 +206,13 @@ export function VotesPageClient({
       <VoteDetailSheet
         roomId={roomId}
         vote={detail}
+        meAccountId={meAccountId}
         open={openVoteId !== null}
         onOpenChange={(o) => {
           if (!o) setOpenVoteId(null);
         }}
+        onVoteUpdated={handleUpdated}
+        onVoteDeleted={handleDeleted}
       />
 
       <VoteCreateDialog

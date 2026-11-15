@@ -6,7 +6,13 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { TaskDetail, TaskStatus, TaskSummary } from "@/types/db";
+import type {
+  MemberRef,
+  Sprint,
+  TaskDetail,
+  TaskStatus,
+  TaskSummary,
+} from "@/types/db";
 
 import {
   formatDDay,
@@ -16,6 +22,7 @@ import {
   TASK_STATUS_LABEL,
   TASK_STATUS_ORDER,
 } from "../lib/labels";
+import { TaskCreateDialog } from "./TaskCreateDialog";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 
 interface Props {
@@ -23,6 +30,15 @@ interface Props {
   roomName: string;
   summaries: readonly TaskSummary[];
   details: Readonly<Record<number, TaskDetail>>;
+  /** 활성 방 멤버 — 업무 생성 다이얼로그의 담당자 셀렉터에 쓴다. */
+  members: readonly MemberRef[];
+  /** 로그인 사용자의 accountId. 생성 시 기본 담당자로 지정. */
+  meAccountId: number | null;
+  /**
+   * 방의 활성 스프린트 — Figma Make 디자인의 스프린트 셀렉터에 노출. null 이면
+   * "활성 스프린트 없음" 비활성 상태로 보여 준다.
+   */
+  activeSprint: Sprint | null;
   /**
    * URL `?open={taskId}` 로 들어왔을 때 자동으로 열 업무 — 알림 클릭 등 외부 진입 경로.
    * 같은 라우트에서 쿼리만 바뀌어도 다시 반영된다.
@@ -49,18 +65,31 @@ export function TaskBoardPageClient({
   roomName,
   summaries,
   details,
+  members,
+  meAccountId,
+  activeSprint,
   initialOpenTaskId = null,
   unavailableTaskIds = [],
 }: Props) {
   const [query, setQuery] = useState("");
   const [onlyMine, setOnlyMine] = useState(false);
   const [openTaskId, setOpenTaskId] = useState<number | null>(initialOpenTaskId);
+  const [createOpen, setCreateOpen] = useState(false);
+
+  // 생성 직후 revalidate 응답이 돌아오기 전까지 UI 공백을 메우기 위해 로컬 보강 상태를
+  // 둔다 (투표 생성과 동일 패턴). props 로 들어온 서버 데이터가 바뀌면 (`revalidatePath`
+  // 완료) 그 값으로 되돌려, 서버가 항상 "진짜" 가 되도록 한다.
+  const [localSummaries, setLocalSummaries] = useState(summaries);
+  const [localDetails, setLocalDetails] = useState(details);
+  useEffect(() => setLocalSummaries(summaries), [summaries]);
+  useEffect(() => setLocalDetails(details), [details]);
+
   const unavailableSet = useMemo(
     () => new Set(unavailableTaskIds),
     [unavailableTaskIds],
   );
   const detail: TaskDetail | null =
-    openTaskId !== null ? (details[openTaskId] ?? null) : null;
+    openTaskId !== null ? (localDetails[openTaskId] ?? null) : null;
 
   // URL `?open=` 값이 바뀌면 Sheet 를 다시 연다 (알림 두 번째 클릭 등).
   useEffect(() => {
@@ -68,14 +97,37 @@ export function TaskBoardPageClient({
   }, [initialOpenTaskId]);
 
   const visible = useMemo(() => {
-    let list = summaries;
+    let list = localSummaries;
     if (onlyMine) list = list.filter((t) => t.assignee !== null);
     if (query.trim()) {
       const q = query.trim().toLowerCase();
       list = list.filter((t) => t.title.toLowerCase().includes(q));
     }
     return list;
-  }, [summaries, onlyMine, query]);
+  }, [localSummaries, onlyMine, query]);
+
+  const handleCreated = (task: TaskDetail) => {
+    // 서버 리런 전까지 신규 상세·요약을 바로 보여 주고 상세 Sheet 도 자동으로 열어 준다.
+    setLocalDetails((prev) => ({ ...prev, [task.taskId]: task }));
+    setLocalSummaries((prev) => [
+      ...prev,
+      {
+        taskId: task.taskId,
+        title: task.title,
+        status: task.status,
+        priority: task.priority,
+        dueDate: task.dueDate,
+        dDay: task.dDay,
+        overdue: task.overdue,
+        sortOrder: task.sortOrder,
+        version: task.version,
+        registrant: task.registrant,
+        assignee: task.assignee,
+        source: task.source,
+      },
+    ]);
+    setOpenTaskId(task.taskId);
+  };
 
   const grouped = useMemo(() => {
     const map = new Map<TaskStatus, TaskSummary[]>();
@@ -106,11 +158,7 @@ export function TaskBoardPageClient({
               대시보드로 돌아가기
             </Link>
           </Button>
-          <Button
-            type="button"
-            disabled
-            title="새 업무 등록은 다음 작업에서 열립니다"
-          >
+          <Button type="button" onClick={() => setCreateOpen(true)}>
             <Plus className="size-4" />새 업무
           </Button>
         </div>
@@ -193,6 +241,16 @@ export function TaskBoardPageClient({
         onOpenChange={(o) => {
           if (!o) setOpenTaskId(null);
         }}
+      />
+
+      <TaskCreateDialog
+        roomId={roomId}
+        members={members}
+        defaultAssigneeAccountId={meAccountId}
+        activeSprint={activeSprint}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={handleCreated}
       />
     </div>
   );

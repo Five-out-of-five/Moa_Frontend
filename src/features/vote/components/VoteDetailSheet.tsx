@@ -1,9 +1,26 @@
 "use client";
 
-import { CheckCircle2, EyeOff, History, Users } from "lucide-react";
+import { CheckCircle2, EyeOff, History, MoreHorizontal, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import {
   Sheet,
@@ -15,14 +32,21 @@ import {
 import { cn } from "@/lib/utils";
 import type { VoteDetail } from "@/types/db";
 
-import { submitBallotAction } from "../actions";
+import { closeVoteAction, deleteVoteAction, submitBallotAction } from "../actions";
 import { timeRemainingUntil } from "../lib/time-remaining";
+import { VoteEditDialog } from "./VoteEditDialog";
 
 interface Props {
   roomId: number;
   vote: VoteDetail | null;
+  /** 로그인 사용자 — 작성자 전용 메뉴 노출 판정에 쓴다. null 이면 로그인 미확인. */
+  meAccountId: number | null;
   open: boolean;
   onOpenChange(open: boolean): void;
+  /** 수정·수동 마감 결과 — 상위 리스트의 localSummaries/localDetails 를 동기화. */
+  onVoteUpdated?(vote: VoteDetail): void;
+  /** 삭제 결과 — 상위 리스트에서 제거 + Sheet 를 닫도록 신호. */
+  onVoteDeleted?(voteId: number): void;
 }
 
 /**
@@ -36,26 +60,116 @@ interface Props {
  * ⚠️ 참여·수정 이후 서버가 돌려준 `VoteDetail` 로 로컬 상태를 갱신한다 — 참여 인원 등
  *    집계가 즉시 반영되도록.
  */
-export function VoteDetailSheet({ roomId, vote, open, onOpenChange }: Props) {
+export function VoteDetailSheet({
+  roomId,
+  vote,
+  meAccountId,
+  open,
+  onOpenChange,
+  onVoteUpdated,
+  onVoteDeleted,
+}: Props) {
   const [local, setLocal] = useState<VoteDetail | null>(vote);
   const [selected, setSelected] = useState<number[]>(vote?.myOptionIds ?? []);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  const [editOpen, setEditOpen] = useState(false);
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [managePending, startManageTransition] = useTransition();
+
   // ⚠️ Sheet 가 투표 A → B 로 빠르게 전환될 때, A 의 네트워크 응답이 뒤늦게 돌아와
   //    B 의 상태를 덮는 걸 막기 위한 generation 토큰. `vote` 가 바뀔 때마다 증가하고,
   //    응답 처리 시 요청 시점의 값과 비교해 다르면 결과를 버린다.
   const genRef = useRef(0);
+  // ⚠️ 관리 액션(수정·마감·삭제) 응답도 다른 투표로 전환된 뒤 도착할 수 있다. 응답 시점에
+  //    현재 열린 투표 ID 와 다르면 **상위 캐시만 갱신** 하고, 로컬 Sheet 상태(local/error/
+  //    다이얼로그 열림 등) 는 건드리지 않는다. 그렇지 않으면 B 의 Sheet 에 A 의 내용이
+  //    튀어 올라오거나, A 삭제 응답이 B 의 Sheet 를 닫는다 (CodeRabbit).
+  const voteIdRef = useRef<number | null>(vote?.voteId ?? null);
 
   useEffect(() => {
     genRef.current += 1;
+    voteIdRef.current = vote?.voteId ?? null;
     setLocal(vote);
     setSelected(vote?.myOptionIds ?? []);
     setError(null);
+    // 새 투표로 전환되면 열려 있던 관리 다이얼로그는 닫는다 — 잘못된 투표에 confirm 할 위험 방지.
+    setEditOpen(false);
+    setCloseConfirmOpen(false);
+    setDeleteConfirmOpen(false);
   }, [vote]);
 
   const isClosed = local?.status === "CLOSED";
   const isMultiple = local?.voteType === "MULTIPLE";
+  const isAuthor =
+    local !== null &&
+    meAccountId !== null &&
+    local.creator.accountId === meAccountId;
+
+  const handleUpdated = (updated: VoteDetail) => {
+    // 상위 리스트 캐시는 항상 갱신해 다음에 이 투표를 다시 열 때 최신 값이 보이도록 하고,
+    // 현재 Sheet 가 이 투표를 보고 있을 때만 로컬 상태를 바꾼다.
+    onVoteUpdated?.(updated);
+    if (voteIdRef.current === updated.voteId) setLocal(updated);
+  };
+
+  const handleConfirmClose = () => {
+    if (!local) return;
+    const voteId = local.voteId;
+    startManageTransition(async () => {
+      let result;
+      try {
+        result = await closeVoteAction({ roomId, voteId });
+      } catch (e) {
+        console.error("VoteDetailSheet closeVoteAction rejected:", e);
+        if (voteIdRef.current === voteId) {
+          setError(
+            "요청을 보내지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
+          );
+          setCloseConfirmOpen(false);
+        }
+        return;
+      }
+      const isCurrent = voteIdRef.current === voteId;
+      if (isCurrent) setCloseConfirmOpen(false);
+      if (result.kind === "ok") {
+        onVoteUpdated?.(result.vote);
+        if (isCurrent) setLocal(result.vote);
+      } else if (isCurrent) {
+        setError(result.message);
+      }
+    });
+  };
+
+  const handleConfirmDelete = () => {
+    if (!local) return;
+    const voteId = local.voteId;
+    startManageTransition(async () => {
+      let result;
+      try {
+        result = await deleteVoteAction({ roomId, voteId });
+      } catch (e) {
+        console.error("VoteDetailSheet deleteVoteAction rejected:", e);
+        if (voteIdRef.current === voteId) {
+          setError(
+            "요청을 보내지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
+          );
+          setDeleteConfirmOpen(false);
+        }
+        return;
+      }
+      const isCurrent = voteIdRef.current === voteId;
+      if (isCurrent) setDeleteConfirmOpen(false);
+      if (result.kind === "ok") {
+        onVoteDeleted?.(voteId);
+        if (isCurrent) onOpenChange(false);
+      } else if (isCurrent) {
+        setError(result.message);
+      }
+    });
+  };
 
   const totalCount = useMemo(() => {
     if (!local || !isClosed) return 0;
@@ -126,22 +240,62 @@ export function VoteDetailSheet({ roomId, vote, open, onOpenChange }: Props) {
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
+        // ⚠️ 모바일에선 Sheet 가 화면 전체를 덮어 overlay 클릭으로 닫을 수 없다. 기본 X 버튼은
+        //    유지하되, 더보기 메뉴와 겹치지 않도록 헤더 콘텐츠에 우측 여백(pr-12)을 확보해
+        //    X 버튼 자리를 비워 둔다 (CodeRabbit).
         className="bg-surface flex w-full flex-col gap-0 p-0 sm:max-w-[420px]"
       >
         {local ? (
           <>
-            <SheetHeader className="border-border-soft gap-2 border-b px-5 py-4">
-              <div className="flex items-center gap-1.5">
-                <StatusBadge status={local.status} />
-                <TypeBadge voteType={local.voteType} />
-                {local.anonymous && (
-                  <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
-                    <EyeOff className="size-3" />
-                    익명
-                  </span>
+            <SheetHeader className="border-border-soft gap-2 border-b px-5 py-4 pr-12">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <StatusBadge status={local.status} />
+                  <TypeBadge voteType={local.voteType} />
+                  {local.anonymous && (
+                    <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
+                      <EyeOff className="size-3" />
+                      익명
+                    </span>
+                  )}
+                </div>
+                {isAuthor && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="투표 관리 메뉴 열기"
+                        className="text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex size-7 shrink-0 items-center justify-center rounded-[var(--radius-control)] hover:bg-background focus-visible:outline-none focus-visible:ring-2"
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {!isClosed && (
+                        <>
+                          <DropdownMenuItem onSelect={() => setEditOpen(true)}>
+                            수정
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => setCloseConfirmOpen(true)}
+                          >
+                            지금 마감하기
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                        </>
+                      )}
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={() => setDeleteConfirmOpen(true)}
+                      >
+                        삭제
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
               </div>
               <SheetTitle className="text-foreground text-lg font-semibold leading-snug">
@@ -326,7 +480,84 @@ export function VoteDetailSheet({ roomId, vote, open, onOpenChange }: Props) {
           </div>
         )}
       </SheetContent>
-    </Sheet>
+      </Sheet>
+
+      {local && isAuthor && !isClosed && (
+        <VoteEditDialog
+          roomId={roomId}
+          voteId={local.voteId}
+          initialTitle={local.title}
+          initialDeadlineAt={local.deadlineAt}
+          initialAnonymous={local.anonymous}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          onUpdated={handleUpdated}
+        />
+      )}
+
+      {local && isAuthor && (
+        <>
+          <AlertDialog
+            open={closeConfirmOpen}
+            onOpenChange={(o) => {
+              if (!managePending) setCloseConfirmOpen(o);
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>지금 마감할까요?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  마감하면 더 이상 참여를 받지 않고 결과가 공개됩니다. 되돌릴 수 없어요.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={managePending}>취소</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleConfirmClose();
+                  }}
+                  disabled={managePending}
+                  aria-busy={managePending}
+                >
+                  {managePending ? "마감 중…" : "마감하기"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog
+            open={deleteConfirmOpen}
+            onOpenChange={(o) => {
+              if (!managePending) setDeleteConfirmOpen(o);
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>이 투표를 삭제할까요?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  투표와 모든 참여 기록이 삭제됩니다. 이 작업은 되돌릴 수 없어요.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={managePending}>취소</AlertDialogCancel>
+                <AlertDialogAction
+                  variant="destructive"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleConfirmDelete();
+                  }}
+                  disabled={managePending}
+                  aria-busy={managePending}
+                >
+                  {managePending ? "삭제 중…" : "삭제하기"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
+    </>
   );
 }
 
