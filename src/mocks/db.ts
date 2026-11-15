@@ -132,6 +132,7 @@ const seededRooms: Room[] = [
 
 const roomsWereSeeded = settingsMock.has("rooms");
 export const rooms = shareSettingsMock("rooms", seededRooms);
+const fixtureRooms = rooms.filter(({ id }) => seededRooms.some((seed) => seed.id === id));
 if (!roomsWereSeeded) accounts[0].lastRoomId = rooms[0].id;
 
 export const roomMembers: RoomMember[] = shareSettingsMock("roomMembers", rooms.flatMap((room, i) =>
@@ -162,7 +163,7 @@ const WIDGET_TYPES: WidgetType[] = [
 
 // 기본 배치 (테이블정의서 room_widget §비고): 상태값 (0,0,3,4), 아이디어 (3,0,6,7),
 // 캐치업 (9,0,3,7), 업무 (3,7,6,4). 나머지는 빈 공간에 임의 배치.
-export const roomWidgets: RoomWidget[] = rooms.flatMap((room) =>
+export const roomWidgets: RoomWidget[] = shareSettingsMock("roomWidgets", fixtureRooms.flatMap((room) =>
   WIDGET_TYPES.map((t) => {
     const preset: Record<WidgetType, [number, number, number, number]> = {
       MOOD: [0, 0, 3, 4],
@@ -184,13 +185,23 @@ export const roomWidgets: RoomWidget[] = rooms.flatMap((room) =>
       height: h,
     } satisfies RoomWidget;
   }),
-);
+));
+
+export function addDefaultRoomWidgets(roomId: number) {
+  let id = Math.max(0, ...roomWidgets.map(({ id }) => id));
+  roomWidgets.push(
+    { id: ++id, roomId, widgetType: "MOOD", x: 0, y: 0, width: 3, height: 4 },
+    { id: ++id, roomId, widgetType: "IDEA_BOARD", x: 3, y: 0, width: 6, height: 7 },
+    { id: ++id, roomId, widgetType: "CATCHUP_BRIEFING", x: 9, y: 0, width: 3, height: 7 },
+    { id: ++id, roomId, widgetType: "TASK_BOARD", x: 3, y: 7, width: 6, height: 4 },
+  );
+}
 
 // ===== 상태값 (MOOD) =====
 
 const MOODS: MoodLevel[] = ["GREAT", "GOOD", "SOSO", "TIRED", "BAD"];
 
-export const moodStatuses: MoodStatus[] = rooms.flatMap((room) =>
+export const moodStatuses: MoodStatus[] = fixtureRooms.flatMap((room) =>
   roomMembers
     .filter((m) => m.roomId === room.id)
     .map((m) => ({
@@ -210,7 +221,7 @@ export const moodStatuses: MoodStatus[] = rooms.flatMap((room) =>
 
 // ===== 아이디어 보드 (IDEA_BOARD) =====
 
-export const boardSessions: BoardSession[] = rooms.map((room) => ({
+export const boardSessions: BoardSession[] = fixtureRooms.map((room) => ({
   id: seq("session"),
   roomId: room.id,
   title: "이번 주 회고",
@@ -245,7 +256,7 @@ export const ideaCards: IdeaCard[] = boardSessions.flatMap((session) =>
 
 // ===== 업무 보드 (TASK_BOARD) + 스프린트 (PROGRESS) =====
 
-export const sprints: Sprint[] = rooms.map((room) => ({
+export const sprints: Sprint[] = fixtureRooms.map((room) => ({
   id: seq("sprint"),
   roomId: room.id,
   name: "11월 1주차",
@@ -475,13 +486,13 @@ function makeVotes(roomId: number): VoteDetail[] {
   return list;
 }
 
-export const votes: Array<VoteDetail & { roomId: number }> = rooms.flatMap(
+export const votes: Array<VoteDetail & { roomId: number }> = fixtureRooms.flatMap(
   (room) => makeVotes(room.id).map((v) => ({ ...v, roomId: room.id })),
 );
 
 // ===== 캐치업 브리핑 (CATCHUP_BRIEFING) =====
 
-export const boardEvents: BoardEvent[] = rooms.flatMap((room) => {
+export const boardEvents: BoardEvent[] = fixtureRooms.flatMap((room) => {
   const actor = refOf(
     accounts.find(
       (a) =>
@@ -522,7 +533,7 @@ export const boardEvents: BoardEvent[] = rooms.flatMap((room) => {
 
 // ===== 중재 (MEDIATION) =====
 
-export const conflicts: CardConflict[] = rooms.map((room) => {
+export const conflicts: CardConflict[] = fixtureRooms.map((room) => {
   const cardsOfRoom = ideaCards.filter((c) => c.roomId === room.id);
   const [a, b] = cardsOfRoom;
   return {
@@ -608,9 +619,11 @@ const NOTIFICATION_SEED: Array<{
   },
 ];
 
-export const notifications: Notification[] = NOTIFICATION_SEED.map((seed) => {
+export const notifications: Notification[] = NOTIFICATION_SEED.filter((seed) =>
+  fixtureRooms.some(({ id }) => id === seed.roomId),
+).map((seed) => {
   const createdAt = new Date(Date.now() - seed.minutesAgo * 60_000).toISOString();
-  const room = rooms.find((r) => r.id === seed.roomId) ?? rooms[0]!;
+  const room = fixtureRooms.find((r) => r.id === seed.roomId)!;
   return {
     notificationId: seq("notification"),
     group: seed.group,

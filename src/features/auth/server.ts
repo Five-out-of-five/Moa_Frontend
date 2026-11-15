@@ -1,7 +1,10 @@
 import "server-only";
 
 import { isMock } from "@/mocks/config";
+import { accounts } from "@/mocks/db";
 import type { SocialProvider } from "@/types/db";
+
+import { MOCK_ACCOUNT_IDS } from "./mock-session";
 
 const SIGNUP_PREVIEW_TICKETS = {
   GOOGLE: "mock-google",
@@ -19,5 +22,6 @@ export function getSignupAccount(ticket: string) {
   const providers = Object.keys(SIGNUP_PREVIEW_TICKETS) as SocialProvider[];
   const provider = providers.find((provider) => SIGNUP_PREVIEW_TICKETS[provider] === ticket);
 
-  return provider ? { provider, displayName: "김민준" } : null;
+  const account = provider ? accounts.find(({ id }) => id === MOCK_ACCOUNT_IDS[provider]) : null;
+  return provider && account ? { provider, displayName: account.name } : null;
 }

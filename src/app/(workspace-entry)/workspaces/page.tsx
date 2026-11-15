@@ -1,14 +1,24 @@
 import { ArrowRight, Clock3, Link2, Plus, Users } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 
+import { MoaLogo } from "@/components/common/MoaLogo";
 import { Button } from "@/components/ui/button";
+import { RoomFormDialog } from "@/features/room/management/RoomFormDialog";
+import { listMyParticipationResults } from "@/features/room/management/server";
 import { getWorkspaceSelection } from "@/features/room/server";
 
 export default async function WorkspacesPage() {
-  const { workspaces, recentWorkspace } = await getWorkspaceSelection();
+  const [{ workspaces, recentWorkspace }, results] = await Promise.all([
+    getWorkspaceSelection(),
+    listMyParticipationResults(),
+  ]);
 
   return (
-    <section aria-labelledby="workspace-title">
+    <section aria-labelledby="workspace-title" className="mx-auto max-w-5xl py-10 sm:py-14">
+      <div className="mb-9">
+        <MoaLogo />
+      </div>
       <header className="mb-7 text-center sm:mb-9">
         <p className="text-primary text-sm font-semibold">워크스페이스 선택</p>
         <h1 id="workspace-title" className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
@@ -19,6 +29,23 @@ export default async function WorkspacesPage() {
         </p>
       </header>
 
+      {results.length > 0 && (
+        <section
+          aria-label="참여 요청 결과"
+          className="bg-secondary mb-4 space-y-2 rounded-md p-3 text-sm"
+        >
+          {results.map(({ roomId, name, approved }) => (
+            <p key={roomId}>
+              {name} 참여 요청이 {approved ? "승인됐습니다." : "거절됐습니다."}
+              {approved && (
+                <Link className="text-primary ml-2 underline" href={`/rooms/${roomId}`}>
+                  입장
+                </Link>
+              )}
+            </p>
+          ))}
+        </section>
+      )}
       {recentWorkspace && (
         <div className="rounded-card border-border bg-secondary text-secondary-foreground mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 border px-4 py-2">
           <div className="flex min-w-0 flex-1 items-start gap-2">
@@ -45,12 +72,23 @@ export default async function WorkspacesPage() {
             key={room.id}
             className="rounded-card border-border bg-card text-card-foreground flex min-h-56 min-w-0 flex-col gap-4 border p-4 sm:p-5"
           >
-            <span
-              aria-hidden="true"
-              className="rounded-control bg-secondary text-secondary-foreground grid size-10 place-items-center text-sm font-semibold"
-            >
-              {Array.from(room.name)[0]}
-            </span>
+            {room.imageUrl ? (
+              <Image
+                src={room.imageUrl}
+                alt=""
+                width={40}
+                height={40}
+                unoptimized
+                className="size-10 rounded-md object-cover"
+              />
+            ) : (
+              <span
+                aria-hidden="true"
+                className="rounded-control bg-secondary text-secondary-foreground grid size-10 place-items-center text-sm font-semibold"
+              >
+                {Array.from(room.name)[0]}
+              </span>
+            )}
             <div className="space-y-1.5">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="min-w-0 text-sm font-semibold break-words">{room.name}</h2>
@@ -79,29 +117,35 @@ export default async function WorkspacesPage() {
         ))}
 
         <li>
-          <Button
-            type="button"
-            variant="outline"
-            disabled
-            className="rounded-card border-border bg-card h-full min-h-56 w-full flex-col gap-2 border-dashed p-4 whitespace-normal"
-          >
-            <span
-              aria-hidden="true"
-              className="rounded-control bg-secondary text-secondary-foreground grid size-10 place-items-center"
-            >
-              <Plus />
-            </span>
-            <span className="font-semibold">새 워크스페이스 만들기</span>
-            <span className="text-muted-foreground text-xs">
-              새로운 팀을 위한 공간을 시작하세요.
-            </span>
-          </Button>
+          <RoomFormDialog
+            trigger={
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-card border-border bg-card h-full min-h-56 w-full flex-col gap-2 border-dashed p-4 whitespace-normal"
+              >
+                <span
+                  aria-hidden="true"
+                  className="rounded-control bg-secondary text-secondary-foreground grid size-10 place-items-center"
+                >
+                  <Plus />
+                </span>
+                <span className="font-semibold">새 워크스페이스 만들기</span>
+                <span className="text-muted-foreground text-xs">
+                  새로운 팀을 위한 공간을 시작하세요.
+                </span>
+              </Button>
+            }
+          />
         </li>
       </ul>
 
-      <div className="mt-5 flex justify-center">
-        <Button type="button" variant="ghost" size="sm" disabled>
-          <Link2 aria-hidden="true" /> 초대 링크로 참여하기
+      <div className="mt-5 flex flex-wrap justify-center gap-2">
+        <Button asChild variant="ghost" size="sm">
+          <Link href="/invite">
+            <Link2 aria-hidden="true" />
+            초대 링크로 참여하기
+          </Link>
         </Button>
       </div>
     </section>

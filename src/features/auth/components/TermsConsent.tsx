@@ -2,30 +2,31 @@
 
 import { ArrowRight, ExternalLink } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+
+import { completeMockSignupAction } from "../actions";
 
 const REQUIRED_TERMS = [
   { id: "terms", name: "서비스 이용약관", href: "/terms" },
   { id: "privacy", name: "개인정보 처리방침", href: "/privacy" },
 ] as const;
 
-export function TermsConsent() {
-  const router = useRouter();
+export function TermsConsent({ ticket, next }: { ticket: string; next?: string }) {
   const [consents, setConsents] = useState({ terms: false, privacy: false });
   const hasAcceptedAll = REQUIRED_TERMS.every(({ id }) => consents[id]);
 
   return (
-    <div className="grid gap-3">
+    <form action={completeMockSignupAction.bind(null, ticket, next)} className="grid gap-3">
       <fieldset className="rounded-card border-border bg-card text-card-foreground min-w-0 divide-y border">
         <legend className="sr-only">필수 약관 동의</legend>
         {REQUIRED_TERMS.map(({ id, name, href }) => (
           <div key={id} className="flex items-center gap-3 px-3 py-2">
             <Checkbox
               id={`consent-${id}`}
+              name={id}
               required
               checked={consents[id]}
               onCheckedChange={(checked) =>
@@ -58,13 +59,12 @@ export function TermsConsent() {
       </fieldset>
 
       <Button
-        type="button"
+        type="submit"
         className="rounded-control enabled:hover:bg-brand-dark dark:enabled:hover:bg-primary/80 h-11 w-full enabled:cursor-pointer"
         disabled={!hasAcceptedAll}
-        onClick={() => router.push("/workspaces")}
       >
         계속하기 <ArrowRight aria-hidden="true" />
       </Button>
-    </div>
+    </form>
   );
 }

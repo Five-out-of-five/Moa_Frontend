@@ -1,5 +1,6 @@
 import "server-only";
 
+import { getMyAccount } from "@/features/account/server";
 import { api } from "@/lib/api";
 import { isActiveMember, isRoomOwner } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
@@ -8,10 +9,11 @@ import type { MemberRef, Room } from "@/types/db";
 
 export async function listMyRoomsForSettings() {
   const myRooms = await listMyRooms();
+  const account = isMock ? await getMyAccount() : null;
   return myRooms.map((room) => {
     const member = isMock
       ? roomMembers.find((member) =>
-          member.roomId === room.id && member.accountId === accounts[0].id && isActiveMember(member),
+          member.roomId === room.id && member.accountId === account?.id && isActiveMember(member),
         )
       : undefined;
     return { ...room, isOwner: member ? isRoomOwner(member) : null };
@@ -27,9 +29,10 @@ export async function listMyRoomsForSettings() {
 
 export async function listMyRooms(): Promise<Room[]> {
   if (isMock) {
+    const account = await getMyAccount();
     const memberRoomIds = new Set(
       roomMembers
-        .filter((member) => member.accountId === accounts[0].id && isActiveMember(member))
+        .filter((member) => member.accountId === account.id && isActiveMember(member))
         .map((member) => member.roomId),
     );
     return rooms.filter((room) => memberRoomIds.has(room.id));
@@ -39,7 +42,7 @@ export async function listMyRooms(): Promise<Room[]> {
 
 export async function getWorkspaceSelection() {
   const workspaces = await listMyRooms();
-  const recentRoomId = isMock ? accounts[0].lastRoomId : null;
+  const recentRoomId = isMock ? (await getMyAccount()).lastRoomId : null;
   const recentWorkspace = workspaces.find((room) => room.id === recentRoomId);
 
   return { workspaces, recentWorkspace };

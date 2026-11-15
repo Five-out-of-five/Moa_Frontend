@@ -6,7 +6,10 @@ import { TermsConsent } from "@/features/auth/components/TermsConsent";
 import { SOCIAL_PROVIDER_NAMES } from "@/features/auth/providers";
 import { getSignupAccount } from "@/features/auth/server";
 
-export default async function SignupPage({ params }: { params: Promise<{ ticket: string }> }) {
+export default async function SignupPage({ params, searchParams }: {
+  params: Promise<{ ticket: string }>;
+  searchParams: Promise<{ next?: string }>;
+}) {
   const { ticket } = await params;
   const account = getSignupAccount(ticket);
 
@@ -51,7 +54,7 @@ export default async function SignupPage({ params }: { params: Promise<{ ticket:
         <CircleCheck aria-hidden="true" className="text-success size-4 shrink-0" />
       </div>
 
-      <TermsConsent />
+      <TermsConsent ticket={ticket} next={(await searchParams).next} />
     </section>
   );
 }

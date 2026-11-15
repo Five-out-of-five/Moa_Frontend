@@ -47,7 +47,7 @@ export function WorkspaceSwitcher({ rooms, fallbackRoomId }: Props) {
   if (!current) {
     return (
       <Link
-        href="/workspaces"
+        href="/workspaces/new"
         className="text-brand text-sm font-medium hover:underline"
       >
         워크스페이스 만들기
@@ -91,7 +91,7 @@ export function WorkspaceSwitcher({ rooms, fallbackRoomId }: Props) {
         })}
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <Link href="/workspaces" className="flex cursor-pointer items-center gap-2">
+          <Link href={`/workspaces/manage?room=${current.id}`} className="flex cursor-pointer items-center gap-2">
             <Settings2 className="text-muted-foreground size-4" />
             <span>워크스페이스 관리</span>
           </Link>
