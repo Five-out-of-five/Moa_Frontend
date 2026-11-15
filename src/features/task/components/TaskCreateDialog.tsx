@@ -79,12 +79,22 @@ export function TaskCreateDialog({
   onOpenChange,
   onCreated,
 }: Props) {
+  // ⚠️ 멤버 조회가 실패하면 members=[] 로 떨어진다. 그 상태에서 defaultAssigneeAccountId
+  //    (내 계정) 가 그대로 state 로 들어가면 select 옵션(미담당만)과 값이 어긋나 React
+  //    제어 경고 + 제출 시 서버는 "방 멤버 아님" 거절 (CodeRabbit). 멤버 목록에 포함된
+  //    경우에만 기본 담당자로 쓰고, 그 외엔 null (미담당) 로 맞춘다.
+  const safeDefaultAssignee =
+    defaultAssigneeAccountId !== null &&
+    members.some((m) => m.accountId === defaultAssigneeAccountId)
+      ? defaultAssigneeAccountId
+      : null;
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<TaskStatus>(defaultStatus);
   const [priority, setPriority] = useState<TaskPriority>("NORMAL");
   const [assigneeAccountId, setAssigneeAccountId] = useState<number | null>(
-    defaultAssigneeAccountId,
+    safeDefaultAssignee,
   );
   const [dueDate, setDueDate] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +114,7 @@ export function TaskCreateDialog({
     setDescription("");
     setStatus(defaultStatus);
     setPriority("NORMAL");
-    setAssigneeAccountId(defaultAssigneeAccountId);
+    setAssigneeAccountId(safeDefaultAssignee);
     setDueDate("");
     setError(null);
     setFieldErrors({});
@@ -116,6 +126,14 @@ export function TaskCreateDialog({
     // resetState 는 매 렌더 재생성되지만 open 전환 시점에만 호출되므로 의도적 ignore.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // ⚠️ 제출 중에는 **모든 닫기 경로** 를 막아야 한다 (CodeRabbit). Dialog 의 기본 X·ESC·
+  //    overlay 클릭으로 닫히면, 이전 요청의 성공 콜백이 새로 열린 Dialog 를 닫고 새 입력
+  //    상태를 reset effect 가 지워 버린다. pending 중엔 close 요청을 그냥 무시한다.
+  const handleOpenChange = (next: boolean) => {
+    if (pending && !next) return;
+    onOpenChange(next);
+  };
 
   const canSubmit = !pending && title.trim().length > 0;
 
@@ -153,7 +171,7 @@ export function TaskCreateDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
           <DialogTitle>새 업무 추가</DialogTitle>
@@ -224,6 +242,11 @@ export function TaskCreateDialog({
                   )
                 }
                 aria-invalid={fieldErrors.assigneeAccountId ? true : undefined}
+                aria-describedby={
+                  fieldErrors.assigneeAccountId
+                    ? `${assigneeInputId}-error`
+                    : undefined
+                }
               >
                 <option value={UNASSIGNED_VALUE}>미담당</option>
                 {members.map((m) => (
@@ -233,7 +256,9 @@ export function TaskCreateDialog({
                 ))}
               </SelectNative>
               {fieldErrors.assigneeAccountId && (
-                <FieldError>{fieldErrors.assigneeAccountId}</FieldError>
+                <FieldError id={`${assigneeInputId}-error`}>
+                  {fieldErrors.assigneeAccountId}
+                </FieldError>
               )}
             </div>
           </div>
@@ -262,9 +287,14 @@ export function TaskCreateDialog({
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
                 aria-invalid={fieldErrors.dueDate ? true : undefined}
+                aria-describedby={
+                  fieldErrors.dueDate ? `${dueInputId}-error` : undefined
+                }
               />
               {fieldErrors.dueDate && (
-                <FieldError>{fieldErrors.dueDate}</FieldError>
+                <FieldError id={`${dueInputId}-error`}>
+                  {fieldErrors.dueDate}
+                </FieldError>
               )}
             </div>
           </div>

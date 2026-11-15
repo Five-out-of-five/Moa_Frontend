@@ -41,11 +41,33 @@ const createTaskSchema = z
     status: z.enum(["TODO", "IN_PROGRESS", "REVIEW", "DONE"]),
     priority: z.enum(["LOW", "NORMAL", "HIGH"]),
     assigneeAccountId: z.number().int().positive().nullable(),
+    // ⚠️ regex 통과만 보면 "2026-02-31" 같은 **달력상 존재하지 않는 날짜** 가 통과돼
+    //    저장된다 (CodeRabbit). regex + round-trip 으로 실제 Date 생성 후 입력한 년/월/일과
+    //    일치하는지 검증한다 (Date 는 잘못된 날짜를 다음 달로 롤오버함).
     dueDate: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, "마감일 형식이 올바르지 않습니다.")
+      .refine(isValidCalendarDate, {
+        message: "달력에 존재하지 않는 날짜예요.",
+      })
       .nullable(),
   });
+
+/**
+ * "yyyy-MM-dd" 가 **달력상 실제로 존재하는 날짜** 인지 검사. 자바스크립트 `Date` 는
+ * 잘못된 날짜 (예: 2026-02-31) 를 다음 달로 롤오버해서 생성하므로, 생성된 Date 의
+ * 년/월/일을 원문자열과 다시 비교한다.
+ */
+function isValidCalendarDate(ymd: string): boolean {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return false;
+  const utc = new Date(Date.UTC(y, m - 1, d));
+  return (
+    utc.getUTCFullYear() === y &&
+    utc.getUTCMonth() === m - 1 &&
+    utc.getUTCDate() === d
+  );
+}
 
 /**
  * 업무 생성 결과 — 참여/투표 액션과 같이 **throw 하지 않고 kind 로 구분해서 리턴**.
