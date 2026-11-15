@@ -28,28 +28,6 @@ export async function listMyChannels(): Promise<ChatChannel[]> {
 
 /** 내 1:1 메시지 스레드 전부 */
 export async function listMyDmThreads(): Promise<DirectMessageThread[]> {
-  if (isMock) {
-    const viewerRooms = new Set(
-      roomMembers
-        .filter((member) => member.accountId === 1 && isActiveMember(member))
-        .map(({ roomId }) => roomId),
-    );
-    return DM_THREADS.map((thread) => ({
-      ...thread,
-      sharedRoomIds: roomMembers
-        .filter(
-          (member) =>
-            member.accountId === thread.accountId &&
-            isActiveMember(member) &&
-            viewerRooms.has(member.roomId),
-        )
-        .map(({ roomId }) => roomId),
-    }));
-  }
+  if (isMock) return DM_THREADS;
   return api<DirectMessageThread[]>("/api/v1/accounts/me/dms");
-}
-
-export function getMockMemberPresence(accountId: number): boolean | null {
-  if (!isMock) return null;
-  return DM_THREADS.find((thread) => thread.accountId === accountId)?.online ?? false;
 }

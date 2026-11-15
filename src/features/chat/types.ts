@@ -20,5 +20,4 @@ export interface DirectMessageThread {
   displayName: string;
   online: boolean;
   unreadCount: number;
-  sharedRoomIds?: number[];
 }

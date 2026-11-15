@@ -2,7 +2,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { Button } from "@/components/ui/button";
 import { getRoomMemberProfile } from "@/features/room/profile/member-server";
 
 export default async function MemberProfilePage({
@@ -34,16 +33,6 @@ export default async function MemberProfilePage({
         )}
         <p className="font-medium break-words">{profile.name}</p>
         {profile.position && <p className="text-muted-foreground text-sm">{profile.position}</p>}
-        {profile.status === "ACTIVE" && (
-          <>
-            <p className="text-muted-foreground text-sm">
-              {profile.online ? "접속 중" : "오프라인"}
-            </p>
-            <Button asChild>
-              <Link href={`/rooms/${roomId}/dms/${accountId}`}>1:1 대화</Link>
-            </Button>
-          </>
-        )}
       </div>
     </section>
   );

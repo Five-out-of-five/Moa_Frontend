@@ -163,10 +163,19 @@ export function TaskDetailSheet({ roomId, task, open, onOpenChange }: Props) {
 
               <section>
                 <h3 className="text-muted-foreground mb-1.5 text-xs font-medium">담당자</h3>
-                <div className="text-foreground flex items-center gap-2 text-sm">
-                  <User className="text-muted-foreground size-4" />
-                  {local.assignee ? local.assignee.displayName : "미담당"}
-                </div>
+                {local.assignee ? (
+                  <MemberProfileLink
+                    roomId={roomId}
+                    accountId={local.assignee.accountId}
+                    name={local.assignee.displayName}
+                    imageUrl={local.assignee.profileImageUrl}
+                  />
+                ) : (
+                  <div className="text-foreground flex items-center gap-2 text-sm">
+                    <User aria-hidden="true" className="text-muted-foreground size-4" />
+                    미담당
+                  </div>
+                )}
               </section>
 
               <section>
