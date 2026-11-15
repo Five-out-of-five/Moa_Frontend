@@ -15,6 +15,29 @@ const submitBallotSchema = z.object({
 });
 
 /**
+ * 투표 수정 입력 — 현재 범위는 **제목 · 마감 일시 · 익명 여부** 세 가지.
+ *
+ * ⚠️ 선택지(options) 는 이번 PR 에서 수정하지 않는다 — 참여가 이미 들어온 투표에서
+ *    선택지를 바꾸면 집계 공정성 문제가 생기고, 복원도 어렵다. BE 확정 뒤 별도 PR.
+ */
+const updateVoteSchema = z.object({
+  roomId: z.number().int().positive(),
+  voteId: z.number().int().positive(),
+  title: z
+    .string()
+    .trim()
+    .min(1, "투표 제목을 입력해 주세요.")
+    .max(120, "투표 제목은 120자 이하로 입력해 주세요."),
+  deadlineAt: z.string().datetime({ offset: true }),
+  anonymous: z.boolean(),
+});
+
+const idOnlySchema = z.object({
+  roomId: z.number().int().positive(),
+  voteId: z.number().int().positive(),
+});
+
+/**
  * 새 투표 생성 입력 — Figma Make 의 생성 다이얼로그가 보내는 shape.
  *
  * ⚠️ `YES_NO` 는 "찬성/반대" 두 선택지가 **서버에서 고정**이라 클라이언트가 보낸
@@ -205,6 +228,200 @@ export async function createVoteAction(
  */
 function nextMockId(existing: readonly number[]): number {
   return existing.length === 0 ? 1 : Math.max(...existing) + 1;
+}
+
+/**
+ * 투표 수정 결과 — 생성·참여 액션과 같이 kind 리턴 패턴.
+ * - `ok` : 수정 성공, `vote` 최신 상세
+ * - `error` : 검증 실패 or 서버 거절 (403 작성자 아님 등)
+ */
+export type UpdateVoteResult =
+  | { kind: "ok"; vote: VoteDetail }
+  | { kind: "error"; message: string; fieldErrors?: Record<string, string> };
+
+/**
+ * 투표 수정 — 명세 `PATCH /api/v1/rooms/{roomId}/votes/{voteId}`.
+ * 제목 · 마감 일시 · 익명 여부만 교체. 선택지 수정은 범위 외.
+ */
+export async function updateVoteAction(
+  input: unknown,
+): Promise<UpdateVoteResult> {
+  const parsed = updateVoteSchema.safeParse(input);
+  if (!parsed.success) {
+    const fieldErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      const path = issue.path.join(".");
+      if (path && !fieldErrors[path]) fieldErrors[path] = issue.message;
+    }
+    return {
+      kind: "error",
+      message: parsed.error.issues[0]?.message ?? "요청 형식이 올바르지 않습니다.",
+      fieldErrors,
+    };
+  }
+  const { roomId, voteId, title, deadlineAt, anonymous } = parsed.data;
+
+  if (isMock) {
+    const v = votes.find((x) => x.roomId === roomId && x.voteId === voteId);
+    if (!v) return { kind: "error", message: "투표를 찾을 수 없습니다." };
+    if (v.status === "CLOSED") {
+      return { kind: "error", message: "마감된 투표는 수정할 수 없어요." };
+    }
+    const me = accounts[0];
+    if (!me || v.creator.accountId !== me.id) {
+      return { kind: "error", message: "투표 작성자만 수정할 수 있어요." };
+    }
+    v.title = title;
+    v.deadlineAt = deadlineAt;
+    // 이미 참여한 사람의 신원을 숨기기 위해 참여자 → 익명 전환 시 participants 를 비운다.
+    if (!v.anonymous && anonymous) v.participants = [];
+    v.anonymous = anonymous;
+    v.version += 1;
+    const { roomId: _r, ...detail } = v;
+    void _r;
+    revalidatePath(`/rooms/${roomId}/votes`, "page");
+    return { kind: "ok", vote: detail };
+  }
+
+  try {
+    const res = await api<VoteDetail>(
+      `/api/v1/rooms/${roomId}/votes/${voteId}`,
+      { method: "PATCH", json: { title, deadlineAt, anonymous } },
+    );
+    revalidatePath(`/rooms/${roomId}/votes`, "page");
+    return { kind: "ok", vote: res };
+  } catch (e) {
+    if (e instanceof ApiError) return { kind: "error", message: e.message };
+    return {
+      kind: "error",
+      message: "투표 수정에 실패했습니다. 잠시 뒤 다시 시도해 주세요.",
+    };
+  }
+}
+
+/**
+ * 투표 수동 마감 결과 — kind 리턴 패턴.
+ * - `ok` : 마감 완료, `vote` 최신 상세 (status=CLOSED, closeReason=MANUAL)
+ * - `error` : 실패
+ */
+export type CloseVoteResult =
+  | { kind: "ok"; vote: VoteDetail }
+  | { kind: "error"; message: string };
+
+/**
+ * 투표 수동 마감 — 명세 `PATCH /api/v1/rooms/{roomId}/votes/{voteId}/close`.
+ * 작성자만 호출 가능, 이미 CLOSED 면 멱등하게 거절.
+ */
+export async function closeVoteAction(
+  input: unknown,
+): Promise<CloseVoteResult> {
+  const parsed = idOnlySchema.safeParse(input);
+  if (!parsed.success) {
+    return { kind: "error", message: "요청 형식이 올바르지 않습니다." };
+  }
+  const { roomId, voteId } = parsed.data;
+
+  if (isMock) {
+    const v = votes.find((x) => x.roomId === roomId && x.voteId === voteId);
+    if (!v) return { kind: "error", message: "투표를 찾을 수 없습니다." };
+    if (v.status === "CLOSED") {
+      return { kind: "error", message: "이미 마감된 투표예요." };
+    }
+    const me = accounts[0];
+    if (!me || v.creator.accountId !== me.id) {
+      return { kind: "error", message: "투표 작성자만 마감할 수 있어요." };
+    }
+    v.status = "CLOSED";
+    v.closeReason = "MANUAL";
+    v.version += 1;
+    // 마감 시점에 득표 수를 공개한다 (참여 결과를 그 자리에서 보여줘야 함). 목에선
+    // **작성자(나) 의 선택을 먼저 반영** 하고 나머지 다른 참여자 수는 첫 옵션에 몰아주는
+    // 단순 모델로 깐다 (실서버는 BE 집계) — 그렇게 안 하면 `myOptionIds` 에 2번 옵션이
+    // 남아 있는데 결과엔 1번만 1표로 찍히는 모순이 생긴다 (CodeRabbit).
+    const myOptionSet = new Set(v.myOptionIds);
+    const iVoted = myOptionSet.size > 0;
+    const othersCount = Math.max(0, v.participantCount - (iVoted ? 1 : 0));
+    v.options = v.options.map((o, i) => ({
+      ...o,
+      voteCount:
+        (i === 0 ? othersCount : 0) + (myOptionSet.has(o.optionId) ? 1 : 0),
+    }));
+    const maxVote = Math.max(...v.options.map((o) => o.voteCount ?? 0));
+    v.options = v.options.map((o) => ({
+      ...o,
+      top: (o.voteCount ?? 0) === maxVote && maxVote > 0,
+    }));
+    v.tied = v.options.filter((o) => o.top).length > 1;
+    const { roomId: _r, ...detail } = v;
+    void _r;
+    revalidatePath(`/rooms/${roomId}/votes`, "page");
+    return { kind: "ok", vote: detail };
+  }
+
+  try {
+    const res = await api<VoteDetail>(
+      `/api/v1/rooms/${roomId}/votes/${voteId}/close`,
+      { method: "PATCH" },
+    );
+    revalidatePath(`/rooms/${roomId}/votes`, "page");
+    return { kind: "ok", vote: res };
+  } catch (e) {
+    if (e instanceof ApiError) return { kind: "error", message: e.message };
+    return {
+      kind: "error",
+      message: "투표 마감에 실패했습니다. 잠시 뒤 다시 시도해 주세요.",
+    };
+  }
+}
+
+/**
+ * 투표 삭제 결과 — kind 리턴 패턴.
+ * - `ok` : 삭제 완료 (리스트에서 제거하도록 호출부가 처리)
+ * - `error` : 실패
+ */
+export type DeleteVoteResult =
+  | { kind: "ok" }
+  | { kind: "error"; message: string };
+
+/**
+ * 투표 삭제 — 명세 `DELETE /api/v1/rooms/{roomId}/votes/{voteId}`.
+ * 작성자만 호출 가능. 복구 불가 — UI 는 AlertDialog 로 confirm.
+ */
+export async function deleteVoteAction(
+  input: unknown,
+): Promise<DeleteVoteResult> {
+  const parsed = idOnlySchema.safeParse(input);
+  if (!parsed.success) {
+    return { kind: "error", message: "요청 형식이 올바르지 않습니다." };
+  }
+  const { roomId, voteId } = parsed.data;
+
+  if (isMock) {
+    const idx = votes.findIndex(
+      (x) => x.roomId === roomId && x.voteId === voteId,
+    );
+    if (idx < 0) return { kind: "error", message: "투표를 찾을 수 없습니다." };
+    const target = votes[idx]!;
+    const me = accounts[0];
+    if (!me || target.creator.accountId !== me.id) {
+      return { kind: "error", message: "투표 작성자만 삭제할 수 있어요." };
+    }
+    votes.splice(idx, 1);
+    revalidatePath(`/rooms/${roomId}/votes`, "page");
+    return { kind: "ok" };
+  }
+
+  try {
+    await api(`/api/v1/rooms/${roomId}/votes/${voteId}`, { method: "DELETE" });
+    revalidatePath(`/rooms/${roomId}/votes`, "page");
+    return { kind: "ok" };
+  } catch (e) {
+    if (e instanceof ApiError) return { kind: "error", message: e.message };
+    return {
+      kind: "error",
+      message: "투표 삭제에 실패했습니다. 잠시 뒤 다시 시도해 주세요.",
+    };
+  }
 }
 
 /**
