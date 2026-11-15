@@ -19,6 +19,10 @@ function membershipKey(member: (typeof roomMembers)[number]) {
   return `${member.roomId}:${member.accountId}:${member.id}`;
 }
 
+export function getMockRoomMemberProfile(member: (typeof roomMembers)[number]) {
+  return profiles.get(membershipKey(member));
+}
+
 export const getFirstRoomProfile = cache(async (roomId: string) => {
   const room = (await listMyRooms()).find(({ id }) => String(id) === roomId);
   if (!room) return null;

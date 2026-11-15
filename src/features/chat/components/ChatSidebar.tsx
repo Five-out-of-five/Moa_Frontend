@@ -37,9 +37,7 @@ export function ChatSidebar({ channels, dms, profiles }: Props) {
   const profile = profiles.find(({ roomId }) => roomId === currentRoomId);
 
   const visibleChannels = useMemo(() => {
-    const base = currentRoomId
-      ? channels.filter((c) => c.roomId === currentRoomId)
-      : channels;
+    const base = currentRoomId ? channels.filter((c) => c.roomId === currentRoomId) : channels;
     if (!query.trim()) return base;
     const q = query.trim().toLowerCase();
     return base.filter((c) => c.name.toLowerCase().includes(q));
@@ -61,13 +59,12 @@ export function ChatSidebar({ channels, dms, profiles }: Props) {
   }, [pathname]);
 
   const isSearching = query.trim().length > 0;
-  const nothingToShow =
-    visibleChannels.length === 0 && visibleDms.length === 0;
+  const nothingToShow = visibleChannels.length === 0 && visibleDms.length === 0;
 
   return (
     <nav
       aria-label="채팅 채널"
-      className="bg-surface flex h-[calc(100dvh-var(--header-height))] w-[var(--sidebar-width)] shrink-0 flex-col border-r border-border"
+      className="bg-surface border-border flex h-[calc(100dvh-var(--header-height))] w-[var(--sidebar-width)] shrink-0 flex-col border-r"
     >
       <div className="border-border-soft flex items-center justify-between border-b px-4 py-3">
         <h2 className="text-foreground text-base font-semibold">채팅</h2>
@@ -111,19 +108,14 @@ export function ChatSidebar({ channels, dms, profiles }: Props) {
               count={publicChannels.length}
               onAdd={{ label: "새 공개 채널" }}
               emptyMessage={
-                isSearching
-                  ? "검색된 공개 채널이 없어요."
-                  : "참여한 공개 채널이 없어요."
+                isSearching ? "검색된 공개 채널이 없어요." : "참여한 공개 채널이 없어요."
               }
             >
               {publicChannels.map((channel) => (
                 <ChannelRow
                   key={channel.id}
                   channel={channel}
-                  active={
-                    activePathMatch.kind === "channels" &&
-                    activePathMatch.id === channel.id
-                  }
+                  active={activePathMatch.kind === "channels" && activePathMatch.id === channel.id}
                 />
               ))}
             </Section>
@@ -132,19 +124,14 @@ export function ChatSidebar({ channels, dms, profiles }: Props) {
               count={privateChannels.length}
               onAdd={{ label: "새 비공개 채널" }}
               emptyMessage={
-                isSearching
-                  ? "검색된 비공개 채널이 없어요."
-                  : "참여한 비공개 채널이 없어요."
+                isSearching ? "검색된 비공개 채널이 없어요." : "참여한 비공개 채널이 없어요."
               }
             >
               {privateChannels.map((channel) => (
                 <ChannelRow
                   key={channel.id}
                   channel={channel}
-                  active={
-                    activePathMatch.kind === "channels" &&
-                    activePathMatch.id === channel.id
-                  }
+                  active={activePathMatch.kind === "channels" && activePathMatch.id === channel.id}
                 />
               ))}
             </Section>
@@ -153,17 +140,20 @@ export function ChatSidebar({ channels, dms, profiles }: Props) {
               count={visibleDms.length}
               onAdd={{ label: "새 메시지" }}
               emptyMessage={
-                isSearching
-                  ? "검색된 1:1 메시지가 없어요."
-                  : "진행 중인 1:1 메시지가 없어요."
+                isSearching ? "검색된 1:1 메시지가 없어요." : "진행 중인 1:1 메시지가 없어요."
               }
             >
               {visibleDms.map((dm) => (
                 <DmRow
                   key={dm.id}
                   dm={dm}
+                  roomId={currentRoomId}
                   active={
-                    activePathMatch.kind === "dms" && activePathMatch.id === dm.id
+                    activePathMatch.kind === "dms" &&
+                    activePathMatch.id ===
+                      (currentRoomId && dm.sharedRoomIds?.includes(currentRoomId)
+                        ? dm.accountId
+                        : dm.id)
                   }
                 />
               ))}
@@ -197,15 +187,13 @@ function Section({
   emptyMessage?: string;
   children: React.ReactNode;
 }) {
-  const hasChildren = Array.isArray(children)
-    ? children.some(Boolean)
-    : Boolean(children);
+  const hasChildren = Array.isArray(children) ? children.some(Boolean) : Boolean(children);
   if (!hasChildren && !emptyMessage) return null;
 
   return (
     <section className="mb-3">
       <div className="flex items-center justify-between px-2 pt-1 pb-1">
-        <div className="text-muted-foreground flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide">
+        <div className="text-muted-foreground flex items-center gap-1.5 text-[11px] font-medium tracking-wide uppercase">
           <span>{label}</span>
           <span className="text-muted-foreground/70">{count}</span>
         </div>
@@ -218,22 +206,14 @@ function Section({
       {hasChildren ? (
         <ul className="flex flex-col gap-0.5">{children}</ul>
       ) : (
-        <p className="text-muted-foreground/80 px-2 py-1 text-xs">
-          {emptyMessage}
-        </p>
+        <p className="text-muted-foreground/80 px-2 py-1 text-xs">{emptyMessage}</p>
       )}
     </section>
   );
 }
 
 /** 채널 한 줄 — `#` 또는 자물쇠 아이콘 + 이름 + 미읽음 뱃지. */
-function ChannelRow({
-  channel,
-  active,
-}: {
-  channel: ChatChannel;
-  active: boolean;
-}) {
+function ChannelRow({ channel, active }: { channel: ChatChannel; active: boolean }) {
   const Icon = channel.kind === "PRIVATE" ? Lock : Hash;
   return (
     <li>
@@ -256,35 +236,53 @@ function ChannelRow({
 }
 
 /** 1:1 스레드 한 줄 — 이니셜 아바타(접속 상태 점) + 상대 이름 + 미읽음 뱃지. */
-function DmRow({ dm, active }: { dm: DirectMessageThread; active: boolean }) {
+function DmRow({
+  dm,
+  active,
+  roomId,
+}: {
+  dm: DirectMessageThread;
+  active: boolean;
+  roomId: number | null;
+}) {
   const initial = dm.displayName.slice(0, 1);
+  const sharedRoomId = roomId && dm.sharedRoomIds?.includes(roomId) ? roomId : null;
+  const avatar = (
+    <span
+      aria-hidden="true"
+      className="bg-brand relative flex size-5 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+    >
+      {initial}
+      {dm.online && (
+        <span className="bg-success border-surface absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full border" />
+      )}
+    </span>
+  );
   return (
-    <li>
+    <li className="flex items-center gap-1 pl-2">
+      {sharedRoomId ? (
+        <Link
+          href={`/rooms/${sharedRoomId}/members/${dm.accountId}`}
+          aria-label={`${dm.displayName} 프로필`}
+          className="focus-visible:ring-ring shrink-0 rounded-full focus-visible:ring-2"
+        >
+          {avatar}
+        </Link>
+      ) : (
+        avatar
+      )}
       <Link
-        href={`/dms/${dm.id}`}
+        href={sharedRoomId ? `/rooms/${sharedRoomId}/dms/${dm.accountId}` : `/dms/${dm.id}`}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "group flex h-8 items-center gap-2 rounded-[var(--radius-control)] px-2 text-sm transition-colors",
+          "group flex h-8 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-control)] px-2 text-sm transition-colors",
           active
             ? "bg-secondary text-secondary-foreground font-semibold"
             : "text-muted-foreground hover:bg-muted hover:text-foreground",
         )}
       >
-        <span className="relative">
-          <span
-            aria-hidden="true"
-            className="bg-brand text-[10px] font-semibold text-white flex size-5 items-center justify-center rounded-full"
-          >
-            {initial}
-          </span>
-          {dm.online && (
-            <span
-              aria-label="접속 중"
-              className="bg-success border-surface absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full border"
-            />
-          )}
-        </span>
         <span className="flex-1 truncate">{dm.displayName}</span>
+        {dm.online && <span className="sr-only">접속 중</span>}
         {dm.unreadCount > 0 && <UnreadBadge count={dm.unreadCount} />}
       </Link>
     </li>
@@ -328,9 +326,7 @@ function IconButton({
 function EmptyState({ query }: { query: string }) {
   return (
     <p className="text-muted-foreground px-3 py-10 text-center text-xs">
-      {query.trim()
-        ? "검색 결과가 없습니다."
-        : "참여 중인 채널이 없습니다."}
+      {query.trim() ? "검색 결과가 없습니다." : "참여 중인 채널이 없습니다."}
     </p>
   );
 }
@@ -343,7 +339,7 @@ export function ChatSidebarFallback() {
   return (
     <aside
       aria-label="채팅 사이드바 로딩"
-      className="bg-surface flex h-[calc(100dvh-var(--header-height))] w-[var(--sidebar-width)] shrink-0 flex-col gap-3 border-r border-border px-4 py-4"
+      className="bg-surface border-border flex h-[calc(100dvh-var(--header-height))] w-[var(--sidebar-width)] shrink-0 flex-col gap-3 border-r px-4 py-4"
     >
       <span className="bg-muted h-5 w-16 animate-pulse rounded" />
       <span className="bg-muted h-8 w-full animate-pulse rounded" />

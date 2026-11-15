@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import {
   getFirstRoomProfile,
+  getMockRoomMemberProfile,
   isNicknameTaken,
   updateMockRoomProfile,
 } from "../first-profile/server";
@@ -38,7 +39,8 @@ export async function updateRoomProfileAction(
     };
   }
 
-  const { account, key, profile } = entry.setup;
+  const { account, key, member } = entry.setup;
+  const profile = getMockRoomMemberProfile(member);
   if (nickname.data && isNicknameTaken(entry.room.id, account.id, nickname.data)) {
     return { errors: { nickname: "이 워크스페이스에서 이미 사용 중인 닉네임입니다." } };
   }
