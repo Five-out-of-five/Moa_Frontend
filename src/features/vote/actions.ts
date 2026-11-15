@@ -335,12 +335,16 @@ export async function closeVoteAction(
     v.closeReason = "MANUAL";
     v.version += 1;
     // 마감 시점에 득표 수를 공개한다 (참여 결과를 그 자리에서 보여줘야 함). 목에선
-    // 각 옵션에 대해 "myOptionIds + 다른 참여자" 를 기반으로 임시 분포를 만들지 않고,
-    // 참여자 전원이 첫 옵션을 찍었다고 치는 단순 모델로 깔아 둔다 (실서버는 BE 집계).
-    const total = v.participantCount;
+    // **작성자(나) 의 선택을 먼저 반영** 하고 나머지 다른 참여자 수는 첫 옵션에 몰아주는
+    // 단순 모델로 깐다 (실서버는 BE 집계) — 그렇게 안 하면 `myOptionIds` 에 2번 옵션이
+    // 남아 있는데 결과엔 1번만 1표로 찍히는 모순이 생긴다 (CodeRabbit).
+    const myOptionSet = new Set(v.myOptionIds);
+    const iVoted = myOptionSet.size > 0;
+    const othersCount = Math.max(0, v.participantCount - (iVoted ? 1 : 0));
     v.options = v.options.map((o, i) => ({
       ...o,
-      voteCount: i === 0 ? total : 0,
+      voteCount:
+        (i === 0 ? othersCount : 0) + (myOptionSet.has(o.optionId) ? 1 : 0),
     }));
     const maxVote = Math.max(...v.options.map((o) => o.voteCount ?? 0));
     v.options = v.options.map((o) => ({

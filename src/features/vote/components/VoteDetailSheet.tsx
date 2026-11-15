@@ -83,9 +83,15 @@ export function VoteDetailSheet({
   //    B 의 상태를 덮는 걸 막기 위한 generation 토큰. `vote` 가 바뀔 때마다 증가하고,
   //    응답 처리 시 요청 시점의 값과 비교해 다르면 결과를 버린다.
   const genRef = useRef(0);
+  // ⚠️ 관리 액션(수정·마감·삭제) 응답도 다른 투표로 전환된 뒤 도착할 수 있다. 응답 시점에
+  //    현재 열린 투표 ID 와 다르면 **상위 캐시만 갱신** 하고, 로컬 Sheet 상태(local/error/
+  //    다이얼로그 열림 등) 는 건드리지 않는다. 그렇지 않으면 B 의 Sheet 에 A 의 내용이
+  //    튀어 올라오거나, A 삭제 응답이 B 의 Sheet 를 닫는다 (CodeRabbit).
+  const voteIdRef = useRef<number | null>(vote?.voteId ?? null);
 
   useEffect(() => {
     genRef.current += 1;
+    voteIdRef.current = vote?.voteId ?? null;
     setLocal(vote);
     setSelected(vote?.myOptionIds ?? []);
     setError(null);
@@ -103,8 +109,10 @@ export function VoteDetailSheet({
     local.creator.accountId === meAccountId;
 
   const handleUpdated = (updated: VoteDetail) => {
-    setLocal(updated);
+    // 상위 리스트 캐시는 항상 갱신해 다음에 이 투표를 다시 열 때 최신 값이 보이도록 하고,
+    // 현재 Sheet 가 이 투표를 보고 있을 때만 로컬 상태를 바꾼다.
     onVoteUpdated?.(updated);
+    if (voteIdRef.current === updated.voteId) setLocal(updated);
   };
 
   const handleConfirmClose = () => {
@@ -116,17 +124,20 @@ export function VoteDetailSheet({
         result = await closeVoteAction({ roomId, voteId });
       } catch (e) {
         console.error("VoteDetailSheet closeVoteAction rejected:", e);
-        setError(
-          "요청을 보내지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
-        );
-        setCloseConfirmOpen(false);
+        if (voteIdRef.current === voteId) {
+          setError(
+            "요청을 보내지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
+          );
+          setCloseConfirmOpen(false);
+        }
         return;
       }
-      setCloseConfirmOpen(false);
+      const isCurrent = voteIdRef.current === voteId;
+      if (isCurrent) setCloseConfirmOpen(false);
       if (result.kind === "ok") {
-        setLocal(result.vote);
         onVoteUpdated?.(result.vote);
-      } else {
+        if (isCurrent) setLocal(result.vote);
+      } else if (isCurrent) {
         setError(result.message);
       }
     });
@@ -141,17 +152,20 @@ export function VoteDetailSheet({
         result = await deleteVoteAction({ roomId, voteId });
       } catch (e) {
         console.error("VoteDetailSheet deleteVoteAction rejected:", e);
-        setError(
-          "요청을 보내지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
-        );
-        setDeleteConfirmOpen(false);
+        if (voteIdRef.current === voteId) {
+          setError(
+            "요청을 보내지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
+          );
+          setDeleteConfirmOpen(false);
+        }
         return;
       }
-      setDeleteConfirmOpen(false);
+      const isCurrent = voteIdRef.current === voteId;
+      if (isCurrent) setDeleteConfirmOpen(false);
       if (result.kind === "ok") {
         onVoteDeleted?.(voteId);
-        onOpenChange(false);
-      } else {
+        if (isCurrent) onOpenChange(false);
+      } else if (isCurrent) {
         setError(result.message);
       }
     });
@@ -230,12 +244,14 @@ export function VoteDetailSheet({
       <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        showCloseButton={false}
+        // ⚠️ 모바일에선 Sheet 가 화면 전체를 덮어 overlay 클릭으로 닫을 수 없다. 기본 X 버튼은
+        //    유지하되, 더보기 메뉴와 겹치지 않도록 헤더 콘텐츠에 우측 여백(pr-12)을 확보해
+        //    X 버튼 자리를 비워 둔다 (CodeRabbit).
         className="bg-surface flex w-full flex-col gap-0 p-0 sm:max-w-[420px]"
       >
         {local ? (
           <>
-            <SheetHeader className="border-border-soft gap-2 border-b px-5 py-4">
+            <SheetHeader className="border-border-soft gap-2 border-b px-5 py-4 pr-12">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <StatusBadge status={local.status} />
