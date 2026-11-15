@@ -11,6 +11,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { MemberProfileLink } from "@/features/room/profile/MemberProfileLink";
 import { cn } from "@/lib/utils";
 import type { TaskDetail, TaskStatus } from "@/types/db";
 
@@ -75,9 +76,7 @@ export function TaskDetailSheet({ roomId, task, open, onOpenChange }: Props) {
       } catch (e) {
         if (genRef.current !== requestGen) return;
         console.error("TaskDetailSheet changeTaskStatusAction rejected:", e);
-        setError(
-          "요청을 보내지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
-        );
+        setError("요청을 보내지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.");
         return;
       }
       if (genRef.current !== requestGen) return;
@@ -114,27 +113,29 @@ export function TaskDetailSheet({ roomId, task, open, onOpenChange }: Props) {
                   우선순위 · {TASK_PRIORITY_LABEL[local.priority]}
                 </span>
                 {local.source.type !== "NONE" && (
-                  <span className="bg-background text-muted-foreground inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] font-medium">
+                  <span className="bg-background text-muted-foreground border-border inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium">
                     {TASK_SOURCE_LABEL[local.source.type]}
                   </span>
                 )}
               </div>
-              <SheetTitle className="text-foreground text-lg font-semibold leading-snug">
+              <SheetTitle className="text-foreground text-lg leading-snug font-semibold">
                 {local.title}
               </SheetTitle>
               <SheetDescription className="text-muted-foreground text-xs">
-                {local.registrant.displayName} 님이 등록 · {formatDDay(local.dDay, local.overdue)}
-                {local.overdue && (
-                  <span className="text-destructive ml-2 font-medium">지연</span>
-                )}
+                <MemberProfileLink
+                  roomId={roomId}
+                  accountId={local.registrant.accountId}
+                  name={local.registrant.displayName}
+                  imageUrl={local.registrant.profileImageUrl}
+                />
+                <span> · {formatDDay(local.dDay, local.overdue)}</span>
+                {local.overdue && <span className="text-destructive ml-2 font-medium">지연</span>}
               </SheetDescription>
             </SheetHeader>
 
             <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
               <section>
-                <h3 className="text-muted-foreground mb-1.5 text-xs font-medium">
-                  상태
-                </h3>
+                <h3 className="text-muted-foreground mb-1.5 text-xs font-medium">상태</h3>
                 <div className="flex flex-wrap gap-1.5">
                   {TASK_STATUS_ORDER.map((s) => {
                     const active = local.status === s;
@@ -157,27 +158,28 @@ export function TaskDetailSheet({ roomId, task, open, onOpenChange }: Props) {
                     );
                   })}
                 </div>
-                {error && (
-                  <p className="text-destructive mt-2 text-xs">{error}</p>
+                {error && <p className="text-destructive mt-2 text-xs">{error}</p>}
+              </section>
+
+              <section>
+                <h3 className="text-muted-foreground mb-1.5 text-xs font-medium">담당자</h3>
+                {local.assignee ? (
+                  <MemberProfileLink
+                    roomId={roomId}
+                    accountId={local.assignee.accountId}
+                    name={local.assignee.displayName}
+                    imageUrl={local.assignee.profileImageUrl}
+                  />
+                ) : (
+                  <div className="text-foreground flex items-center gap-2 text-sm">
+                    <User aria-hidden="true" className="text-muted-foreground size-4" />
+                    미담당
+                  </div>
                 )}
               </section>
 
               <section>
-                <h3 className="text-muted-foreground mb-1.5 text-xs font-medium">
-                  담당자
-                </h3>
-                <div className="text-foreground flex items-center gap-2 text-sm">
-                  <User className="text-muted-foreground size-4" />
-                  {local.assignee
-                    ? local.assignee.displayName
-                    : "미담당"}
-                </div>
-              </section>
-
-              <section>
-                <h3 className="text-muted-foreground mb-1.5 text-xs font-medium">
-                  기한
-                </h3>
+                <h3 className="text-muted-foreground mb-1.5 text-xs font-medium">기한</h3>
                 <div className="text-foreground flex items-center gap-2 text-sm">
                   <Calendar className="text-muted-foreground size-4" />
                   {local.dueDate ?? "기한 없음"}
@@ -186,10 +188,8 @@ export function TaskDetailSheet({ roomId, task, open, onOpenChange }: Props) {
 
               {local.description && (
                 <section>
-                  <h3 className="text-muted-foreground mb-1.5 text-xs font-medium">
-                    설명
-                  </h3>
-                  <p className="text-foreground whitespace-pre-wrap text-sm leading-relaxed">
+                  <h3 className="text-muted-foreground mb-1.5 text-xs font-medium">설명</h3>
+                  <p className="text-foreground text-sm leading-relaxed whitespace-pre-wrap">
                     {local.description}
                   </p>
                 </section>
@@ -208,8 +208,7 @@ export function TaskDetailSheet({ roomId, task, open, onOpenChange }: Props) {
                       </span>
                       {h.fromStatus && h.toStatus && (
                         <span className="ml-1">
-                          · {TASK_STATUS_LABEL[h.fromStatus]} →{" "}
-                          {TASK_STATUS_LABEL[h.toStatus]}
+                          · {TASK_STATUS_LABEL[h.fromStatus]} → {TASK_STATUS_LABEL[h.toStatus]}
                         </span>
                       )}
                       <span className="ml-1">
