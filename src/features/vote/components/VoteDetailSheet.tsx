@@ -230,6 +230,7 @@ export function VoteDetailSheet({
       <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
+        showCloseButton={false}
         className="bg-surface flex w-full flex-col gap-0 p-0 sm:max-w-[420px]"
       >
         {local ? (
