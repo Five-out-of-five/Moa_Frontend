@@ -1,7 +1,10 @@
 import Image from "next/image";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 
 import { getFirstRoomProfile } from "@/features/room/first-profile/server";
+import { RoomDashboard } from "@/features/widget/RoomDashboard";
+import { WidgetLoading } from "@/features/widget/WidgetSummary";
 
 export default async function RoomPage({ params }: { params: Promise<{ roomId: string }> }) {
   const { roomId } = await params;
@@ -12,7 +15,7 @@ export default async function RoomPage({ params }: { params: Promise<{ roomId: s
   const profile = setup?.profile;
 
   return (
-    <section className="mx-auto max-w-5xl">
+    <section className="mx-auto w-full max-w-7xl">
       <h1 className="text-foreground text-2xl font-bold tracking-tight">{room.name}</h1>
       {room.description && <p className="text-muted-foreground mt-2 text-sm">{room.description}</p>}
       {profile && setup && (
@@ -33,6 +36,11 @@ export default async function RoomPage({ params }: { params: Promise<{ roomId: s
           </p>
         </div>
       )}
+      <div className="mt-5">
+        <Suspense fallback={<WidgetLoading />}>
+          <RoomDashboard roomId={room.id} />
+        </Suspense>
+      </div>
     </section>
   );
 }
