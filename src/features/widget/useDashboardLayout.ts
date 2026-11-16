@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { RoomWidget } from "@/types/db";
@@ -15,6 +15,9 @@ export function useDashboardLayout(roomId: number, initialWidgets: RoomWidget[],
   const [pending, setPending] = useState<{ id: number; placement: WidgetPlacement } | null>(null);
   const session = useRef<string | null>(null);
   const heartbeat = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const applySnapshot = useCallback((snapshot: DashboardSnapshot) => {
+    setLayout((current) => current.revision > snapshot.revision ? current : snapshot);
+  }, []);
 
   useEffect(() => {
     if (!editable) return;
@@ -22,14 +25,14 @@ export function useDashboardLayout(roomId: number, initialWidgets: RoomWidget[],
     const stream = new EventSource(`/api/rooms/${roomId}/dashboard/events`);
     stream.onmessage = ({ data }: MessageEvent<string>) => {
       const snapshot = JSON.parse(data) as DashboardSnapshot;
-      setLayout((current) => current.revision > snapshot.revision ? current : snapshot);
+      applySnapshot(snapshot);
       setEditors(snapshot.editors.filter(({ sessionId }) => sessionId !== session.current));
     };
     return () => {
       stream.close();
       clearInterval(heartbeat.current);
     };
-  }, [editable, roomId]);
+  }, [applySnapshot, editable, roomId]);
 
   function setEditing(widgetId: number | null) {
     clearInterval(heartbeat.current);
@@ -47,10 +50,7 @@ export function useDashboardLayout(roomId: number, initialWidgets: RoomWidget[],
     try {
       const result = await saveWidgetPlacementAction(roomId, id, placement);
       if (!result.ok) toast.error(result.message);
-      else {
-        const snapshot = result.snapshot;
-        setLayout((current) => current.revision > snapshot.revision ? current : snapshot);
-      }
+      else applySnapshot(result.snapshot);
     } catch {
       toast.error("위젯 배치를 저장하지 못했습니다. 다시 시도해 주세요.");
     } finally {
@@ -64,5 +64,6 @@ export function useDashboardLayout(roomId: number, initialWidgets: RoomWidget[],
     pending,
     setEditing,
     save,
+    applySnapshot,
   };
 }

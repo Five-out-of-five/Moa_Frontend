@@ -2,11 +2,13 @@
 
 import { Grip, MoveDiagonal } from "lucide-react";
 import Link from "next/link";
-import type { CSSProperties, ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { type CSSProperties, type ReactNode, useEffect } from "react";
 
 import type { RoomWidget } from "@/types/db";
 
-import { GRID_COLUMNS, GRID_GAP, GRID_ROW_HEIGHT } from "./grid";
+import { AddWidgetDialog } from "./AddWidgetDialog";
+import { findOpenPlacement, GRID_COLUMNS, GRID_GAP, GRID_ROW_HEIGHT } from "./grid";
 import { useDashboardLayout } from "./useDashboardLayout";
 import { useWidgetGesture } from "./useWidgetGesture";
 import { getWidgetDetailHref, WIDGET_TITLES } from "./widget-info";
@@ -22,11 +24,20 @@ export function DashboardGrid({
   editable: boolean;
   bodies: Record<number, ReactNode>;
 }) {
-  const { widgets, editors, pending, setEditing, save } = useDashboardLayout(
+  const router = useRouter();
+  const { widgets, editors, pending, setEditing, save, applySnapshot } = useDashboardLayout(
     roomId, initialWidgets, editable,
   );
+  const missingBodies = widgets.filter(({ id }) => !Object.hasOwn(bodies, id)).map(({ id }) => id).join(",");
+  useEffect(() => {
+    // 이벤트에는 배치만 들어 있고 위젯 본문은 서버에서 그린다.
+    if (missingBodies) router.refresh();
+  }, [missingBodies, router]);
+
   const { grid, preview, start, move, end } = useWidgetGesture(widgets, setEditing, save);
   const projected = preview ?? pending;
+  const placed = new Set(widgets.map(({ widgetType }) => widgetType));
+  const canAdd = editable && placed.size < Object.keys(WIDGET_TITLES).length;
   const handlers = {
     onPointerMove: move,
     onPointerUp: (event: Parameters<typeof end>[0]) => end(event, true),
@@ -35,7 +46,7 @@ export function DashboardGrid({
     disabled: pending !== null,
   };
 
-  if (widgets.length === 0) {
+  if (widgets.length === 0 && !canAdd) {
     return <p className="text-muted-foreground text-sm">배치된 위젯이 없습니다.</p>;
   }
 
@@ -90,7 +101,11 @@ export function DashboardGrid({
               )}
               {href && <Link href={href} className="text-primary text-xs hover:underline">전체 보기</Link>}
             </header>
-            <div className="min-h-0 flex-1 overflow-auto p-3">{bodies[widget.id]}</div>
+            <div className="min-h-0 flex-1 overflow-auto p-3">
+              {bodies[widget.id] ?? (
+                <p role="status" className="text-muted-foreground text-sm">위젯 데이터를 불러오는 중…</p>
+              )}
+            </div>
             {editable && (
               <button
                 type="button"
@@ -105,6 +120,19 @@ export function DashboardGrid({
           </article>
         );
       })}
+      {canAdd && (
+        <AddWidgetDialog
+          roomId={roomId}
+          placed={placed}
+          onAdded={applySnapshot}
+          placement={findOpenPlacement(
+            widgets.map((widget) => projected?.id === widget.id ? projected.placement : widget),
+            6,
+            3,
+            3,
+          )}
+        />
+      )}
     </div>
   );
 }
