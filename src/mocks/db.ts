@@ -1,5 +1,6 @@
 import { faker } from "@faker-js/faker";
 
+import { todayMoodDate } from "@/features/mood/date";
 import { computeDDay, computeOverdue } from "@/features/task/lib/d-day";
 import type {
   Account,
@@ -58,7 +59,6 @@ const seq = (() => {
 })();
 
 const nowIso = () => new Date().toISOString();
-const todayDate = () => new Date().toISOString().slice(0, 10);
 
 function pick<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -201,7 +201,7 @@ export function addDefaultRoomWidgets(roomId: number) {
 
 const MOODS: MoodLevel[] = ["GREAT", "GOOD", "SOSO", "TIRED", "BAD"];
 
-export const moodStatuses: MoodStatus[] = fixtureRooms.flatMap((room) =>
+export const moodStatuses: MoodStatus[] = shareSettingsMock("moodStatuses", fixtureRooms.flatMap((room) =>
   roomMembers
     .filter((m) => m.roomId === room.id)
     .map((m) => ({
@@ -215,9 +215,9 @@ export const moodStatuses: MoodStatus[] = fixtureRooms.flatMap((room) =>
         "오늘 회의 많아서 지친다",
         "휴식 많이 취해서 컨디션 좋음",
       ] as const),
-      recordedDate: todayDate(),
+      recordedDate: todayMoodDate(),
     })),
-);
+));
 
 // ===== 아이디어 보드 (IDEA_BOARD) =====
 
@@ -231,18 +231,24 @@ export const boardSessions: BoardSession[] = fixtureRooms.map((room) => ({
 }));
 
 const CARD_TYPES: IdeaCardType[] = ["AGENDA", "KEEP", "PROBLEM", "TRY"];
+const IDEA_PREVIEWS = {
+  AGENDA: ["다음 분기, 무엇을 개선할까요?", "업무 요청은 어디에 모을까요?"],
+  KEEP: ["알림 없는 집중 시간 운영", "회의 종료 전 3분 정리"],
+  PROBLEM: ["검토 대기 시간이 길어요", "요청 우선순위가 명확하지 않아요"],
+  TRY: ["배포 전에 체크리스트를 공유해요", "다음 회고에서는 한 가지씩 실험해요"],
+} satisfies Record<IdeaCardType, [string, string]>;
 
 export const ideaCards: IdeaCard[] = boardSessions.flatMap((session) =>
   CARD_TYPES.flatMap((type) =>
-    Array.from({ length: 2 }, (_, i) => {
+    IDEA_PREVIEWS[type].map((title, i) => {
       const author = pick(accounts);
       return {
         id: seq("ideaCard"),
         roomId: session.roomId,
         sessionId: session.id,
         cardType: type,
-        title: faker.lorem.sentence({ min: 3, max: 7 }),
-        content: faker.lorem.paragraph({ min: 1, max: 3 }),
+        title,
+        content: "이번 회차에서 팀원들의 의견을 모으고, 다음에 시도할 일을 정리해요.",
         author: refOf(author, session.roomId),
         sortOrder: i,
         commentCount: faker.number.int({ min: 0, max: 4 }),
@@ -268,6 +274,12 @@ export const sprints: Sprint[] = fixtureRooms.map((room) => ({
 }));
 
 const TASK_STATUSES: TaskStatus[] = ["TODO", "IN_PROGRESS", "REVIEW", "DONE"];
+const TASK_PREVIEWS = [
+  "회의록 공유", "다음 스프린트 일정 정리", "주간 진행 상황 확인",
+  "사용자 의견 분류", "업무 보드 빈 상태 확인", "투표 알림 문구 확인",
+  "워크스페이스 초대 흐름 점검", "대시보드 배치 검토",
+  "주간 회고 질문 초안 작성", "알림 우선순위 정리",
+];
 
 // dDay/overdue 계산은 features/task/lib/d-day.ts 를 공유 사용 — 타임존 처리 통일.
 
@@ -281,7 +293,7 @@ export const tasks: Array<TaskDetail & { roomId: number; sprintId: number | null
     const reporterAcc = accounts.find((a) => a.id === fallback.accountId) ?? accounts[0];
     if (!reporterAcc) return [];
 
-    const items = Array.from({ length: 10 }, (_, i) => {
+    const items = TASK_PREVIEWS.map((title, i) => {
       const status = TASK_STATUSES[i % TASK_STATUSES.length]!;
       const assigneeMember = pick(roomMembersOfRoom);
       const assigneeAcc =
@@ -292,8 +304,8 @@ export const tasks: Array<TaskDetail & { roomId: number; sprintId: number | null
         taskId: seq("task"),
         roomId: sprint.roomId,
         sprintId: sprint.id,
-        title: faker.lorem.sentence({ min: 3, max: 6 }),
-        description: faker.lorem.paragraph({ min: 1, max: 2 }),
+        title,
+        description: "확인할 내용을 정리하고 결과를 팀과 공유합니다.",
         status,
         priority: pick(["LOW", "NORMAL", "HIGH"] as const),
         dueDate,

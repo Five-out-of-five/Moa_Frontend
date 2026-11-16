@@ -8,10 +8,11 @@ import { type CSSProperties, type ReactNode, useEffect } from "react";
 import type { RoomWidget } from "@/types/db";
 
 import { AddWidgetDialog } from "./AddWidgetDialog";
+import styles from "./dashboard-grid.module.css";
 import { findOpenPlacement, GRID_COLUMNS, GRID_GAP, GRID_ROW_HEIGHT } from "./grid";
 import { useDashboardLayout } from "./useDashboardLayout";
 import { useWidgetGesture } from "./useWidgetGesture";
-import { getWidgetDetailHref, WIDGET_TITLES } from "./widget-info";
+import { getWidgetDetailHref, WIDGET_ICONS, WIDGET_TITLES } from "./widget-info";
 
 export function DashboardGrid({
   roomId,
@@ -63,6 +64,7 @@ export function DashboardGrid({
       {widgets.map((widget) => {
         const placement = projected?.id === widget.id ? projected.placement : widget;
         const title = WIDGET_TITLES[widget.widgetType];
+        const Icon = WIDGET_ICONS[widget.widgetType];
         const href = getWidgetDetailHref(roomId, widget.widgetType);
         const isEdited = editors.some(({ widgetId }) => widget.id === widgetId);
 
@@ -76,7 +78,10 @@ export function DashboardGrid({
               "--widget-grid-row": `${placement.y + 1} / span ${placement.height}`,
             } as CSSProperties}
           >
-            <header className="border-border flex min-w-0 flex-wrap items-center gap-x-2 border-b px-3 py-2">
+            <header className="flex min-w-0 flex-wrap items-center gap-2 px-3 pt-3 pb-1">
+              <span className="bg-secondary text-primary rounded-control grid size-7 shrink-0 place-items-center">
+                <Icon aria-hidden="true" className="size-4" />
+              </span>
               <h2 id={`widget-title-${widget.id}`} aria-label={title} className="min-w-0 flex-1 text-sm font-semibold">
                 {editable ? (
                   <>
@@ -88,7 +93,7 @@ export function DashboardGrid({
                       onPointerDown={(event) => start(event, widget, "move")}
                       {...handlers}
                     >
-                      <Grip aria-hidden="true" className="text-muted-foreground size-4 shrink-0" />
+                      <Grip aria-hidden="true" className="text-muted-foreground size-3 shrink-0" />
                       {title}
                     </button>
                   </>
@@ -101,7 +106,7 @@ export function DashboardGrid({
               )}
               {href && <Link href={href} className="text-primary text-xs hover:underline">전체 보기</Link>}
             </header>
-            <div className="min-h-0 flex-1 overflow-auto p-3">
+            <div className={`${styles.preview} min-h-0 flex-1 px-3 pt-2 pb-3 sm:overflow-clip`}>
               {bodies[widget.id] ?? (
                 <p role="status" className="text-muted-foreground text-sm">위젯 데이터를 불러오는 중…</p>
               )}

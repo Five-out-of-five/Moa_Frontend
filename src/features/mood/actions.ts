@@ -3,29 +3,30 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { getMyAccount } from "@/features/account/server";
+import { getManagedRoom } from "@/features/room/management/server";
+import { listMyRooms } from "@/features/room/server";
 import { api } from "@/lib/api";
 import { isMock } from "@/mocks/config";
 import { moodStatuses } from "@/mocks/db";
-import type { MoodLevel } from "@/types/db";
+
+import { todayMoodDate } from "./date";
+import { listTodayMoods } from "./server";
 
 const submitMoodSchema = z.object({
   roomId: z.number().int().positive(),
-  accountId: z.number().int().positive(), // 실서버에서는 세션에서 뽑는다
   mood: z.enum(["GREAT", "GOOD", "SOSO", "TIRED", "BAD"]),
-  note: z.string().max(200).nullable(),
+  note: z.string().max(50).nullable().optional(),
 });
 
-/**
- * 오늘의 상태값 작성·수정 (하루 1건, upsert).
- *
- * ⚠️ 실서버 호출은 세션의 accountId 를 쓴다 — 지금은 목이라 요청에 담아 받는다.
- *    BE 가 붙으면 `accountId` 를 요청에서 뺀다.
- */
 export async function submitMoodAction(input: unknown) {
-  const { roomId, accountId, mood, note } = submitMoodSchema.parse(input);
-  const today = new Date().toISOString().slice(0, 10);
+  const { roomId, mood, note } = submitMoodSchema.parse(input);
 
   if (isMock) {
+    const membership = await getManagedRoom(roomId);
+    if (!membership) throw new Error("이 방의 상태값을 변경할 수 없습니다.");
+    const accountId = membership.account.id;
+    const today = todayMoodDate();
     const existing = moodStatuses.find(
       (m) =>
         m.roomId === roomId &&
@@ -33,22 +34,30 @@ export async function submitMoodAction(input: unknown) {
         m.recordedDate === today,
     );
     if (existing) {
-      existing.mood = mood as MoodLevel;
-      existing.note = note;
+      existing.mood = mood;
+      if (note !== undefined) existing.note = note;
     } else {
       moodStatuses.push({
         id: Math.max(0, ...moodStatuses.map((m) => m.id)) + 1,
         roomId,
         accountId,
-        mood: mood as MoodLevel,
-        note,
+        mood,
+        note: note ?? null,
         recordedDate: today,
       });
     }
   } else {
+    if (!(await listMyRooms()).some(({ id }) => id === roomId)) {
+      throw new Error("이 방의 상태값을 변경할 수 없습니다.");
+    }
+    let savedNote = note;
+    if (note === undefined) {
+      const [me, moods] = await Promise.all([getMyAccount(), listTodayMoods(roomId)]);
+      savedNote = moods.find(({ accountId }) => accountId === me.id)?.note ?? null;
+    }
     await api<void>(`/api/v1/rooms/${roomId}/moods`, {
       method: "POST",
-      json: { mood, note },
+      json: { mood, note: savedNote },
     });
   }
 
