@@ -1,0 +1,28 @@
+.preview {
+  container-name: widget-preview;
+  container-type: inline-size;
+}
+
+@media (min-width: 40rem) {
+  .preview {
+    container-type: size;
+  }
+}
+
+@container widget-preview (max-height: 10rem) {
+  .preview [data-preview-extra="list-row"] {
+    display: none;
+  }
+}
+
+@container widget-preview (max-height: 5.5rem) {
+  .preview [data-preview-extra="sprint-date"] {
+    display: none;
+  }
+}
+
+@container widget-preview (max-width: 10.5rem) {
+  .preview [data-preview-extra="mood-chart"] {
+    display: none;
+  }
+}

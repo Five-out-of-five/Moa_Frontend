@@ -1,33 +1,21 @@
-import { listBoardEvents } from "@/features/briefing/server";
-import { listIdeaCards } from "@/features/idea/server";
-import { listConflicts } from "@/features/mediation/server";
-import { listTodayMoods } from "@/features/mood/server";
-import { listTasksInRoom } from "@/features/task/server";
-import { listVotesInRoom } from "@/features/vote/server";
 import type { RoomWidget } from "@/types/db";
 
+import { BriefingSummary } from "./BriefingSummary";
+import { MediationSummary, VoteSummary } from "./DecisionSummaries";
+import { IdeaSummary } from "./IdeaSummary";
+import { MoodSummary } from "./MoodSummary";
+import { SprintSummary, TaskBoardSummary } from "./TaskSummaries";
 import { WIDGET_TITLES } from "./widget-info";
 
-async function readSummary({ roomId, widgetType }: RoomWidget) {
-  switch (widgetType) {
-    case "MOOD":
-      return { count: (await listTodayMoods(roomId)).length, label: "오늘 기록된 상태" };
-    case "IDEA_BOARD":
-      return { count: (await listIdeaCards(roomId)).length, label: "아이디어 카드" };
-    case "TASK_BOARD":
-      return { count: (await listTasksInRoom(roomId)).length, label: "업무" };
-    case "PROGRESS": {
-      const tasks = await listTasksInRoom(roomId);
-      return { count: tasks.length, label: "업무" };
-    }
-    case "VOTE":
-      return { count: (await listVotesInRoom(roomId)).totalElements, label: "투표" };
-    case "CATCHUP_BRIEFING":
-      return { count: (await listBoardEvents(roomId)).length, label: "기록된 변경" };
-    case "MEDIATION":
-      return { count: (await listConflicts(roomId)).length, label: "감지된 충돌" };
-  }
-}
+const renderSummary = {
+  MOOD: MoodSummary,
+  IDEA_BOARD: IdeaSummary,
+  TASK_BOARD: TaskBoardSummary,
+  PROGRESS: SprintSummary,
+  VOTE: VoteSummary,
+  CATCHUP_BRIEFING: BriefingSummary,
+  MEDIATION: MediationSummary,
+};
 
 export function WidgetLoading() {
   return (
@@ -41,14 +29,7 @@ export function WidgetLoading() {
 
 export async function WidgetSummary({ widget }: { widget: RoomWidget }) {
   try {
-    const { count, label } = await readSummary(widget);
-    if (!count) return <p className="text-muted-foreground text-sm">표시할 항목이 없습니다.</p>;
-    return (
-      <div>
-        <p className="text-muted-foreground text-sm">{label}</p>
-        <p className="mt-1 text-2xl font-semibold tabular-nums">{count}건</p>
-      </div>
-    );
+    return await renderSummary[widget.widgetType]({ roomId: widget.roomId });
   } catch {
     return (
       <p role="alert" className="text-destructive text-sm">
