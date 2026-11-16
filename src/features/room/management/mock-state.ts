@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import type { RoomMember } from "@/types/db";
 
 export interface JoinRequest {
+  id: string;
   roomId: number;
   accountId: number;
   status: "PENDING" | "APPROVED" | "REJECTED";

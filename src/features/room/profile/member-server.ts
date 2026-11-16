@@ -1,18 +1,24 @@
 import "server-only";
 
+import { getMockPresence } from "@/features/chat/server";
 import { isActiveMember } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
 import { accounts, roomMembers } from "@/mocks/db";
 
-import { getFirstRoomProfile, getMockRoomMemberProfile } from "../first-profile/server";
+import {
+  getFirstRoomProfile,
+  getMockRoomMemberNickname,
+  getMockRoomMemberProfile,
+} from "../first-profile/server";
 
 export async function getRoomMemberProfile(roomId: string, accountId: string) {
   if (!isMock) return;
   const entry = await getFirstRoomProfile(roomId);
   if (!entry?.setup || entry.setup.needsSetup) return;
-  const member = roomMembers.find(
+  const memberships = roomMembers.filter(
     (member) => member.roomId === entry.room.id && String(member.accountId) === accountId,
   );
+  const member = memberships.find(isActiveMember) ?? memberships[0];
   if (!member) return;
 
   const account = accounts.find(({ id }) => id === member.accountId);
@@ -20,6 +26,7 @@ export async function getRoomMemberProfile(roomId: string, accountId: string) {
   if (!account || !isActiveMember(member)) {
     return {
       isSelf,
+      canStartDm: false as const,
       name: account ? "방을 나간 사용자입니다" : "탈퇴한 유저입니다",
       position: null,
       imageUrl: null,
@@ -29,7 +36,10 @@ export async function getRoomMemberProfile(roomId: string, accountId: string) {
   const profile = getMockRoomMemberProfile(member);
   return {
     isSelf,
-    name: (profile ? profile.nickname : member.nickname) ?? account.name,
+    canStartDm: !isSelf,
+    accountId: account.id,
+    online: getMockPresence(account.id),
+    name: getMockRoomMemberNickname(member) ?? account.name,
     position: profile?.position ?? null,
     imageUrl: profile?.imageUrl ?? null,
   };

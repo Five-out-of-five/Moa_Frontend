@@ -16,7 +16,7 @@ export function FirstProfileForm({ roomId, accountName }: { roomId: string; acco
   const [nickname, setNickname] = useState("");
   const [file, setFile] = useState<File>();
   const [preview, setPreview] = useState<string>();
-  const [imageError, setImageError] = useState<string>();
+  const [imageNotice, setImageNotice] = useState<string>();
   const [result, action, pending] = useActionState(
     (previous: FirstProfileResult, data: FormData) => {
       if (file && data.get("intent") !== "skip") data.set("image", file);
@@ -37,7 +37,7 @@ export function FirstProfileForm({ roomId, accountName }: { roomId: string; acco
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
-  const visibleImageError = imageError ?? result.errors?.image;
+  const visibleImageError = imageNotice ?? result.errors?.image;
   return (
     <>
       <form action={action} className="space-y-4">
@@ -78,7 +78,7 @@ export function FirstProfileForm({ roomId, accountName }: { roomId: string; acco
                 }
                 onChange={(event) => {
                   const selected = event.currentTarget.files?.[0];
-                  setImageError(undefined);
+                  setImageNotice(undefined);
                   setPreview(undefined);
                   setFile(undefined);
                   if (!selected) return;
@@ -86,7 +86,7 @@ export function FirstProfileForm({ roomId, accountName }: { roomId: string; acco
                     selected.size > PROFILE_IMAGE_MAX_BYTES ||
                     !PROFILE_IMAGE_TYPES.some((type) => type === selected.type)
                   ) {
-                    setImageError("JPG, PNG, WebP 형식의 5MB 이하 이미지를 선택해 주세요.");
+                    setImageNotice("이미지를 제외했어요. JPG, PNG, WebP 형식의 5MB 이하 이미지를 선택해 주세요.");
                     event.currentTarget.value = "";
                     return;
                   }
@@ -141,7 +141,7 @@ export function FirstProfileForm({ roomId, accountName }: { roomId: string; acco
           <ShieldCheck aria-hidden="true" className="size-4 shrink-0" />
           개인 계정 정보와 별도로 관리됩니다.
         </p>
-        <SaveButton disabled={isPending || Boolean(imageError)} />
+        <SaveButton disabled={isPending} />
       </form>
       <form action={skipAction} className="mt-2 text-center">
         <input type="hidden" name="intent" value="skip" />

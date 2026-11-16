@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 
 import { PROFILE_IMAGE_TYPES } from "../first-profile/types";
 import { updateRoomProfileAction } from "./actions";
+import type { RoomProfileResult } from "./types";
 
 interface Props {
   roomId: string;
@@ -20,7 +21,22 @@ interface Props {
 }
 
 export function RoomProfileForm({ roomId, accountName, nickname, position, imageUrl }: Props) {
-  const [result, action, pending] = useActionState(updateRoomProfileAction.bind(null, roomId), {});
+  const [file, setFile] = useState<File>();
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [shouldRemoveImage, setShouldRemoveImage] = useState(false);
+  const [result, action, pending] = useActionState(
+    async (previous: RoomProfileResult, data: FormData) => {
+      if (file) data.set("image", file);
+      if (shouldRemoveImage) data.set("removeImage", "on");
+      const next = await updateRoomProfileAction(roomId, previous, data);
+      if (next.success) {
+        setFile(undefined);
+        setShouldRemoveImage(false);
+      }
+      return next;
+    },
+    {},
+  );
   const [name, setName] = useState(nickname);
   const [jobTitle, setJobTitle] = useState(position);
 
@@ -86,9 +102,10 @@ export function RoomProfileForm({ roomId, accountName, nickname, position, image
           )}
           <Input
             id="room-profile-image"
-            name="image"
+            ref={fileInput}
             type="file"
             accept={PROFILE_IMAGE_TYPES.join(",")}
+            onChange={(event) => setFile(event.currentTarget.files?.[0])}
             aria-invalid={Boolean(result.errors?.image)}
             aria-describedby="room-profile-image-hint"
           />
@@ -98,11 +115,29 @@ export function RoomProfileForm({ roomId, accountName, nickname, position, image
               result.errors?.image ? "text-destructive text-sm" : "text-muted-foreground text-sm"
             }
           >
-            {result.errors?.image ?? "JPG, PNG, WebP · 최대 5MB"}
+            {result.errors?.image ?? file?.name ?? "JPG, PNG, WebP · 최대 5MB"}
           </p>
+          {file && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setFile(undefined);
+                if (fileInput.current) fileInput.current.value = "";
+              }}
+            >
+              선택한 이미지 취소
+            </Button>
+          )}
           {imageUrl && (
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" name="removeImage" />
+              <input
+                type="checkbox"
+                name="removeImage"
+                checked={shouldRemoveImage}
+                onChange={(event) => setShouldRemoveImage(event.currentTarget.checked)}
+              />
               현재 이미지 삭제
             </label>
           )}

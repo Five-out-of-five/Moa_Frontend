@@ -1,11 +1,13 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import { getExplicitMockAccount, getMyAccount } from "@/features/account/server";
 import { isActiveMember, isRoomOwner } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
 import { accounts, roomMembers, rooms } from "@/mocks/db";
 
-import { getMockRoomMemberProfile } from "../first-profile/server";
+import { getMockRoomMemberNickname, getMockRoomMemberProfile } from "../first-profile/server";
 import {
   getMockInviteToken,
   isPendingJoinRequest,
@@ -32,10 +34,10 @@ export async function getRoomManagement(roomId: number) {
     .filter((member) => member.roomId === roomId && isActiveMember(member))
     .map((member) => {
       const profile = getMockRoomMemberProfile(member);
-      const account = accounts.find(({ id }) => id === member.accountId);
       return {
         accountId: member.accountId,
-        name: (profile ? profile.nickname : member.nickname) ?? account?.name ?? "탈퇴한 유저",
+        name: getMockRoomMemberNickname(member) ?? "탈퇴한 유저",
+        imageUrl: profile?.imageUrl,
         position: profile?.position ?? null,
         isOwner: isRoomOwner(member),
       };
@@ -44,6 +46,7 @@ export async function getRoomManagement(roomId: number) {
     ? [...roomManagementMock.requests.values()]
         .filter((request) => request.roomId === roomId && isPendingJoinRequest(request))
         .map((request) => ({
+          id: (request.id ??= randomUUID()),
           accountId: request.accountId,
           name: accounts.find(({ id }) => id === request.accountId)?.name ?? "탈퇴한 유저",
           requestedAt: new Date(request.requestedAt).toISOString(),

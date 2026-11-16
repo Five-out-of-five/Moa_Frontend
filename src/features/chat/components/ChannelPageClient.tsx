@@ -90,6 +90,7 @@ export function ChannelPageClient({ channel, initialMessages, me }: Props) {
       </header>
 
       <MessageList
+        roomId={channel.roomId}
         messages={messages}
         emptyState={
           <EmptyChannelHero
