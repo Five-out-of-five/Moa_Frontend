@@ -5,9 +5,31 @@ import { revalidatePath } from "next/cache";
 import { getManagedRoom } from "@/features/room/management/server";
 import { isMock } from "@/mocks/config";
 import { roomWidgets } from "@/mocks/db";
+import type { WidgetType } from "@/types/db";
 
-import { canPlaceWidget, type WidgetPlacement } from "./grid";
+import { canPlaceWidget, findOpenPlacement, WIDGET_MINIMUM, type WidgetPlacement } from "./grid";
 import { getMockDashboardSnapshot, getMockLayout, setMockEditing } from "./mock-layout";
+
+export async function addWidgetAction(roomId: number, type: WidgetType) {
+  if (!isMock || !(await getManagedRoom(roomId))) {
+    return { ok: false as const, message: "이 대시보드에 위젯을 추가할 수 없습니다." };
+  }
+  if (typeof type !== "string" || !Object.hasOwn(WIDGET_MINIMUM, type)) {
+    return { ok: false as const, message: "추가할 수 있는 위젯을 선택해 주세요." };
+  }
+  const widgets = roomWidgets.filter((widget) => widget.roomId === roomId);
+  if (widgets.some((widget) => widget.widgetType === type)) {
+    return { ok: false as const, message: "이미 추가된 위젯입니다." };
+  }
+
+  const [width, height] = WIDGET_MINIMUM[type];
+  const placement = findOpenPlacement(widgets, width, height);
+  const id = roomWidgets.reduce((max, widget) => Math.max(max, widget.id), 0) + 1;
+  roomWidgets.push({ id, roomId, widgetType: type, ...placement });
+  getMockLayout(roomId).revision += 1;
+  revalidatePath(`/rooms/${roomId}`);
+  return { ok: true as const, snapshot: getMockDashboardSnapshot(roomId) };
+}
 
 export async function saveWidgetPlacementAction(
   roomId: number,
