@@ -64,10 +64,15 @@ export async function listTasksInRoom(roomId: number): Promise<TaskSummary[]> {
 }
 
 /**
- * 방의 **활성 스프린트** — 업무 생성 Dialog 의 스프린트 셀렉터 값으로 쓴다.
+ * 방의 **활성 스프린트** — 업무 생성 Dialog 의 스프린트 셀렉터와 진행률 바에 쓴다.
  *
  * ⚠️ 명세상 방당 활성 스프린트는 0~1개 (UI 가 한 번에 하나만 다룸). 없을 수도 있어
  *    `null` 을 돌려주고, Dialog 는 "활성 스프린트 없음" 상태로 노출한다.
+ * ⚠️ 목 모드에선 **공유 `tasks` 저장소에서 매번 live 집계**해 `totalTasks`·`doneTasks`
+ *    에 실어 돌려준다 — `sprints` 는 `shareSettingsMock` 바깥(모듈 로컬) 이라 HMR 이나
+ *    서로 다른 모듈 인스턴스에서 집계가 drift 할 수 있다 (CodeRabbit). tasks 는 globalThis
+ *    로 공유되므로 live 계산은 안전하고, 상태 변경·반려·삭제·수정 등 각 액션에서 집계
+ *    보정을 잊어도 reader 레벨에서 자동으로 맞춰진다.
  * ⚠️ 아직 BE 명세에 Sprint 전용 엔드포인트가 확정되지 않아 **목 모드만 지원**. 실서버
  *    모드에선 null 을 돌려 Dialog 가 스프린트 라벨만 비활성 셀렉터로 보여주게 한다
  *    — 명세 확정 뒤 `/api/v1/rooms/{roomId}/sprints?state=ACTIVE` 로 교체.
@@ -76,9 +81,18 @@ export async function getActiveSprint(
   roomId: number,
 ): Promise<Sprint | null> {
   if (isMock) {
-    return (
-      sprints.find((s) => s.roomId === roomId && s.state === "ACTIVE") ?? null
+    const sprint = sprints.find(
+      (s) => s.roomId === roomId && s.state === "ACTIVE",
     );
+    if (!sprint) return null;
+    const sprintTasks = tasks.filter(
+      (t) => t.roomId === roomId && t.sprintId === sprint.id,
+    );
+    return {
+      ...sprint,
+      totalTasks: sprintTasks.length,
+      doneTasks: sprintTasks.filter((t) => t.status === "DONE").length,
+    };
   }
   return null;
 }

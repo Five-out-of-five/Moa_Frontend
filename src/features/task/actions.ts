@@ -144,8 +144,11 @@ export async function changeTaskStatusAction(
       task.sortOrder = i;
     });
 
+    const wasDone = previousStatus === "DONE";
+    const isDone = status === "DONE";
+
     t.status = status;
-    t.completedAt = status === "DONE" ? new Date().toISOString() : null;
+    t.completedAt = isDone ? new Date().toISOString() : null;
     t.dDay = computeDDay(t.dueDate);
     t.overdue = computeOverdue(t.dueDate, status);
     t.version += 1;
@@ -161,6 +164,17 @@ export async function changeTaskStatusAction(
         createdAt: new Date().toISOString(),
       },
     ];
+
+    // ⚠️ DONE 진입/이탈 시 스프린트 집계 보정 — `updateTaskAction` 과 같은 규칙.
+    //    이걸 빼면 상태 버튼으로 TODO↔DONE 왕복한 뒤 수정 Dialog 로 되돌릴 때 `doneTasks`
+    //    가 실제 완료 수와 어긋난다 (CodeRabbit).
+    if (t.sprintId !== null && wasDone !== isDone) {
+      const sprint = sprints.find((s) => s.id === t.sprintId);
+      if (sprint) {
+        sprint.doneTasks = Math.max(0, sprint.doneTasks + (isDone ? 1 : -1));
+      }
+    }
+
     revalidatePath(`/rooms/${roomId}/boards/task`, "page");
     const { roomId: _r, sprintId: _s, ...detail } = t;
     void _r;
@@ -374,4 +388,457 @@ export async function createTaskAction(
  */
 function nextMockId(existing: readonly number[]): number {
   return existing.length === 0 ? 1 : Math.max(...existing) + 1;
+}
+
+/**
+ * 업무 수정 입력 — 상세 Sheet 의 수정 Dialog 가 보내는 shape.
+ *
+ * ⚠️ 명세의 `PATCH /api/v1/rooms/{roomId}/tasks/{taskId}` 는 **수정 가능한 필드 전부를
+ *    한 번에** 교체한다 (제목 · 설명 · 상태 · 우선순위 · 담당자 · 마감일). 담당자 변경
+ *    전용 엔드포인트가 없어 담당자도 이 Dialog 로 바꾼다.
+ * ⚠️ 스프린트는 명세 확정 전이라 수정 범위 외 — 생성 Dialog 와 동일.
+ * ⚠️ `version` 으로 낙관적 잠금. 서버가 409 면 UI 는 재조회 안내로 떨어뜨림.
+ */
+const updateTaskSchema = z.object({
+  roomId: z.number().int().positive(),
+  taskId: z.number().int().positive(),
+  version: z.number().int().nonnegative(),
+  title: z
+    .string()
+    .trim()
+    .min(1, "업무 제목을 입력해 주세요.")
+    .max(200, "업무 제목은 200자 이하로 입력해 주세요."),
+  description: z.string().max(2000, "설명은 2000자 이하로 입력해 주세요."),
+  status: z.enum(["TODO", "IN_PROGRESS", "REVIEW", "DONE"]),
+  priority: z.enum(["LOW", "NORMAL", "HIGH"]),
+  assigneeAccountId: z.number().int().positive().nullable(),
+  dueDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "마감일 형식이 올바르지 않습니다.")
+    .refine(isValidCalendarDate, {
+      message: "달력에 존재하지 않는 날짜예요.",
+    })
+    .nullable(),
+});
+
+const idAndVersionSchema = z.object({
+  roomId: z.number().int().positive(),
+  taskId: z.number().int().positive(),
+  version: z.number().int().nonnegative(),
+});
+
+const idOnlyTaskSchema = z.object({
+  roomId: z.number().int().positive(),
+  taskId: z.number().int().positive(),
+});
+
+/**
+ * 업무 수정 결과 — 생성/상태변경 액션과 같이 kind 리턴.
+ * - `ok` : 수정 성공, `task` 최신 상세
+ * - `conflict` : version 불일치 — 다른 사용자가 먼저 수정
+ * - `error` : 그 외 실패 (검증, 권한 등)
+ */
+export type UpdateTaskResult =
+  | { kind: "ok"; task: TaskDetail }
+  | { kind: "conflict"; message: string }
+  | { kind: "error"; message: string; fieldErrors?: Record<string, string> };
+
+/**
+ * 업무 수정 — 명세 `PATCH /api/v1/rooms/{roomId}/tasks/{taskId}`.
+ *
+ * 목 모드 구현:
+ * - 작성자(registrant) 또는 담당자(assignee) 만 수정 가능 (방 멤버 체크 포함)
+ * - 담당자가 바뀌면 `ASSIGNEE_CHANGED` 이력, 상태가 바뀌면 `STATUS_CHANGED` 이력을 각각 기록
+ * - 상태가 바뀌면 새 컬럼의 **맨 아래** 로 sortOrder 밀어 넣는다 (changeTaskStatusAction 과 달리
+ *   toIndex 없음 — 수정 흐름은 위치가 아니라 내용 교체가 주제)
+ * - 스프린트 `doneTasks` 는 DONE 진입/이탈 시 보정
+ */
+export async function updateTaskAction(
+  input: unknown,
+): Promise<UpdateTaskResult> {
+  const parsed = updateTaskSchema.safeParse(input);
+  if (!parsed.success) {
+    const fieldErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      const path = issue.path.join(".");
+      if (path && !fieldErrors[path]) fieldErrors[path] = issue.message;
+    }
+    return {
+      kind: "error",
+      message:
+        parsed.error.issues[0]?.message ?? "요청 형식이 올바르지 않습니다.",
+      fieldErrors,
+    };
+  }
+  const {
+    roomId,
+    taskId,
+    version,
+    title,
+    description,
+    status,
+    priority,
+    assigneeAccountId,
+    dueDate,
+  } = parsed.data;
+
+  if (isMock) {
+    const t = tasks.find((x) => x.roomId === roomId && x.taskId === taskId);
+    if (!t) return { kind: "error", message: "업무를 찾을 수 없습니다." };
+    if (t.version !== version) {
+      return {
+        kind: "conflict",
+        message:
+          "다른 사용자가 먼저 업데이트했어요. 새로고침 후 다시 시도해 주세요.",
+      };
+    }
+    const me = accounts[0];
+    if (!me) return { kind: "error", message: "현재 계정을 확인하지 못했습니다." };
+    const canEdit =
+      t.registrant.accountId === me.id ||
+      (t.assignee !== null && t.assignee.accountId === me.id);
+    if (!canEdit) {
+      return {
+        kind: "error",
+        message: "업무 작성자 또는 담당자만 수정할 수 있어요.",
+      };
+    }
+
+    let newAssignee: MemberRef | null = null;
+    if (assigneeAccountId !== null) {
+      const assigneeMember = roomMembers.find(
+        (m) =>
+          m.roomId === roomId &&
+          m.accountId === assigneeAccountId &&
+          m.state === "ACTIVE",
+      );
+      if (!assigneeMember) {
+        return {
+          kind: "error",
+          message: "선택한 담당자가 이 방의 활성 멤버가 아닙니다.",
+          fieldErrors: { assigneeAccountId: "담당자를 다시 선택해 주세요." },
+        };
+      }
+      const acc = accounts.find((a) => a.id === assigneeAccountId);
+      newAssignee = {
+        accountId: assigneeAccountId,
+        displayName:
+          assigneeMember.nickname ?? acc?.name ?? `사용자 ${assigneeAccountId}`,
+        profileImageUrl: null,
+        memberStatus: "ACTIVE",
+      };
+    }
+
+    const now = new Date().toISOString();
+    const previousStatus: TaskStatus = t.status;
+    const previousAssignee = t.assignee;
+    const statusChanged = previousStatus !== status;
+    const assigneeChanged =
+      (previousAssignee?.accountId ?? null) !== (newAssignee?.accountId ?? null);
+    const wasDone = previousStatus === "DONE";
+    const isDone = status === "DONE";
+
+    const actor: MemberRef = {
+      accountId: me.id,
+      displayName: me.name,
+      profileImageUrl: null,
+      memberStatus: "ACTIVE",
+    };
+
+    t.title = title;
+    t.description = description;
+    t.priority = priority;
+    t.dueDate = dueDate;
+    t.dDay = computeDDay(dueDate);
+    t.overdue = computeOverdue(dueDate, status);
+    t.assignee = newAssignee;
+    if (statusChanged) {
+      t.status = status;
+      t.completedAt = isDone ? now : null;
+      // 새 컬럼의 맨 끝으로 밀어 넣는다 — 위치는 상태 변경 액션(toIndex)이 맡는 흐름이고,
+      // 여기선 내용 교체가 주제라 자리 이동을 최소 침습으로 처리한다.
+      const siblings = tasks
+        .filter(
+          (x) =>
+            x.roomId === roomId &&
+            x.status === status &&
+            x.taskId !== taskId,
+        )
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+      siblings.push(t);
+      siblings.forEach((task, i) => {
+        task.sortOrder = i;
+      });
+    }
+    if (statusChanged) {
+      t.history = [
+        ...t.history,
+        {
+          historyType: "STATUS_CHANGED",
+          fromStatus: previousStatus,
+          toStatus: status,
+          fromAssignee: null,
+          toAssignee: null,
+          actor,
+          createdAt: now,
+        },
+      ];
+    }
+    if (assigneeChanged) {
+      t.history = [
+        ...t.history,
+        {
+          historyType: "ASSIGNEE_CHANGED",
+          fromStatus: null,
+          toStatus: null,
+          fromAssignee: previousAssignee,
+          toAssignee: newAssignee,
+          actor,
+          createdAt: now,
+        },
+      ];
+    }
+    t.version += 1;
+
+    // 스프린트 doneTasks 는 DONE 진입/이탈 시 보정
+    if (t.sprintId !== null && wasDone !== isDone) {
+      const sprint = sprints.find((s) => s.id === t.sprintId);
+      if (sprint) {
+        sprint.doneTasks = Math.max(
+          0,
+          sprint.doneTasks + (isDone ? 1 : -1),
+        );
+      }
+    }
+
+    revalidatePath(`/rooms/${roomId}/boards/task`, "page");
+    const { roomId: _r, sprintId: _s, ...detail } = t;
+    void _r;
+    void _s;
+    return { kind: "ok", task: detail };
+  }
+
+  try {
+    const res = await api<TaskDetail>(
+      `/api/v1/rooms/${roomId}/tasks/${taskId}`,
+      {
+        method: "PATCH",
+        json: {
+          title,
+          description,
+          status,
+          priority,
+          assigneeAccountId,
+          dueDate,
+          version,
+        },
+      },
+    );
+    revalidatePath(`/rooms/${roomId}/boards/task`, "page");
+    return {
+      kind: "ok",
+      task: {
+        ...res,
+        dDay: computeDDay(res.dueDate),
+        overdue: computeOverdue(res.dueDate, res.status),
+      },
+    };
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409) {
+      return {
+        kind: "conflict",
+        message:
+          "다른 사용자가 먼저 업데이트했어요. 새로고침 후 다시 시도해 주세요.",
+      };
+    }
+    if (e instanceof ApiError) {
+      return { kind: "error", message: e.message };
+    }
+    return {
+      kind: "error",
+      message: "업무 수정에 실패했습니다. 잠시 뒤 다시 시도해 주세요.",
+    };
+  }
+}
+
+/**
+ * 업무 삭제 결과 — 투표 삭제 패턴과 동일.
+ * - `ok` : 삭제 완료
+ * - `error` : 실패
+ */
+export type DeleteTaskResult =
+  | { kind: "ok" }
+  | { kind: "error"; message: string };
+
+/**
+ * 업무 삭제 — 명세 `DELETE /api/v1/rooms/{roomId}/tasks/{taskId}`. 작성자만.
+ * 복구 불가이므로 UI 는 AlertDialog 로 confirm.
+ */
+export async function deleteTaskAction(
+  input: unknown,
+): Promise<DeleteTaskResult> {
+  const parsed = idOnlyTaskSchema.safeParse(input);
+  if (!parsed.success) {
+    return { kind: "error", message: "요청 형식이 올바르지 않습니다." };
+  }
+  const { roomId, taskId } = parsed.data;
+
+  if (isMock) {
+    const idx = tasks.findIndex(
+      (x) => x.roomId === roomId && x.taskId === taskId,
+    );
+    if (idx < 0) return { kind: "error", message: "업무를 찾을 수 없습니다." };
+    const target = tasks[idx]!;
+    const me = accounts[0];
+    if (!me || target.registrant.accountId !== me.id) {
+      return { kind: "error", message: "업무 작성자만 삭제할 수 있어요." };
+    }
+    const wasDone = target.status === "DONE";
+    const sprintId = target.sprintId;
+    tasks.splice(idx, 1);
+    if (sprintId !== null) {
+      const sprint = sprints.find((s) => s.id === sprintId);
+      if (sprint) {
+        sprint.totalTasks = Math.max(0, sprint.totalTasks - 1);
+        if (wasDone) sprint.doneTasks = Math.max(0, sprint.doneTasks - 1);
+      }
+    }
+    revalidatePath(`/rooms/${roomId}/boards/task`, "page");
+    return { kind: "ok" };
+  }
+
+  try {
+    await api(`/api/v1/rooms/${roomId}/tasks/${taskId}`, { method: "DELETE" });
+    revalidatePath(`/rooms/${roomId}/boards/task`, "page");
+    return { kind: "ok" };
+  } catch (e) {
+    if (e instanceof ApiError) return { kind: "error", message: e.message };
+    return {
+      kind: "error",
+      message: "업무 삭제에 실패했습니다. 잠시 뒤 다시 시도해 주세요.",
+    };
+  }
+}
+
+/**
+ * 업무 반려 결과 — kind 리턴 패턴.
+ * - `ok` : 반려 완료, `task` 최신 상세 (status 는 `TODO` 로 복귀, 담당자 해제)
+ * - `conflict` : version 불일치
+ * - `error` : 실패
+ */
+export type RejectTaskResult =
+  | { kind: "ok"; task: TaskDetail }
+  | { kind: "conflict"; message: string }
+  | { kind: "error"; message: string };
+
+/**
+ * 업무 반려 — 명세 `POST /api/v1/rooms/{roomId}/tasks/{taskId}/reject`.
+ *
+ * ⚠️ `TaskHistoryType.REJECTED` 는 명세에 있지만 `TaskStatus` 에는 반려 전용 값이 없다.
+ *    반려는 **"담당자가 돌려 보냄"** 이므로 status 는 `TODO` 로 복귀시키고 담당자를
+ *    해제 (null) 한다. 같은 업무에 다시 담당자를 배정하면 이어서 작업 가능.
+ * ⚠️ 담당자만 반려 가능. 이미 `DONE` 인 업무는 반려 대상 아님.
+ */
+export async function rejectTaskAction(
+  input: unknown,
+): Promise<RejectTaskResult> {
+  const parsed = idAndVersionSchema.safeParse(input);
+  if (!parsed.success) {
+    return { kind: "error", message: "요청 형식이 올바르지 않습니다." };
+  }
+  const { roomId, taskId, version } = parsed.data;
+
+  if (isMock) {
+    const t = tasks.find((x) => x.roomId === roomId && x.taskId === taskId);
+    if (!t) return { kind: "error", message: "업무를 찾을 수 없습니다." };
+    if (t.version !== version) {
+      return {
+        kind: "conflict",
+        message:
+          "다른 사용자가 먼저 업데이트했어요. 새로고침 후 다시 시도해 주세요.",
+      };
+    }
+    const me = accounts[0];
+    if (!me) return { kind: "error", message: "현재 계정을 확인하지 못했습니다." };
+    if (t.assignee === null || t.assignee.accountId !== me.id) {
+      return { kind: "error", message: "담당자만 반려할 수 있어요." };
+    }
+    if (t.status === "DONE") {
+      return { kind: "error", message: "이미 완료된 업무는 반려할 수 없어요." };
+    }
+
+    const now = new Date().toISOString();
+    const previousStatus = t.status;
+    const previousAssignee = t.assignee;
+    const actor: MemberRef = {
+      accountId: me.id,
+      displayName: me.name,
+      profileImageUrl: null,
+      memberStatus: "ACTIVE",
+    };
+
+    t.status = "TODO";
+    t.assignee = null;
+    t.completedAt = null;
+    t.dDay = computeDDay(t.dueDate);
+    t.overdue = computeOverdue(t.dueDate, "TODO");
+    // TODO 컬럼 맨 아래로 밀어 넣는다 — 담당자 재배정 흐름을 눈에 띄게.
+    const siblings = tasks
+      .filter(
+        (x) =>
+          x.roomId === roomId && x.status === "TODO" && x.taskId !== taskId,
+      )
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    siblings.push(t);
+    siblings.forEach((task, i) => {
+      task.sortOrder = i;
+    });
+    t.version += 1;
+    t.history = [
+      ...t.history,
+      {
+        historyType: "REJECTED",
+        fromStatus: previousStatus,
+        toStatus: "TODO",
+        fromAssignee: previousAssignee,
+        toAssignee: null,
+        actor,
+        createdAt: now,
+      },
+    ];
+    revalidatePath(`/rooms/${roomId}/boards/task`, "page");
+    const { roomId: _r, sprintId: _s, ...detail } = t;
+    void _r;
+    void _s;
+    return { kind: "ok", task: detail };
+  }
+
+  try {
+    const res = await api<TaskDetail>(
+      `/api/v1/rooms/${roomId}/tasks/${taskId}/reject`,
+      { method: "POST", json: { version } },
+    );
+    revalidatePath(`/rooms/${roomId}/boards/task`, "page");
+    return {
+      kind: "ok",
+      task: {
+        ...res,
+        dDay: computeDDay(res.dueDate),
+        overdue: computeOverdue(res.dueDate, res.status),
+      },
+    };
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409) {
+      return {
+        kind: "conflict",
+        message:
+          "다른 사용자가 먼저 업데이트했어요. 새로고침 후 다시 시도해 주세요.",
+      };
+    }
+    if (e instanceof ApiError) return { kind: "error", message: e.message };
+    return {
+      kind: "error",
+      message: "업무 반려에 실패했습니다. 잠시 뒤 다시 시도해 주세요.",
+    };
+  }
 }
