@@ -98,8 +98,6 @@ export function ChannelPageClient({ channel, initialMessages, me }: Props) {
             topic={channel.topic}
           />
         }
-        formatTime={formatTime}
-        formatDateDivider={formatDateDivider}
       />
 
       <div className="border-border-soft bg-background border-t px-6 py-3">
@@ -146,30 +144,5 @@ function EmptyChannelHero({
   );
 }
 
-/**
- * 시간 포맷 — "오전 11:30", "오후 2:17" (24시 → 12시 + 오전/오후). 채팅 UI 전역에서 같은
- * 규칙을 유지한다.
- */
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  const hour = d.getHours();
-  const minute = String(d.getMinutes()).padStart(2, "0");
-  const period = hour < 12 ? "오전" : "오후";
-  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
-  return `${period} ${hour12}:${minute}`;
-}
-
-/** 날짜 구분선 — "오늘" / "어제" 가까운 날은 상대 라벨로, 그 밖은 "11월 15일 (토)" 꼴. */
-function formatDateDivider(iso: string): string {
-  const d = new Date(iso);
-  const today = new Date();
-  const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const diffDays = Math.round(
-    (target.getTime() - base.getTime()) / (24 * 60 * 60 * 1000),
-  );
-  if (diffDays === 0) return "오늘";
-  if (diffDays === -1) return "어제";
-  const weekday = ["일", "월", "화", "수", "목", "금", "토"][d.getDay()];
-  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${weekday})`;
-}
+// formatTime / formatDateDivider 는 `../lib/time` 으로 옮겨 MessageList 가 내부에서 쓴다.
+// mount 전후로 UTC ↔ 로컬 TZ 를 전환해야 해서 MessageList 가 자체적으로 소유하는 편이 깔끔.

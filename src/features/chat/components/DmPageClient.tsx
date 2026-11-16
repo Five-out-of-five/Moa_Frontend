@@ -65,8 +65,6 @@ export function DmPageClient({ thread, initialMessages, me }: Props) {
       <MessageList
         messages={messages}
         emptyState={<EmptyDmHero name={thread.displayName} />}
-        formatTime={formatTime}
-        formatDateDivider={formatDateDivider}
       />
 
       <div className="border-border-soft bg-background border-t px-6 py-3">
@@ -115,25 +113,4 @@ function EmptyDmHero({ name }: { name: string }) {
   );
 }
 
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  const hour = d.getHours();
-  const minute = String(d.getMinutes()).padStart(2, "0");
-  const period = hour < 12 ? "오전" : "오후";
-  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
-  return `${period} ${hour12}:${minute}`;
-}
-
-function formatDateDivider(iso: string): string {
-  const d = new Date(iso);
-  const today = new Date();
-  const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const diffDays = Math.round(
-    (target.getTime() - base.getTime()) / (24 * 60 * 60 * 1000),
-  );
-  if (diffDays === 0) return "오늘";
-  if (diffDays === -1) return "어제";
-  const weekday = ["일", "월", "화", "수", "목", "금", "토"][d.getDay()];
-  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${weekday})`;
-}
+// 포맷 로직은 MessageList 가 `../lib/time` 에서 가져와 mount 전·후 UTC↔로컬 전환까지 처리.
