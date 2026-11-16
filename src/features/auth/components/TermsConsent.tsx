@@ -60,7 +60,7 @@ export function TermsConsent({ ticket, next }: { ticket: string; next?: string }
 
       <Button
         type="submit"
-        className="rounded-control enabled:hover:bg-brand-dark dark:enabled:hover:bg-primary/80 h-11 w-full enabled:cursor-pointer"
+        className="rounded-control h-11 w-full"
         disabled={!hasAcceptedAll}
       >
         계속하기 <ArrowRight aria-hidden="true" />
