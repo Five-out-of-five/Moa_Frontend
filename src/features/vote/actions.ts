@@ -440,7 +440,7 @@ export type SubmitBallotResult =
 const CLOSED_MSG = "마감 시각이 지나 더 이상 참여할 수 없습니다.";
 
 /**
- * 재투표 생성 입력 — CLOSED 투표 상세 Sheet 의 "다시 투표 열기" 다이얼로그가 보내는 shape.
+ * 재투표 생성 입력 — CLOSED 투표 상세 Sheet 의 "재투표" 다이얼로그가 보내는 shape.
  *
  * ⚠️ 유형(voteType) · 선택지 · maxSelectCount 는 **부모 투표에서 복제**해 서버가 깔아 둔다 —
  *    "같은 조건으로 한 번 더" 가 재투표의 의도라 폼에서 다시 묻지 않는다. 사용자가 조정할 수

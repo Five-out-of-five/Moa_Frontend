@@ -478,7 +478,7 @@ export function VoteDetailSheet({
                   onClick={() => setRevoteOpen(true)}
                   className="w-full"
                 >
-                  다시 투표 열기
+                  재투표
                 </Button>
               ) : (
                 <Button type="button" disabled className="w-full">

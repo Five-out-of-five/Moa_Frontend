@@ -36,7 +36,7 @@ const MAX_TITLE_LENGTH = 120;
 const DEFAULT_DAYS_AHEAD = 7;
 
 /**
- * 재투표 생성 다이얼로그 — CLOSED 투표 상세 Sheet 의 "다시 투표 열기" 에서 호출된다.
+ * 재투표 생성 다이얼로그 — CLOSED 투표 상세 Sheet 의 "재투표" 버튼에서 호출된다.
  *
  * ⚠️ 유형(단일/복수/찬반) · 선택지 · 최대 선택 수는 부모에서 자동 복제 — 사용자가 조정할 수
  *    있는 건 **제목 · 마감 · 익명** 셋이다. "같은 조건으로 한 번 더" 가 재투표의 의도라
@@ -52,7 +52,7 @@ export function VoteRevoteDialog({
   onOpenChange,
   onCreated,
 }: Props) {
-  const defaultTitle = useMemo(() => `다시: ${parent.title}`, [parent.title]);
+  const defaultTitle = useMemo(() => `재투표: ${parent.title}`, [parent.title]);
   const defaultDeadline = useMemo(() => computeDefaultDeadline(), []);
 
   const [title, setTitle] = useState(defaultTitle);
@@ -134,7 +134,7 @@ export function VoteRevoteDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle>다시 투표 열기</DialogTitle>
+          <DialogTitle>재투표</DialogTitle>
           <DialogDescription>
             선택지와 유형은 원본 투표에서 그대로 복제됩니다. 제목과 마감만 조정하세요.
           </DialogDescription>
@@ -234,7 +234,7 @@ export function VoteRevoteDialog({
             disabled={!canSubmit}
             aria-busy={pending}
           >
-            {pending ? "여는 중…" : "다시 열기"}
+            {pending ? "재투표 생성 중…" : "재투표"}
           </Button>
         </DialogFooter>
       </DialogContent>

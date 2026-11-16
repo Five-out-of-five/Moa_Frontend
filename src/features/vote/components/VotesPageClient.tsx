@@ -38,7 +38,7 @@ type TabKey = "OPEN" | "CLOSED";
  * 카드를 누르면 상세가 우측 Sheet 로 열린다 (`VoteDetailSheet`).
  *
  * ⚠️ 쓰기 액션: 생성 · 참여 · 선택 변경 · 수정 · 수동 마감 · 삭제 · 재투표. 재투표는 CLOSED
- *    Sheet 하단 "다시 투표 열기" 버튼에서 `VoteRevoteDialog` 로 들어간다.
+ *    Sheet 하단 "재투표" 버튼에서 `VoteRevoteDialog` 로 들어간다.
  */
 export function VotesPageClient({
   roomId,
