@@ -35,6 +35,7 @@ import type { VoteDetail } from "@/types/db";
 import { closeVoteAction, deleteVoteAction, submitBallotAction } from "../actions";
 import { timeRemainingUntil } from "../lib/time-remaining";
 import { VoteEditDialog } from "./VoteEditDialog";
+import { VoteRevoteDialog } from "./VoteRevoteDialog";
 
 interface Props {
   roomId: number;
@@ -47,6 +48,11 @@ interface Props {
   onVoteUpdated?(vote: VoteDetail): void;
   /** 삭제 결과 — 상위 리스트에서 제거 + Sheet 를 닫도록 신호. */
   onVoteDeleted?(voteId: number): void;
+  /**
+   * 재투표 생성 결과 — 상위 리스트에 **새 투표**로 추가하고 새 Sheet 를 열기 위해 상위로 올려 보낸다.
+   * (`VotesPageClient.handleCreated` 와 같은 모양.)
+   */
+  onVoteCreated?(vote: VoteDetail): void;
 }
 
 /**
@@ -68,6 +74,7 @@ export function VoteDetailSheet({
   onOpenChange,
   onVoteUpdated,
   onVoteDeleted,
+  onVoteCreated,
 }: Props) {
   const [local, setLocal] = useState<VoteDetail | null>(vote);
   const [selected, setSelected] = useState<number[]>(vote?.myOptionIds ?? []);
@@ -77,6 +84,7 @@ export function VoteDetailSheet({
   const [editOpen, setEditOpen] = useState(false);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [revoteOpen, setRevoteOpen] = useState(false);
   const [managePending, startManageTransition] = useTransition();
 
   // ⚠️ Sheet 가 투표 A → B 로 빠르게 전환될 때, A 의 네트워크 응답이 뒤늦게 돌아와
@@ -99,6 +107,7 @@ export function VoteDetailSheet({
     setEditOpen(false);
     setCloseConfirmOpen(false);
     setDeleteConfirmOpen(false);
+    setRevoteOpen(false);
   }, [vote]);
 
   const isClosed = local?.status === "CLOSED";
@@ -458,6 +467,19 @@ export function VoteDetailSheet({
                       ? "선택 변경하기"
                       : "투표 제출하기"}
                 </Button>
+              ) : meAccountId !== null ? (
+                /* CLOSED 결과를 본 뒤 방 멤버라면 같은 조건으로 다시 투표를 열 수 있다.
+                   권한(방 멤버) 체크는 Server Action 에서 다시 한다 — FE 는 노출만 책임.
+                   디자인은 Figma 에 재투표 전용 UI 가 없어 투표 제출 버튼과 같은 자리를
+                   재사용한다 (`feedback-moa-figma-make-design-only` 룰 준수). */
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setRevoteOpen(true)}
+                  className="w-full"
+                >
+                  다시 투표 열기
+                </Button>
               ) : (
                 <Button type="button" disabled className="w-full">
                   마감된 투표
@@ -492,6 +514,21 @@ export function VoteDetailSheet({
           open={editOpen}
           onOpenChange={setEditOpen}
           onUpdated={handleUpdated}
+        />
+      )}
+
+      {local && isClosed && onVoteCreated && (
+        <VoteRevoteDialog
+          roomId={roomId}
+          parent={local}
+          open={revoteOpen}
+          onOpenChange={setRevoteOpen}
+          onCreated={(vote) => {
+            // 상위의 `handleCreated` 가 setOpenVoteId(새 voteId) 로 Sheet 를 새 투표로
+            // **전환** 한다 — 여기서 onOpenChange(false) 를 호출하면 그 전환이 덮여 Sheet 가
+            // 닫혀 버린다.
+            onVoteCreated(vote);
+          }}
         />
       )}
 

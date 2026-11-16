@@ -57,7 +57,7 @@ interface Props {
  * ⚠️ 상세는 `page.tsx` 에서 Summary 와 함께 **선패치**해 넘긴다. 업무 수가 적은 전제에서
  *    Sheet 왕복 없이 바로 열린다. 실서버에서 업무가 수백 건 쌓이면 lazy fetch (Server
  *    Action) 로 전환하면 된다.
- * ⚠️ 쓰기 액션은 상세 Sheet 안 **상태 변경**만. 생성·수정·삭제·담당자 변경·반려·첨부는
+ * ⚠️ 쓰기 액션: 생성 · 상태 변경(상세 Sheet 안) · 수정 · 담당자 변경 · 반려 · 삭제. 첨부는
  *    후속 PR 범위.
  */
 export function TaskBoardPageClient({
@@ -106,27 +106,43 @@ export function TaskBoardPageClient({
     return list;
   }, [localSummaries, onlyMine, query]);
 
+  const toSummary = (task: TaskDetail): TaskSummary => ({
+    taskId: task.taskId,
+    title: task.title,
+    status: task.status,
+    priority: task.priority,
+    dueDate: task.dueDate,
+    dDay: task.dDay,
+    overdue: task.overdue,
+    sortOrder: task.sortOrder,
+    version: task.version,
+    registrant: task.registrant,
+    assignee: task.assignee,
+    source: task.source,
+  });
+
   const handleCreated = (task: TaskDetail) => {
     // 서버 리런 전까지 신규 상세·요약을 바로 보여 주고 상세 Sheet 도 자동으로 열어 준다.
     setLocalDetails((prev) => ({ ...prev, [task.taskId]: task }));
-    setLocalSummaries((prev) => [
-      ...prev,
-      {
-        taskId: task.taskId,
-        title: task.title,
-        status: task.status,
-        priority: task.priority,
-        dueDate: task.dueDate,
-        dDay: task.dDay,
-        overdue: task.overdue,
-        sortOrder: task.sortOrder,
-        version: task.version,
-        registrant: task.registrant,
-        assignee: task.assignee,
-        source: task.source,
-      },
-    ]);
+    setLocalSummaries((prev) => [...prev, toSummary(task)]);
     setOpenTaskId(task.taskId);
+  };
+
+  const handleTaskUpdated = (task: TaskDetail) => {
+    setLocalDetails((prev) => ({ ...prev, [task.taskId]: task }));
+    setLocalSummaries((prev) =>
+      prev.map((s) => (s.taskId === task.taskId ? toSummary(task) : s)),
+    );
+  };
+
+  const handleTaskDeleted = (taskId: number) => {
+    setLocalDetails((prev) => {
+      const next = { ...prev };
+      delete next[taskId];
+      return next;
+    });
+    setLocalSummaries((prev) => prev.filter((s) => s.taskId !== taskId));
+    setOpenTaskId((prev) => (prev === taskId ? null : prev));
   };
 
   const grouped = useMemo(() => {
@@ -237,10 +253,14 @@ export function TaskBoardPageClient({
       <TaskDetailSheet
         roomId={roomId}
         task={detail}
+        members={members}
+        meAccountId={meAccountId}
         open={openTaskId !== null}
         onOpenChange={(o) => {
           if (!o) setOpenTaskId(null);
         }}
+        onTaskUpdated={handleTaskUpdated}
+        onTaskDeleted={handleTaskDeleted}
       />
 
       <TaskCreateDialog
