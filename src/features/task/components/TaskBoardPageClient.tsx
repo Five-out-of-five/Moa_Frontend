@@ -208,7 +208,7 @@ export function TaskBoardPageClient({
         </div>
       </header>
 
-      <SprintProgressBar sprint={activeSprint} grouped={grouped} />
+      <SprintProgressBar sprint={activeSprint} />
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
         {TASK_STATUS_ORDER.map((status) => {
@@ -333,21 +333,19 @@ function SprintHeadline({ sprint }: { sprint: Sprint | null }) {
   );
 }
 
-/** 스프린트 진행률 바 + 완료/전체/남은 통계 (Figma 상단 블록). */
-function SprintProgressBar({
-  sprint,
-  grouped,
-}: {
-  sprint: Sprint | null;
-  grouped: Map<TaskStatus, TaskSummary[]>;
-}) {
-  const total =
-    (grouped.get("TODO")?.length ?? 0) +
-    (grouped.get("IN_PROGRESS")?.length ?? 0) +
-    (grouped.get("REVIEW")?.length ?? 0) +
-    (grouped.get("DONE")?.length ?? 0);
-  const done = grouped.get("DONE")?.length ?? 0;
-  const remain = total - done;
+/**
+ * 스프린트 진행률 바 + 완료/전체/남은 통계 (Figma 상단 블록).
+ *
+ * ⚠️ 집계는 **활성 스프린트에 소속된 업무만** 세야 한다 — 보드가 보여주는 `summaries` 는
+ *    방 전체 업무(과거 스프린트 포함) 라서 그걸로 세면 "비활성 스프린트 업무" 까지 진행률에
+ *    섞인다 (CodeRabbit). 서버가 관리하는 `Sprint.totalTasks` / `doneTasks` 를 사용하고,
+ *    이 값은 `createTask` / `updateTask` / `changeStatus` / `deleteTask` 액션에서 함께
+ *    보정한다.
+ */
+function SprintProgressBar({ sprint }: { sprint: Sprint | null }) {
+  const total = sprint?.totalTasks ?? 0;
+  const done = sprint?.doneTasks ?? 0;
+  const remain = Math.max(0, total - done);
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
 
   return (

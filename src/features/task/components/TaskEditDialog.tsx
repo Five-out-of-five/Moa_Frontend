@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -76,6 +76,11 @@ export function TaskEditDialog({
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [pending, startTransition] = useTransition();
 
+  // ⚠️ Dialog 가 업무 A → B 로 전환되었을 때 A 의 네트워크 응답이 B 창에 도달해 닫거나
+  //    오류를 표시하지 않도록 **요청 시점의 taskId** 를 기록해 응답과 비교한다 (CodeRabbit).
+  //    상위 목록 반영(`onUpdated`)은 요청 당시의 task 를 기준으로 하므로 늦게 와도 유효하다.
+  const requestedTaskIdRef = useRef<number | null>(null);
+
   const titleInputId = useId();
   const descInputId = useId();
   const statusInputId = useId();
@@ -111,12 +116,14 @@ export function TaskEditDialog({
     if (!canSubmit) return;
     setError(null);
     setFieldErrors({});
+    const requestedTaskId = task.taskId;
+    requestedTaskIdRef.current = requestedTaskId;
     startTransition(async () => {
       let result;
       try {
         result = await updateTaskAction({
           roomId,
-          taskId: task.taskId,
+          taskId: requestedTaskId,
           version: task.version,
           title: title.trim(),
           description,
@@ -127,13 +134,19 @@ export function TaskEditDialog({
         });
       } catch (e) {
         console.error("TaskEditDialog updateTaskAction rejected:", e);
-        setError(
-          "요청을 보내지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
-        );
+        // 다른 업무로 전환된 뒤의 응답이면 현재 Dialog 상태는 건드리지 않는다.
+        if (task.taskId === requestedTaskId) {
+          setError(
+            "요청을 보내지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
+          );
+        }
         return;
       }
+      // 성공 결과는 요청이 늦게 왔더라도 상위 목록에 반영한다 (사용자가 의도한 변경).
+      if (result.kind === "ok") onUpdated(result.task);
+      // 화면 쪽 처리(닫기/오류 표시)는 현재 Dialog 가 그 task 를 보고 있을 때만.
+      if (task.taskId !== requestedTaskId) return;
       if (result.kind === "ok") {
-        onUpdated(result.task);
         onOpenChange(false);
         return;
       }
@@ -148,7 +161,10 @@ export function TaskEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[520px]">
+      {/* ⚠️ 모바일 작은 화면에서 입력 영역 + 버튼이 화면 높이를 넘으면 저장 버튼에 접근
+             불가하다. 뷰포트 기준 최대 높이 + 세로 내부 스크롤로 하단까지 도달 가능하게
+             한다 (CodeRabbit). */}
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-[520px]">
         <DialogHeader>
           <DialogTitle>업무 수정</DialogTitle>
           <DialogDescription>

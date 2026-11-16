@@ -32,8 +32,10 @@ interface Props {
 type FieldErrors = Partial<Record<string, string>>;
 
 const MAX_TITLE_LENGTH = 120;
-/** 재투표 기본 마감: 지금으로부터 7일 뒤 23:59 (로컬 시각). */
+const TITLE_PREFIX = "재투표: ";
+/** 재투표 기본 마감: 지금으로부터 7일 뒤 23:59 (KST 기준). */
 const DEFAULT_DAYS_AHEAD = 7;
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 /**
  * 재투표 생성 다이얼로그 — CLOSED 투표 상세 Sheet 의 "재투표" 버튼에서 호출된다.
@@ -52,7 +54,12 @@ export function VoteRevoteDialog({
   onOpenChange,
   onCreated,
 }: Props) {
-  const defaultTitle = useMemo(() => `재투표: ${parent.title}`, [parent.title]);
+  // ⚠️ 접두사 길이를 포함해 `MAX_TITLE_LENGTH` 안에 맞춘다 — 부모 제목이 길면 잘라 둔다.
+  //    그렇지 않으면 사용자가 기본값 그대로 제출했을 때 zod 가 거절한다 (CodeRabbit).
+  const defaultTitle = useMemo(() => {
+    const available = MAX_TITLE_LENGTH - TITLE_PREFIX.length;
+    return `${TITLE_PREFIX}${parent.title.slice(0, available)}`;
+  }, [parent.title]);
   const defaultDeadline = useMemo(() => computeDefaultDeadline(), []);
 
   const [title, setTitle] = useState(defaultTitle);
@@ -257,13 +264,32 @@ function FieldError({
 }
 
 /**
- * 지금 기준 7일 뒤 23:59 (로컬 시각) 을 `datetime-local` 입력 포맷으로 반환.
- * `yyyy-MM-ddTHH:mm` 꼴이며, 사용자가 자유롭게 조정할 수 있다.
+ * **KST 기준 7일 뒤 23:59** 를 사용자 로컬 `datetime-local` 포맷으로 반환.
+ *
+ * ⚠️ `setDate` / `setHours` 는 실행 환경의 로컬 시간을 쓰므로 UTC 로 설정된 브라우저에서는
+ *    7일 뒤 23:59Z 가 되어 요구값(23:59 KST) 보다 9시간 늦게 전송된다 (CodeRabbit). KST 를
+ *    기준으로 "다음 7일 뒤의 하루 끝" 시점을 먼저 UTC ms 로 잡고, 사용자 로컬 시간대로
+ *    변환해 datetime-local 에 넣어야 입력창에 노출되는 시각이 실제 KST 23:59 와 일치한다.
  */
 function computeDefaultDeadline(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + DEFAULT_DAYS_AHEAD);
-  d.setHours(23, 59, 0, 0);
+  const nowKstMs = Date.now() + KST_OFFSET_MS;
+  const kstNow = new Date(nowKstMs);
+  // KST 달력 상 "7일 뒤" 00:00 을 만들고 23:59 로 세팅 (UTC Date 로 다룬다).
+  const kstTarget = new Date(
+    Date.UTC(
+      kstNow.getUTCFullYear(),
+      kstNow.getUTCMonth(),
+      kstNow.getUTCDate() + DEFAULT_DAYS_AHEAD,
+      23,
+      59,
+    ),
+  );
+  // 이 시점의 **실제 UTC ms** 는 위 계산에서 KST 시각을 UTC Date 로 다뤘으므로 KST-9h.
+  const actualUtcMs = kstTarget.getTime() - KST_OFFSET_MS;
+  const localAtTarget = new Date(actualUtcMs);
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return (
+    `${localAtTarget.getFullYear()}-${pad(localAtTarget.getMonth() + 1)}-${pad(localAtTarget.getDate())}` +
+    `T${pad(localAtTarget.getHours())}:${pad(localAtTarget.getMinutes())}`
+  );
 }

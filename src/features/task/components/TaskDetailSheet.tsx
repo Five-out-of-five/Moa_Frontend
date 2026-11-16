@@ -238,14 +238,16 @@ export function TaskDetailSheet({
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
           side="right"
-          // ⚠️ 기본 X 닫기 버튼을 숨긴다 — overlay 클릭 · ESC 로 닫을 수 있어 중복이고,
-          //    더보기 메뉴(...)를 좌측으로 밀어 레이아웃을 깨뜨리기만 한다.
-          showCloseButton={false}
+          // ⚠️ 데스크톱에선 overlay 클릭 · ESC 로 닫을 수 있어 X 가 중복이고, 더보기 메뉴(...)를
+          //    좌측으로 밀어 레이아웃을 깨뜨리기만 한다. 반대로 모바일에선 Sheet 가 화면을 거의
+          //    다 덮어 overlay 클릭이 불가하므로 X 를 남겨 둬야 닫을 수 있다 (CodeRabbit).
+          closeButtonMobileOnly
           className="bg-surface flex w-full flex-col gap-0 p-0 sm:max-w-[460px]"
         >
           {local ? (
             <>
-              <SheetHeader className="border-border-soft gap-2 border-b px-5 py-4">
+              {/* 모바일에서는 X 가 우상단에 보이므로 더보기 메뉴와 겹치지 않게 그 폭만큼 여백을 확보한다. */}
+              <SheetHeader className="border-border-soft gap-2 border-b px-5 py-4 pr-12 sm:pr-5">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-1.5">
                     <span
@@ -456,7 +458,14 @@ export function TaskDetailSheet({
           <AlertDialogFooter>
             <AlertDialogCancel disabled={managePending}>취소</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleConfirmReject}
+              onClick={(e) => {
+                // ⚠️ AlertDialogAction 은 기본적으로 클릭 즉시 창을 닫는다 — 그 전에
+                //    managePending 도 아직 false 라 `onOpenChange` 가드가 작동하지 않는다.
+                //    `preventDefault` 로 기본 닫기를 막고, 성공 응답이 돌아올 때
+                //    `setRejectConfirmOpen(false)` 로 닫는다 (CodeRabbit).
+                e.preventDefault();
+                handleConfirmReject();
+              }}
               disabled={managePending}
               aria-busy={managePending}
             >
@@ -483,7 +492,10 @@ export function TaskDetailSheet({
           <AlertDialogFooter>
             <AlertDialogCancel disabled={managePending}>취소</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleConfirmDelete}
+              onClick={(e) => {
+                e.preventDefault();
+                handleConfirmDelete();
+              }}
               disabled={managePending}
               aria-busy={managePending}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"

@@ -144,8 +144,11 @@ export async function changeTaskStatusAction(
       task.sortOrder = i;
     });
 
+    const wasDone = previousStatus === "DONE";
+    const isDone = status === "DONE";
+
     t.status = status;
-    t.completedAt = status === "DONE" ? new Date().toISOString() : null;
+    t.completedAt = isDone ? new Date().toISOString() : null;
     t.dDay = computeDDay(t.dueDate);
     t.overdue = computeOverdue(t.dueDate, status);
     t.version += 1;
@@ -161,6 +164,17 @@ export async function changeTaskStatusAction(
         createdAt: new Date().toISOString(),
       },
     ];
+
+    // ⚠️ DONE 진입/이탈 시 스프린트 집계 보정 — `updateTaskAction` 과 같은 규칙.
+    //    이걸 빼면 상태 버튼으로 TODO↔DONE 왕복한 뒤 수정 Dialog 로 되돌릴 때 `doneTasks`
+    //    가 실제 완료 수와 어긋난다 (CodeRabbit).
+    if (t.sprintId !== null && wasDone !== isDone) {
+      const sprint = sprints.find((s) => s.id === t.sprintId);
+      if (sprint) {
+        sprint.doneTasks = Math.max(0, sprint.doneTasks + (isDone ? 1 : -1));
+      }
+    }
+
     revalidatePath(`/rooms/${roomId}/boards/task`, "page");
     const { roomId: _r, sprintId: _s, ...detail } = t;
     void _r;
@@ -766,6 +780,7 @@ export async function rejectTaskAction(
     t.status = "TODO";
     t.assignee = null;
     t.completedAt = null;
+    t.dDay = computeDDay(t.dueDate);
     t.overdue = computeOverdue(t.dueDate, "TODO");
     // TODO 컬럼 맨 아래로 밀어 넣는다 — 담당자 재배정 흐름을 눈에 띄게.
     const siblings = tasks
