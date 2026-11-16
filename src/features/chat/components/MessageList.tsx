@@ -121,7 +121,7 @@ function groupMessages(messages: readonly ChatMessage[]): {
   }[] = [];
   let lastDateKey = "";
   for (const msg of messages) {
-    const dateKey = toLocalDateKey(msg.createdAt);
+    const dateKey = toUtcDateKey(msg.createdAt);
     const last = groups[groups.length - 1];
     const lastMsg = last?.items[last.items.length - 1];
     const sameAuthor = lastMsg?.author.accountId === msg.author.accountId;
@@ -146,10 +146,16 @@ function groupMessages(messages: readonly ChatMessage[]): {
   return groups;
 }
 
-function toLocalDateKey(iso: string): string {
+/**
+ * 그룹화·구분선 분기에 쓰는 날짜 키. **UTC 기준** 으로 고정해 서버 렌더와 클라이언트
+ * 렌더가 같은 그룹 구조를 만들도록 한다 — 로컬 TZ 를 쓰면 SSR 과 CSR 사이에 그룹이
+ * 쪼개지거나 합쳐지는 DOM 구조 불일치가 생긴다 (CodeRabbit). 사용자에게 보이는 라벨은
+ * `formatDateDivider` / `formatTime` 이 로컬 TZ 로 다시 그린다.
+ */
+function toUtcDateKey(iso: string): string {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 }
 
 function MessageRow({
@@ -182,7 +188,14 @@ function MessageRow({
             <span className="text-foreground text-sm font-semibold">
               {message.author.displayName}
             </span>
-            <span className="text-muted-foreground text-[11px]">
+            {/* ⚠️ `formatTime` 은 로컬 타임존을 쓰므로 SSR(서버 TZ) 과 클라(사용자 TZ) 결과가
+                   다를 수 있다. Next 15 는 client component 도 1차 HTML 을 서버에서 생성해
+                   hydration 경고가 뜬다. `suppressHydrationWarning` 로 이 지점만 억제하고,
+                   클라가 자기 TZ 로 다시 그리도록 둔다 (CodeRabbit). */}
+            <span
+              className="text-muted-foreground text-[11px]"
+              suppressHydrationWarning
+            >
               {formatTime(message.createdAt)}
             </span>
             {message.pending && (
@@ -192,7 +205,11 @@ function MessageRow({
             )}
           </div>
         )}
-        <p className="text-foreground whitespace-pre-wrap text-sm leading-relaxed">
+        {/* ⚠️ 긴 URL 이나 공백 없는 토큰이 메시지 폭을 넘어가 가로 스크롤을 만들지 않도록
+               `overflow-wrap: anywhere` 를 걸어 임의 지점에서 줄바꿈 (CodeRabbit).
+               `break-words` (overflow-wrap: break-word) 는 단어 중간 분할을 못 해 긴 토큰
+               문제엔 부족. */}
+        <p className="text-foreground [overflow-wrap:anywhere] whitespace-pre-wrap text-sm leading-relaxed">
           {message.content}
         </p>
       </div>
@@ -216,7 +233,11 @@ function DateDivider({ label }: { label: string }) {
   return (
     <div className="my-3 flex items-center gap-3" role="separator" aria-label={label}>
       <span className="bg-border-soft h-px flex-1" />
-      <span className="text-muted-foreground text-[11px] font-medium">
+      {/* 날짜도 로컬 TZ 기반이라 SSR/CSR 결과가 달라질 수 있다 — 같은 이유로 경고 억제. */}
+      <span
+        className="text-muted-foreground text-[11px] font-medium"
+        suppressHydrationWarning
+      >
         {label}
       </span>
       <span className="bg-border-soft h-px flex-1" />

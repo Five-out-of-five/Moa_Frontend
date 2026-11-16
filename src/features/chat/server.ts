@@ -1,6 +1,6 @@
 import "server-only";
 
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { isActiveMember } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
 import { roomMembers } from "@/mocks/db";
@@ -57,9 +57,17 @@ export async function getChannel(
       null
     );
   }
-  return api<ChatChannel>(
-    `/api/v1/rooms/${roomId}/channels/${channelId}`,
-  );
+  // ⚠️ `api()` 는 실패 envelope 를 받으면 `ApiError` 를 던진다. 미존재 리소스를 null 로
+  //    리턴해야 page 의 `notFound()` 분기가 작동하므로 404 만 null 로 변환하고 나머지는
+  //    그대로 던져 상위 error boundary 로 올린다 (CodeRabbit).
+  try {
+    return await api<ChatChannel>(
+      `/api/v1/rooms/${roomId}/channels/${channelId}`,
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
 }
 
 /**
@@ -90,7 +98,15 @@ export async function getDmThread(
   if (isMock) {
     return DM_THREADS.find((t) => t.id === threadId) ?? null;
   }
-  return api<DirectMessageThread>(`/api/v1/accounts/me/dms/${threadId}`);
+  // 404 만 null, 나머지는 throw (getChannel 과 같은 이유).
+  try {
+    return await api<DirectMessageThread>(
+      `/api/v1/accounts/me/dms/${threadId}`,
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
 }
 
 /** 1:1 스레드의 최근 메시지 묶음 — 채널 쪽과 같은 가정. */

@@ -72,7 +72,10 @@ export function MessageComposer({ placeholder, disabledReason, onSend }: Props) 
         rows={2}
         aria-label="메시지 입력"
         className={cn(
-          "min-h-[2.75rem] resize-none border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0",
+          // ⚠️ 공용 Textarea 에 `field-sizing-content` 가 걸려 있어 `rows={2}` 는 상한이
+          //    아니다. 100줄 붙여넣기 같은 입력이 들어오면 textarea 가 화면 높이를 넘어
+          //    메시지 목록을 삼키므로 `max-h` 와 세로 스크롤로 상한을 건다 (CodeRabbit).
+          "min-h-[2.75rem] max-h-32 resize-none overflow-y-auto border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0",
           disabled && "cursor-not-allowed",
         )}
       />
