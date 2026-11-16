@@ -210,9 +210,8 @@ export function TaskBoardPageClient({
 
       <SprintProgressBar sprint={activeSprint} grouped={grouped} />
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {TASK_STATUS_ORDER.map((status) => {
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {TASK_STATUS_ORDER.map((status) => {
             const items = grouped.get(status) ?? [];
             return (
               <section
@@ -273,10 +272,9 @@ export function TaskBoardPageClient({
                     ))}
                   </ul>
                 )}
-              </section>
-            );
-          })}
-        </div>
+            </section>
+          );
+        })}
 
         <TaskBalancer
           members={members}
