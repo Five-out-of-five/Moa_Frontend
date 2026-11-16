@@ -253,14 +253,14 @@ export function VoteDetailSheet({
       <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        // ⚠️ 모바일에선 Sheet 가 화면 전체를 덮어 overlay 클릭으로 닫을 수 없다. 기본 X 버튼은
-        //    유지하되, 더보기 메뉴와 겹치지 않도록 헤더 콘텐츠에 우측 여백(pr-12)을 확보해
-        //    X 버튼 자리를 비워 둔다 (CodeRabbit).
+        // ⚠️ 기본 X 닫기 버튼을 숨긴다 — overlay 클릭 · ESC 로 닫을 수 있어 중복이고,
+        //    더보기 메뉴(...)를 좌측으로 밀어 레이아웃을 깨뜨리기만 한다.
+        showCloseButton={false}
         className="bg-surface flex w-full flex-col gap-0 p-0 sm:max-w-[420px]"
       >
         {local ? (
           <>
-            <SheetHeader className="border-border-soft gap-2 border-b px-5 py-4 pr-12">
+            <SheetHeader className="border-border-soft gap-2 border-b px-5 py-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <StatusBadge status={local.status} />

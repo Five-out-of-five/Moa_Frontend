@@ -238,12 +238,14 @@ export function TaskDetailSheet({
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
           side="right"
-          // X 버튼과 더보기 메뉴가 겹치지 않도록 헤더 콘텐츠에 우측 여백 확보 (VoteDetailSheet 과 동일).
+          // ⚠️ 기본 X 닫기 버튼을 숨긴다 — overlay 클릭 · ESC 로 닫을 수 있어 중복이고,
+          //    더보기 메뉴(...)를 좌측으로 밀어 레이아웃을 깨뜨리기만 한다.
+          showCloseButton={false}
           className="bg-surface flex w-full flex-col gap-0 p-0 sm:max-w-[460px]"
         >
           {local ? (
             <>
-              <SheetHeader className="border-border-soft gap-2 border-b px-5 py-4 pr-12">
+              <SheetHeader className="border-border-soft gap-2 border-b px-5 py-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-1.5">
                     <span
