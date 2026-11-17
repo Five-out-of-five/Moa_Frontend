@@ -1,12 +1,25 @@
-import { Lightbulb, MessageCircle, ThumbsUp } from "lucide-react";
+import { Lightbulb, MessageCircle, Plus, ThumbsUp } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { getActiveSession, listIdeaCards } from "@/features/idea/server";
 
 import { WidgetEmpty } from "./SummaryUi";
 
 export async function IdeaSummary({ roomId }: { roomId: number }) {
   const [session, cards] = await Promise.all([getActiveSession(roomId), listIdeaCards(roomId)]);
-  if (!session) return <WidgetEmpty>진행 중인 회차가 없어요.</WidgetEmpty>;
+  const addCard = (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <Button size="sm" variant="outline" disabled aria-describedby={`idea-card-add-reason-${roomId}`}>
+        <Plus aria-hidden="true" /> 카드 추가
+      </Button>
+      <p id={`idea-card-add-reason-${roomId}`} className="text-muted-foreground text-xs">
+        {session ? "카드 작성 기능은 준비 중입니다." : "카드를 추가하려면 진행 중인 회차가 필요합니다."}
+      </p>
+    </div>
+  );
+  if (!session) {
+    return <div className="space-y-2">{addCard}<WidgetEmpty>진행 중인 회차가 없어요.</WidgetEmpty></div>;
+  }
   const recent = cards.filter(({ sessionId }) => sessionId === session.id)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 3);
   return (
@@ -18,6 +31,7 @@ export async function IdeaSummary({ roomId }: { roomId: number }) {
           <p className="truncate text-sm font-semibold" title={session.title}>{session.title}</p>
         </div>
       </div>
+      {addCard}
       {recent.length === 0 ? <WidgetEmpty>이 회차에 등록된 카드가 없어요.</WidgetEmpty> : (
         <ul className="divide-border divide-y">
           {recent.map((card, index) => (

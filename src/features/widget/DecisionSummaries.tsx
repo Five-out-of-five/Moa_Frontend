@@ -2,13 +2,12 @@ import { ArrowLeftRight } from "lucide-react";
 import Link from "next/link";
 
 import { listConflicts } from "@/features/mediation/server";
-import { listVotesInRoom } from "@/features/vote/server";
+import { listOpenVotesInRoom } from "@/features/vote/server";
 
 import { formatWidgetDate, SummaryBadge, WidgetEmpty } from "./SummaryUi";
 
 export async function VoteSummary({ roomId }: { roomId: number }) {
-  const { content } = await listVotesInRoom(roomId);
-  const open = content.filter(({ status }) => status === "OPEN");
+  const open = await listOpenVotesInRoom(roomId);
   if (open.length === 0) return <WidgetEmpty>진행 중인 투표가 없어요.</WidgetEmpty>;
   return (
     <div className="space-y-2">
@@ -50,9 +49,9 @@ export async function MediationSummary({ roomId }: { roomId: number }) {
           <time dateTime={conflict.detectedAt}>{formatWidgetDate(conflict.detectedAt)}</time>
         </div>
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 text-xs font-semibold">
-          <p className="wrap-break-word">{conflict.leftCardTitle}</p>
+          <p className="line-clamp-2 wrap-break-word" title={conflict.leftCardTitle}>{conflict.leftCardTitle}</p>
           <ArrowLeftRight aria-hidden="true" className="text-primary size-3.5" />
-          <p className="wrap-break-word">{conflict.rightCardTitle}</p>
+          <p className="line-clamp-2 wrap-break-word" title={conflict.rightCardTitle}>{conflict.rightCardTitle}</p>
         </div>
         <p className="text-muted-foreground line-clamp-2 text-xs">{conflict.summary}</p>
       </div>
