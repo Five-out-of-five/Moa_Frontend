@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cookies } from "next/headers";
+
 import { getMyAccount } from "@/features/account/server";
 import { api } from "@/lib/api";
 import { isActiveMember, isRoomOwner } from "@/lib/permission";
@@ -21,12 +23,8 @@ export async function listMyRoomsForSettings() {
 }
 
 /**
- * 방 도메인 서버 사이드 조회.
- *
- * isMock 분기는 **여기(server.ts)** 에서만 한다. 컴포넌트는 `listMyRooms` 를 부를 뿐
- * 그 뒤가 목인지 실서버인지 모른다.
+ * 로그인 사용자가 참여 중인 워크스페이스를 조회한다.
  */
-
 export async function listMyRooms(): Promise<Room[]> {
   if (isMock) {
     const account = await getMyAccount();
@@ -37,7 +35,9 @@ export async function listMyRooms(): Promise<Room[]> {
     );
     return rooms.filter((room) => memberRoomIds.has(room.id));
   }
-  return api<Room[]>("/api/v1/rooms", { cache: "no-store" });
+  const cookieName = process.env.AUTH_ACCESS_TOKEN_COOKIE_NAME || "accessToken";
+  const accessToken = (await cookies()).get(cookieName)?.value;
+  return api<Room[]>("/api/v1/rooms", { cache: "no-store", accessToken });
 }
 
 export async function getWorkspaceSelection() {

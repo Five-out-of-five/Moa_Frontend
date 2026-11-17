@@ -1,11 +1,15 @@
+import type { ReactNode } from "react";
+
 import { Button } from "@/components/ui/button";
 
 export function PageError({
   title = "화면을 불러오지 못했어요",
   onRetry,
+  children,
 }: {
   title?: string;
   onRetry: () => void;
+  children?: ReactNode;
 }) {
   return (
     <section className="grid justify-items-center gap-3 text-center">
@@ -14,6 +18,7 @@ export function PageError({
       <Button type="button" variant="outline" onClick={onRetry}>
         다시 시도
       </Button>
+      {children}
     </section>
   );
 }
