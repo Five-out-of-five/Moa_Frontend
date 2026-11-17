@@ -6,7 +6,7 @@ import { getMyAccount } from "@/features/account/server";
 import { listMyRooms } from "@/features/room/server";
 import { isActiveMember } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
-import { roomMembers } from "@/mocks/db";
+import { accounts, roomMembers } from "@/mocks/db";
 
 import { roomManagementMock } from "../management/mock-state";
 import type { FirstRoomProfile } from "./types";
@@ -22,6 +22,12 @@ function membershipKey(member: (typeof roomMembers)[number]) {
 
 export function getMockRoomMemberProfile(member: (typeof roomMembers)[number]) {
   return profiles.get(membershipKey(member));
+}
+
+export function getMockRoomMemberNickname(member: (typeof roomMembers)[number]) {
+  const profile = getMockRoomMemberProfile(member);
+  return (profile ? profile.nickname : member.nickname) ??
+    accounts.find(({ id }) => id === member.accountId)?.name;
 }
 
 export const getFirstRoomProfile = cache(async (roomId: string) => {
@@ -49,7 +55,7 @@ export function isNicknameTaken(roomId: number, accountId: number, nickname: str
       member.roomId === roomId &&
       member.accountId !== accountId &&
       isActiveMember(member) &&
-      (profiles.get(membershipKey(member))?.nickname ?? member.nickname) === nickname,
+      getMockRoomMemberNickname(member) === nickname,
   );
 }
 

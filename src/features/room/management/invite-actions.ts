@@ -1,5 +1,7 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -29,6 +31,7 @@ export async function requestRoomJoinAction(token: string): Promise<RoomManageme
   if (room.memberCount >= room.maxMemberCount)
     return { message: "워크스페이스 정원이 가득 찼습니다." };
   roomManagementMock.requests.set(key, {
+    id: randomUUID(),
     roomId: room.id,
     accountId: account.id,
     status: "PENDING",
@@ -41,13 +44,14 @@ export async function requestRoomJoinAction(token: string): Promise<RoomManageme
 export async function decideRoomJoinAction(
   roomId: number,
   accountId: number,
+  requestId: string,
   approve: boolean,
 ): Promise<RoomManagementResult> {
   const context = await getManagedRoom(roomId);
   if (!context || !isRoomOwner(context.membership))
     return { message: "방장만 참여 요청을 처리할 수 있습니다." };
   const request = roomManagementMock.requests.get(requestKey(roomId, accountId));
-  if (!request || !isPendingJoinRequest(request))
+  if (!request || !requestId || request.id !== requestId || !isPendingJoinRequest(request))
     return { message: "이미 처리됐거나 만료된 요청입니다." };
   if (approve) {
     if (context.room.memberCount >= context.room.maxMemberCount)

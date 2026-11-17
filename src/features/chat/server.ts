@@ -1,9 +1,10 @@
 import "server-only";
 
+import { getMyAccount } from "@/features/account/server";
 import { api, ApiError } from "@/lib/api";
 import { isActiveMember } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
-import { roomMembers } from "@/mocks/db";
+import { accounts, roomMembers } from "@/mocks/db";
 
 import {
   CHANNEL_MESSAGES,
@@ -16,6 +17,42 @@ import type {
   ChatMessage,
   DirectMessageThread,
 } from "./types";
+
+const runtime = globalThis as typeof globalThis & {
+  moaMockDms?: Map<number, { viewerId: number; thread: DirectMessageThread }>;
+};
+const mockDms = (runtime.moaMockDms ??= new Map());
+
+function listMockDmThreads(viewerId: number) {
+  return [
+    ...(viewerId === accounts[0]?.id ? DM_THREADS : []),
+    ...Array.from(mockDms.values())
+      .filter((entry) => entry.viewerId === viewerId)
+      .map(({ thread }) => thread),
+  ];
+}
+
+export function getMockPresence(accountId: number) {
+  return DM_THREADS.find((thread) => thread.accountId === accountId)?.online;
+}
+
+export async function getOrCreateMockDm(accountId: number) {
+  if (!isMock) return null;
+  const viewer = await getMyAccount();
+  const account = accounts.find(({ id }) => id === accountId);
+  if (!account || account.id === viewer.id) return null;
+  const existing = listMockDmThreads(viewer.id).find((thread) => thread.accountId === accountId);
+  if (existing) return existing;
+  const thread = {
+    id: 1000 + mockDms.size,
+    accountId,
+    displayName: account.name,
+    online: getMockPresence(accountId) ?? false,
+    unreadCount: 0,
+  };
+  mockDms.set(thread.id, { viewerId: viewer.id, thread });
+  return thread;
+}
 
 /**
  * 내가 속한 방들의 채널 전부. Shell 사이드바가 쓴다 — 어느 방을 보고 있는지는
@@ -37,7 +74,10 @@ export async function listMyChannels(): Promise<ChatChannel[]> {
 
 /** 내 1:1 메시지 스레드 전부 */
 export async function listMyDmThreads(): Promise<DirectMessageThread[]> {
-  if (isMock) return DM_THREADS;
+  if (isMock) {
+    const { id } = await getMyAccount();
+    return listMockDmThreads(id);
+  }
   return api<DirectMessageThread[]>("/api/v1/accounts/me/dms");
 }
 
@@ -96,7 +136,7 @@ export async function getDmThread(
   threadId: number,
 ): Promise<DirectMessageThread | null> {
   if (isMock) {
-    return DM_THREADS.find((t) => t.id === threadId) ?? null;
+    return (await listMyDmThreads()).find((t) => t.id === threadId) ?? null;
   }
   // 404 만 null, 나머지는 throw (getChannel 과 같은 이유).
   try {
@@ -114,6 +154,7 @@ export async function getDmMessages(
   threadId: number,
 ): Promise<ChatMessage[]> {
   if (isMock) {
+    if (!(await getDmThread(threadId))) return [];
     return DM_MESSAGES[threadId] ?? [];
   }
   return api<ChatMessage[]>(

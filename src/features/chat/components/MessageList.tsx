@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -14,6 +15,7 @@ import type { ChatMessage } from "../types";
 
 interface Props {
   messages: readonly ChatMessage[];
+  roomId?: number;
   /** 메시지가 하나도 없을 때 렌더할 Hero. 채널/DM 각각 자기 안내 문구를 넘긴다. */
   emptyState: React.ReactNode;
 }
@@ -35,7 +37,7 @@ interface Props {
  * ⚠️ 자동 스크롤 가드: 사용자가 이미 위로 스크롤해서 과거 메시지를 보는 중이라면 신규 메시지가
  *    들어와도 **점프하지 않는다** — 리스트 바닥에서 약 80px 이내일 때만 자동 bottom 이동.
  */
-export function MessageList({ messages, emptyState }: Props) {
+export function MessageList({ messages, emptyState, roomId }: Props) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [mounted, setMounted] = useState(false);
@@ -101,6 +103,7 @@ export function MessageList({ messages, emptyState }: Props) {
               <MessageRow
                 key={msg.id}
                 message={msg}
+                roomId={roomId}
                 isFirstInGroup={j === 0}
                 useLocal={mounted}
               />
@@ -159,10 +162,12 @@ function groupMessages(
 
 function MessageRow({
   message,
+  roomId,
   isFirstInGroup,
   useLocal,
 }: {
   message: ChatMessage;
+  roomId?: number;
   isFirstInGroup: boolean;
   useLocal: boolean;
 }) {
@@ -176,7 +181,17 @@ function MessageRow({
     >
       <div className="w-8 shrink-0">
         {isFirstInGroup ? (
-          <Avatar name={message.author.displayName} />
+          roomId ? (
+            <Link
+              href={`/rooms/${roomId}/members/${message.author.accountId}`}
+              aria-label={`${message.author.displayName} 프로필 보기`}
+              className="focus-visible:ring-ring block rounded-sm focus-visible:ring-2"
+            >
+              <Avatar name={message.author.displayName} />
+            </Link>
+          ) : (
+            <Avatar name={message.author.displayName} />
+          )
         ) : (
           <span className="block h-full" aria-hidden="true" />
         )}
