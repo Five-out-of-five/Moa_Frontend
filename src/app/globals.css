@@ -6,9 +6,10 @@
 /**
  * MOA 디자인 토큰 — Navy Teal Pro.
  *
- * ⚠️ 원본은 Figma Make 의 `src/index.css` 다 (대시보드 디자인 소스).
- *   값(hex) 은 거기서 그대로 가져왔다. 이 값을 바꾸고 싶으면 두 벌(Figma Make + 여기)을
- *   함께 맞춘다 — 한쪽만 고치면 모델이 보여 주는 화면과 실제 구현이 어긋난다.
+ * ⚠️ 원본은 Figma Make 의 `src/index.css` 다 (대시보드 디자인 소스). **중립 톤은 Figma 와
+ *   꼭 맞춘다** — 과거 일부 토큰이 민트/시안 쪽으로 세팅되면서 전역 배경이 Figma 와
+ *   어긋난 사례가 있다. 다음에 Figma 쪽 값이 바뀌면 여기도 함께 갱신하고, PR 본문에
+ *   Figma 캡처와 소스 라인 번호를 같이 남긴다.
  *
  * ⚠️ shadcn/ui 컴포넌트는 `--color-*` 참조로 색을 읽는다 (@theme inline 안의 매핑).
  *   새 색이 필요하면 **① :root 에 실 값(`--brand: #274c77`) 을 추가** 하고
@@ -100,8 +101,8 @@
   /* 로그인 전용 네이비 (jia40 추가) */
   --login-brand: oklch(0.38 0.08 253);
 
-  /* ===== 기본 배경·텍스트 (Navy Teal 톤) ===== */
-  --background: #f0fbfd;
+  /* ===== 기본 배경·텍스트 (Figma Make 톤 — 흰색 바탕 + 쿨 그레이 중립) ===== */
+  --background: #f8fafc;   /* slate-50 — Figma 전체 배경 */
   --foreground: #1f2937;
   --surface: #ffffff;
   --card: #ffffff;
@@ -112,18 +113,18 @@
   /* ===== 프라이머리 (브랜드 참조) ===== */
   --primary: var(--brand);
   --primary-foreground: #ffffff;
-  --secondary: #edf4fa;
+  --secondary: #edf4fa;    /* 활성 상태의 옅은 블루 — Figma 활성 메뉴/뱃지 톤 유지 */
   --secondary-foreground: var(--brand);
 
-  /* ===== 중립 ===== */
-  --muted: #e8eff4;
-  --muted-foreground: #6b7d8f;
+  /* ===== 중립 (Figma Make 와 재동기화) ===== */
+  --muted: #f1f5f9;        /* slate-100 — 보조 블록 배경 */
+  --muted-foreground: #64748b;  /* slate-500 — 보조 텍스트 */
   --accent: #4d9de0;
   --accent-foreground: #ffffff;
-  --subtle: #93a4b3;
-  --border: #d7e3ec;
-  --border-soft: #e8eff4;
-  --input: #d7e3ec;
+  --subtle: #94a3b8;       /* slate-400 */
+  --border: #e2e8f0;       /* slate-200 — 기본 경계선 */
+  --border-soft: #eef2f6;  /* 소프트 경계 — border/muted 사이 */
+  --input: #e2e8f0;
   --ring: #4d9de0;
 
   /* ===== 시맨틱 ===== */
@@ -133,14 +134,14 @@
   --destructive: #c96b6b;
   --destructive-foreground: #ffffff;
 
-  /* ===== shadcn Sidebar (jia40 도입값 유지) ===== */
+  /* ===== shadcn Sidebar — Figma Make 톤과 재동기화 ===== */
   --sidebar: #ffffff;
   --sidebar-foreground: #1f2937;
   --sidebar-primary: #274c77;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #edf4fa;
+  --sidebar-accent: #edf4fa;       /* 활성 메뉴 — 옅은 블루 유지 */
   --sidebar-accent-foreground: #274c77;
-  --sidebar-border: #d7e3ec;
+  --sidebar-border: #e2e8f0;       /* slate-200 */
   --sidebar-ring: #4d9de0;
 }
 

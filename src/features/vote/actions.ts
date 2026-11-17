@@ -440,6 +440,174 @@ export type SubmitBallotResult =
 const CLOSED_MSG = "마감 시각이 지나 더 이상 참여할 수 없습니다.";
 
 /**
+ * 재투표 생성 입력 — CLOSED 투표 상세 Sheet 의 "재투표" 다이얼로그가 보내는 shape.
+ *
+ * ⚠️ 유형(voteType) · 선택지 · maxSelectCount 는 **부모 투표에서 복제**해 서버가 깔아 둔다 —
+ *    "같은 조건으로 한 번 더" 가 재투표의 의도라 폼에서 다시 묻지 않는다. 사용자가 조정할 수
+ *    있는 건 제목 · 마감 · 익명 셋.
+ * ⚠️ 명세의 `VoteDetail.parentVoteId` 를 세팅해 부모와의 연결을 남긴다.
+ */
+const createRevoteSchema = z
+  .object({
+    roomId: z.number().int().positive(),
+    parentVoteId: z.number().int().positive(),
+    title: z
+      .string()
+      .trim()
+      .min(1, "투표 제목을 입력해 주세요.")
+      .max(120, "투표 제목은 120자 이하로 입력해 주세요."),
+    deadlineAt: z.string().datetime({ offset: true }),
+    anonymous: z.boolean(),
+  })
+  .superRefine((v, ctx) => {
+    const dueMs = Date.parse(v.deadlineAt);
+    if (!Number.isFinite(dueMs)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["deadlineAt"],
+        message: "마감 일시가 올바르지 않습니다.",
+      });
+      return;
+    }
+    if (dueMs <= Date.now()) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["deadlineAt"],
+        message: "마감 일시는 현재 이후로 설정해 주세요.",
+      });
+    }
+    if (dueMs - Date.now() > 30 * 24 * 60 * 60 * 1000) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["deadlineAt"],
+        message: "마감 일시는 30일 이내로 설정해 주세요.",
+      });
+    }
+  });
+
+/**
+ * 재투표 생성 결과 — 생성 액션과 같이 kind 리턴.
+ * - `ok` : 생성 성공, `vote` 신규 상세 (상세 Sheet 자동 오픈용)
+ * - `error` : 검증 실패 or 서버 거절
+ */
+export type CreateRevoteResult =
+  | { kind: "ok"; vote: VoteDetail }
+  | { kind: "error"; message: string; fieldErrors?: Record<string, string> };
+
+/**
+ * 재투표 생성 — 명세 `POST /api/v1/rooms/{roomId}/votes` + `parentVoteId` 필드.
+ *
+ * ⚠️ 별도 엔드포인트가 아니라 **투표 생성 API 에 parentVoteId 를 실어** 서버가 부모의
+ *    voteType · options · maxSelectCount 를 자동 복제하도록 위임한다. 명세 확정 전까지는
+ *    목 모드에서도 같은 규칙으로 흉내 낸다.
+ * ⚠️ 부모는 반드시 **CLOSED** 상태여야 한다 — 진행 중인 투표를 재투표로 "포크" 하는 건
+ *    집계 혼선을 부른다. BE 가 400 을 돌려줄 케이스를 FE 에서 먼저 반사한다.
+ */
+export async function createRevoteAction(
+  input: unknown,
+): Promise<CreateRevoteResult> {
+  const parsed = createRevoteSchema.safeParse(input);
+  if (!parsed.success) {
+    const fieldErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      const path = issue.path.join(".");
+      if (path && !fieldErrors[path]) fieldErrors[path] = issue.message;
+    }
+    return {
+      kind: "error",
+      message:
+        parsed.error.issues[0]?.message ?? "요청 형식이 올바르지 않습니다.",
+      fieldErrors,
+    };
+  }
+  const { roomId, parentVoteId, title, deadlineAt, anonymous } = parsed.data;
+
+  if (isMock) {
+    const parent = votes.find(
+      (x) => x.roomId === roomId && x.voteId === parentVoteId,
+    );
+    if (!parent) {
+      return { kind: "error", message: "원본 투표를 찾을 수 없습니다." };
+    }
+    if (parent.status !== "CLOSED") {
+      return {
+        kind: "error",
+        message: "아직 마감되지 않은 투표는 재투표로 다시 열 수 없어요.",
+      };
+    }
+    const me = accounts[0];
+    if (!me) {
+      return { kind: "error", message: "현재 계정을 확인하지 못했습니다." };
+    }
+    const belongs = roomMembers.some(
+      (m) =>
+        m.roomId === roomId && m.accountId === me.id && m.state === "ACTIVE",
+    );
+    if (!belongs) {
+      return { kind: "error", message: "이 방의 멤버만 재투표를 만들 수 있어요." };
+    }
+    const memberCount = roomMembers.filter(
+      (m) => m.roomId === roomId && m.state === "ACTIVE",
+    ).length;
+    const creator: MemberRef = {
+      accountId: me.id,
+      displayName: me.name,
+      profileImageUrl: null,
+      memberStatus: "ACTIVE",
+    };
+    const newVoteId = nextMockId(votes.map((v) => v.voteId));
+    const existingOptionIds = votes.flatMap((v) =>
+      v.options.map((o) => o.optionId),
+    );
+    let nextOptId = nextMockId(existingOptionIds);
+    const detail: VoteDetail = {
+      voteId: newVoteId,
+      title,
+      voteType: parent.voteType,
+      maxSelectCount: parent.maxSelectCount,
+      anonymous,
+      status: "OPEN",
+      deadlineAt,
+      closeReason: null,
+      creator,
+      sourceCard: null,
+      parentVoteId,
+      version: 1,
+      participantCount: 0,
+      memberCount,
+      participants: [],
+      myOptionIds: [],
+      // 부모 선택지의 content 만 복제 — voteCount / top 은 결과 공개 전까지 없어야 함.
+      options: parent.options.map((o) => ({
+        optionId: nextOptId++,
+        content: o.content,
+      })),
+      tied: false,
+    };
+    votes.push({ ...detail, roomId });
+    revalidatePath(`/rooms/${roomId}/votes`, "page");
+    return { kind: "ok", vote: detail };
+  }
+
+  try {
+    const res = await api<VoteDetail>(`/api/v1/rooms/${roomId}/votes`, {
+      method: "POST",
+      json: { parentVoteId, title, deadlineAt, anonymous },
+    });
+    revalidatePath(`/rooms/${roomId}/votes`, "page");
+    return { kind: "ok", vote: res };
+  } catch (e) {
+    if (e instanceof ApiError) {
+      return { kind: "error", message: e.message };
+    }
+    return {
+      kind: "error",
+      message: "재투표 생성에 실패했습니다. 잠시 뒤 다시 시도해 주세요.",
+    };
+  }
+}
+
+/**
  * 투표 참여·선택 변경 — 명세 `PUT /api/v1/rooms/{roomId}/votes/{voteId}/ballots/me`.
  *
  * ⚠️ 이전 선택을 **덮어쓴다** (이력 없음). 서버 시각 기준 마감 이후 요청은 거절.

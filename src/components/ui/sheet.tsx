@@ -48,10 +48,17 @@ function SheetContent({
   children,
   side = "right",
   showCloseButton = true,
+  closeButtonMobileOnly = false,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
+  /**
+   * `true` 로 두면 X 닫기 버튼이 **모바일(sm 미만) 에서만** 노출된다. 데스크톱에선 overlay
+   * 클릭 · ESC 로 닫히지만, 모바일에선 Sheet 가 화면을 거의 다 덮어 닫을 방법이 사라지므로
+   * 접근성을 위해 X 를 남긴다.
+   */
+  closeButtonMobileOnly?: boolean
 }) {
   return (
     <SheetPortal>
@@ -74,7 +81,12 @@ function SheetContent({
       >
         {children}
         {showCloseButton && (
-          <SheetPrimitive.Close className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary">
+          <SheetPrimitive.Close
+            className={cn(
+              "absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary",
+              closeButtonMobileOnly && "sm:hidden"
+            )}
+          >
             <XIcon className="size-4" />
             <span className="sr-only">Close</span>
           </SheetPrimitive.Close>

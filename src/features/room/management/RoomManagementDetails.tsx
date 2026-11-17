@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 
+import { MemberProfileLink } from "../profile/MemberProfileLink";
 import { deleteManagedRoomAction, updateManagedMemberAction } from "./actions";
 import { decideRoomJoinAction } from "./invite-actions";
 import { InviteCopyButton } from "./InviteCopyButton";
@@ -140,7 +141,7 @@ function MembersPanel({ management }: { management: Management }) {
             <ul className="divide-border mt-2 divide-y">
               {requests.map((request) => (
                 <li
-                  key={request.accountId}
+                  key={request.id}
                   className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm"
                 >
                   <span>{request.name}</span>
@@ -148,11 +149,15 @@ function MembersPanel({ management }: { management: Management }) {
                     <RoomCommand
                       label="거절"
                       confirmText={`${request.name}님의 참여 요청을 거절할까요?`}
-                      action={decideRoomJoinAction.bind(null, room.id, request.accountId, false)}
+                      action={decideRoomJoinAction.bind(
+                        null, room.id, request.accountId, request.id, false,
+                      )}
                     />
                     <RoomCommand
                       label="승인"
-                      action={decideRoomJoinAction.bind(null, room.id, request.accountId, true)}
+                      action={decideRoomJoinAction.bind(
+                        null, room.id, request.accountId, request.id, true,
+                      )}
                     />
                   </div>
                 </li>
@@ -174,7 +179,12 @@ function MembersPanel({ management }: { management: Management }) {
               className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm"
             >
               <div className="min-w-0">
-                <span className="font-medium">{member.name}</span>
+                <MemberProfileLink
+                  roomId={room.id}
+                  accountId={member.accountId}
+                  name={member.name}
+                  imageUrl={member.imageUrl}
+                />
                 <span className="text-muted-foreground ml-2 text-xs">
                   {member.isOwner ? "방장" : "멤버"}
                   {member.position && ` · ${member.position}`}

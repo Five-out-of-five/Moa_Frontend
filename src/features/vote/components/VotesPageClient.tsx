@@ -37,8 +37,8 @@ type TabKey = "OPEN" | "CLOSED";
  * 투표 전체 페이지 — 상단 안내 + 탭(진행 중 / 마감) + 검색 + 카드 그리드.
  * 카드를 누르면 상세가 우측 Sheet 로 열린다 (`VoteDetailSheet`).
  *
- * ⚠️ 생성 / 수정 / 삭제 / 마감 / 재투표는 후속 PR 범위. 상단의 "새 투표" 버튼은 자리만 두고
- *    비활성 상태로 둔다 — 404 링크로 떨어지지 않도록.
+ * ⚠️ 쓰기 액션: 생성 · 참여 · 선택 변경 · 수정 · 수동 마감 · 삭제 · 재투표. 재투표는 CLOSED
+ *    Sheet 하단 "재투표" 버튼에서 `VoteRevoteDialog` 로 들어간다.
  */
 export function VotesPageClient({
   roomId,
@@ -213,6 +213,7 @@ export function VotesPageClient({
         }}
         onVoteUpdated={handleUpdated}
         onVoteDeleted={handleDeleted}
+        onVoteCreated={handleCreated}
       />
 
       <VoteCreateDialog

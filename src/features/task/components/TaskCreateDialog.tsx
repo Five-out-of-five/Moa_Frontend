@@ -127,6 +127,14 @@ export function TaskCreateDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // ⚠️ 보드의 "+ 추가" 버튼이 눌린 컬럼에 맞춰 호출부가 `defaultStatus` 를 바꾸지만,
+  //    `useState(defaultStatus)` 는 최초 마운트 때만 반영된다. Dialog 가 **다시 열릴 때마다**
+  //    최신 `defaultStatus` 로 상태를 다시 세팅해 "진행 중 + 추가" 를 눌러도 상태 셀렉터가
+  //    `할 일` 로 보이지 않게 한다 (CodeRabbit).
+  useEffect(() => {
+    if (open) setStatus(defaultStatus);
+  }, [open, defaultStatus]);
+
   // ⚠️ 제출 중에는 **모든 닫기 경로** 를 막아야 한다 (CodeRabbit). Dialog 의 기본 X·ESC·
   //    overlay 클릭으로 닫히면, 이전 요청의 성공 콜백이 새로 열린 Dialog 를 닫고 새 입력
   //    상태를 reset effect 가 지워 버린다. pending 중엔 close 요청을 그냥 무시한다.

@@ -28,3 +28,7 @@ export async function getExplicitMockAccount() {
   if (!Object.values(MOCK_ACCOUNT_IDS).some((accountId) => accountId === id)) return null;
   return accounts.find((account) => account.id === id) ?? null;
 }
+
+export function canUpdateAccountName() {
+  return isMock;
+}
