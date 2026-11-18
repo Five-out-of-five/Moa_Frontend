@@ -62,4 +62,22 @@ export async function submitMoodAction(input: unknown) {
   }
 
   revalidatePath(`/rooms/${roomId}`);
+  revalidatePath(`/rooms/${roomId}/moods`);
+}
+
+export async function saveMoodFormAction(
+  roomId: number,
+  _previous: { saved?: boolean; error?: string },
+  form: FormData,
+): Promise<{ saved?: boolean; error?: string }> {
+  const parsed = submitMoodSchema.safeParse({
+    roomId, mood: form.get("mood"), note: String(form.get("note") ?? "").trim() || null,
+  });
+  if (!parsed.success) return { error: "기분을 선택하고 코멘트를 50자 이내로 입력해 주세요." };
+  try {
+    await submitMoodAction(parsed.data);
+    return { saved: true };
+  } catch {
+    return { error: "기분을 저장하지 못했어요. 다시 시도해 주세요." };
+  }
 }

@@ -1,6 +1,6 @@
 import { faker } from "@faker-js/faker";
 
-import { todayMoodDate } from "@/features/mood/date";
+import { shiftMoodDate, todayMoodDate } from "@/features/mood/date";
 import { computeDDay, computeOverdue } from "@/features/task/lib/d-day";
 import type {
   Account,
@@ -201,7 +201,8 @@ export function addDefaultRoomWidgets(roomId: number) {
 
 const MOODS: MoodLevel[] = ["GREAT", "GOOD", "SOSO", "TIRED", "BAD"];
 
-export const moodStatuses: MoodStatus[] = shareSettingsMock("moodStatuses", fixtureRooms.flatMap((room) =>
+const moodSeedDate = todayMoodDate();
+const todayMoodSeeds = fixtureRooms.flatMap((room) =>
   roomMembers
     .filter((m) => m.roomId === room.id)
     .map((m) => ({
@@ -215,9 +216,24 @@ export const moodStatuses: MoodStatus[] = shareSettingsMock("moodStatuses", fixt
         "오늘 회의 많아서 지친다",
         "휴식 많이 취해서 컨디션 좋음",
       ] as const),
-      recordedDate: todayMoodDate(),
-    })),
-));
+      recordedDate: moodSeedDate,
+    } satisfies MoodStatus)),
+);
+export const moodStatuses: MoodStatus[] = shareSettingsMock("moodStatuses", [
+  ...todayMoodSeeds,
+  ...Array.from({ length: 29 }, (_, index) => {
+    const day = index + 1;
+    const recordedDate = shiftMoodDate(moodSeedDate, -day);
+    return todayMoodSeeds.filter(({ accountId }) => (accountId + day) % 4 !== 0)
+      .map((mood) => ({
+        ...mood,
+        id: seq("mood"),
+        mood: MOODS[(mood.accountId * day + day) % MOODS.length],
+        note: null,
+        recordedDate,
+      }));
+  }).flat(),
+]);
 
 // ===== 아이디어 보드 (IDEA_BOARD) =====
 
