@@ -24,6 +24,7 @@ export const WIDGET_ICONS = {
 
 export function getWidgetDetailHref(roomId: number, type: WidgetType) {
   if (type === "MOOD") return `/rooms/${roomId}/moods`;
+  if (type === "IDEA_BOARD") return `/rooms/${roomId}/boards/idea`;
   if (type === "TASK_BOARD" || type === "PROGRESS") return `/rooms/${roomId}/boards/task`;
   if (type === "VOTE") return `/rooms/${roomId}/votes`;
 }

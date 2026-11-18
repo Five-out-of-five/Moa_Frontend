@@ -1,29 +1,23 @@
 import { Lightbulb, MessageCircle, Plus, ThumbsUp } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { getActiveSession, listIdeaCards } from "@/features/idea/server";
+import { IdeaBoardLive } from "@/features/idea/IdeaBoardLive";
+import { IdeaCardDialog } from "@/features/idea/IdeaDialogs";
+import { getIdeaBoard } from "@/features/idea/server";
 
 import { WidgetEmpty } from "./SummaryUi";
 
 export async function IdeaSummary({ roomId }: { roomId: number }) {
-  const [session, cards] = await Promise.all([getActiveSession(roomId), listIdeaCards(roomId)]);
-  const addCard = (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <Button size="sm" variant="outline" disabled aria-describedby={`idea-card-add-reason-${roomId}`}>
-        <Plus aria-hidden="true" /> 카드 추가
-      </Button>
-      <p id={`idea-card-add-reason-${roomId}`} className="text-muted-foreground text-xs">
-        {session ? "카드 작성 기능은 준비 중입니다." : "카드를 추가하려면 진행 중인 회차가 필요합니다."}
-      </p>
-    </div>
-  );
+  const { active: session, cards, editable, revision } = await getIdeaBoard(roomId);
+  const live = editable ? <IdeaBoardLive roomId={roomId} revision={revision} /> : null;
   if (!session) {
-    return <div className="space-y-2">{addCard}<WidgetEmpty>진행 중인 회차가 없어요.</WidgetEmpty></div>;
+    return <>{live}<WidgetEmpty>진행 중인 회차가 없어요.</WidgetEmpty></>;
   }
   const recent = cards.filter(({ sessionId }) => sessionId === session.id)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 3);
   return (
     <div className="space-y-2">
+      {live}
       <div className="bg-secondary/55 rounded-control flex min-w-0 items-center gap-2 p-2.5">
         <Lightbulb aria-hidden="true" className="text-primary size-4 shrink-0" />
         <div className="min-w-0">
@@ -31,7 +25,8 @@ export async function IdeaSummary({ roomId }: { roomId: number }) {
           <p className="truncate text-sm font-semibold" title={session.title}>{session.title}</p>
         </div>
       </div>
-      {addCard}
+      {editable && <IdeaCardDialog roomId={roomId} sessionId={session.id}
+        trigger={<Button size="sm" variant="outline"><Plus aria-hidden="true" />카드 추가</Button>} />}
       {recent.length === 0 ? <WidgetEmpty>이 회차에 등록된 카드가 없어요.</WidgetEmpty> : (
         <ul className="divide-border divide-y">
           {recent.map((card, index) => (

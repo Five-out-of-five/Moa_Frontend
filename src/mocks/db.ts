@@ -237,14 +237,14 @@ export const moodStatuses: MoodStatus[] = shareSettingsMock("moodStatuses", [
 
 // ===== 아이디어 보드 (IDEA_BOARD) =====
 
-export const boardSessions: BoardSession[] = fixtureRooms.map((room) => ({
+export const boardSessions: BoardSession[] = shareSettingsMock("boardSessions", fixtureRooms.map((room) => ({
   id: seq("session"),
   roomId: room.id,
   title: "이번 주 회고",
   state: "ACTIVE",
   startsAt: nowIso(),
   endsAt: null,
-}));
+})));
 
 const CARD_TYPES: IdeaCardType[] = ["AGENDA", "KEEP", "PROBLEM", "TRY"];
 const IDEA_PREVIEWS = {
@@ -254,7 +254,7 @@ const IDEA_PREVIEWS = {
   TRY: ["배포 전에 체크리스트를 공유해요", "다음 회고에서는 한 가지씩 실험해요"],
 } satisfies Record<IdeaCardType, [string, string]>;
 
-export const ideaCards: IdeaCard[] = boardSessions.flatMap((session) =>
+export const ideaCards: IdeaCard[] = shareSettingsMock("ideaCards", boardSessions.flatMap((session) =>
   CARD_TYPES.flatMap((type) =>
     IDEA_PREVIEWS[type].map((title, i) => {
       const author = pick(accounts);
@@ -274,7 +274,7 @@ export const ideaCards: IdeaCard[] = boardSessions.flatMap((session) =>
       } satisfies IdeaCard;
     }),
   ),
-);
+));
 
 // ===== 업무 보드 (TASK_BOARD) + 스프린트 (PROGRESS) =====
 
