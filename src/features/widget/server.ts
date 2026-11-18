@@ -19,6 +19,10 @@ export function canEditDashboard() {
 }
 
 export async function openDashboardEvents(roomId: number, signal: AbortSignal) {
+  return openMockRoomEvents(roomId, signal, () => getMockDashboardSnapshot(roomId));
+}
+
+export async function openMockRoomEvents(roomId: number, signal: AbortSignal, read: () => unknown) {
   if (!isMock) return new Response(null, { status: 501 });
   if (!(await getManagedRoom(roomId))) return new Response(null, { status: 403 });
 
@@ -43,7 +47,7 @@ export async function openDashboardEvents(roomId: number, signal: AbortSignal) {
         const room = await getManagedRoom(roomId).catch(() => null);
         if (closed) return;
         if (!room) return close();
-        const snapshot = JSON.stringify(getMockDashboardSnapshot(roomId));
+        const snapshot = JSON.stringify(read());
         controller.enqueue(encoder.encode(snapshot === latest ? ": ping\n\n" : `data: ${snapshot}\n\n`));
         latest = snapshot;
         timer = setTimeout(() => void publish(), 750);
