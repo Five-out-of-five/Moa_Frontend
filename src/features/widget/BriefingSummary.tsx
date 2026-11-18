@@ -4,21 +4,21 @@ import Link from "next/link";
 import { getMyAccount } from "@/features/account/server";
 import { listBoardEvents } from "@/features/briefing/server";
 import { listTasksInRoom } from "@/features/task/server";
-import { listVotesInRoom } from "@/features/vote/server";
+import { listOpenVotesInRoom } from "@/features/vote/server";
 
 import { BriefingTabs } from "./BriefingTabs";
 import { formatWidgetDate, WidgetEmpty } from "./SummaryUi";
 
 export async function BriefingSummary({ roomId }: { roomId: number }) {
   const [events, me, tasks, votes] = await Promise.all([
-    listBoardEvents(roomId), getMyAccount(), listTasksInRoom(roomId), listVotesInRoom(roomId),
+    listBoardEvents(roomId), getMyAccount(), listTasksInRoom(roomId), listOpenVotesInRoom(roomId),
   ]);
   const pending = [
     ...tasks.filter(({ assignee, status }) => assignee?.accountId === me.id && status !== "DONE")
       .map(({ taskId, title, dueDate }) => ({
         key: `task-${taskId}`, title, date: dueDate, icon: Clock3, href: `/rooms/${roomId}/boards/task`,
       })),
-    ...votes.content.filter(({ status, votedByMe }) => status === "OPEN" && !votedByMe)
+    ...votes.filter(({ votedByMe }) => !votedByMe)
       .map(({ voteId, title, deadlineAt }) => ({
         key: `vote-${voteId}`, title, date: deadlineAt, icon: Vote, href: `/rooms/${roomId}/votes`,
       })),

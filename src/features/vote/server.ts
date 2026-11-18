@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cache } from "react";
+
 import { api } from "@/lib/api";
 import { isMock } from "@/mocks/config";
 import { votes } from "@/mocks/db";
@@ -20,6 +22,7 @@ function stripRoomId(v: VoteDetail & { roomId: number }): VoteDetail {
  */
 export async function listVotesInRoom(
   roomId: number,
+  page = 0,
 ): Promise<PageResponse<VoteSummary>> {
   if (isMock) {
     const inRoom = votes.filter((v) => v.roomId === roomId);
@@ -43,8 +46,23 @@ export async function listVotesInRoom(
       hasNext: false,
     };
   }
-  return api<PageResponse<VoteSummary>>(`/api/v1/rooms/${roomId}/votes`);
+  const query = page > 0 ? `?page=${page}` : "";
+  return api<PageResponse<VoteSummary>>(`/api/v1/rooms/${roomId}/votes${query}`);
 }
+
+export const listOpenVotesInRoom = cache(async (roomId: number): Promise<VoteSummary[]> => {
+  const open = new Map<number, VoteSummary>();
+  let page = 0;
+  for (;;) {
+    const result = await listVotesInRoom(roomId, page);
+    if (result.page !== page) throw new Error("투표 목록의 다음 페이지를 불러오지 못했습니다.");
+    for (const vote of result.content) {
+      if (vote.status === "OPEN") open.set(vote.voteId, vote);
+    }
+    if (!result.hasNext) return [...open.values()];
+    page += 1;
+  }
+});
 
 /**
  * 투표 상세 조회 — 명세 `GET /api/v1/rooms/{roomId}/votes/{voteId}`.

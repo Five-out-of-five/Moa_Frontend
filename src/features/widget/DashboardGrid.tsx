@@ -35,7 +35,7 @@ export function DashboardGrid({
     if (missingBodies) router.refresh();
   }, [missingBodies, router]);
 
-  const { grid, preview, start, move, end } = useWidgetGesture(widgets, setEditing, save);
+  const { grid, preview, start, move, end, keyDown } = useWidgetGesture(widgets, setEditing, save);
   const projected = preview ?? pending;
   const placed = new Set(widgets.map(({ widgetType }) => widgetType));
   const canAdd = editable && placed.size < Object.keys(WIDGET_TITLES).length;
@@ -44,7 +44,7 @@ export function DashboardGrid({
     onPointerUp: (event: Parameters<typeof end>[0]) => end(event, true),
     onPointerCancel: (event: Parameters<typeof end>[0]) => end(event, false),
     onLostPointerCapture: (event: Parameters<typeof end>[0]) => end(event, false),
-    disabled: pending !== null,
+    "aria-disabled": pending !== null,
   };
 
   if (widgets.length === 0 && !canAdd) {
@@ -89,8 +89,11 @@ export function DashboardGrid({
                     <button
                       type="button"
                       aria-label={`${title} 이동`}
+                      aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown"
+                      title="방향키로 위젯 이동"
                       className="hidden w-full touch-none items-center gap-1.5 text-left sm:flex enabled:cursor-grab enabled:active:cursor-grabbing"
-                      onPointerDown={(event) => start(event, widget, "move")}
+                      onPointerDown={(event) => { if (!pending) start(event, widget, "move"); }}
+                      onKeyDown={(event) => { if (!pending) keyDown(event, widget, "move"); }}
                       {...handlers}
                     >
                       <Grip aria-hidden="true" className="text-muted-foreground size-3 shrink-0" />
@@ -115,8 +118,11 @@ export function DashboardGrid({
               <button
                 type="button"
                 aria-label={`${title} 크기 조절`}
+                aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown"
+                title="방향키로 위젯 크기 조절"
                 className="bg-card text-muted-foreground absolute right-1 bottom-1 hidden size-7 touch-none place-items-center rounded sm:grid enabled:cursor-nwse-resize"
-                onPointerDown={(event) => start(event, widget, "resize")}
+                onPointerDown={(event) => { if (!pending) start(event, widget, "resize"); }}
+                onKeyDown={(event) => { if (!pending) keyDown(event, widget, "resize"); }}
                 {...handlers}
               >
                 <MoveDiagonal aria-hidden="true" className="size-4" />
