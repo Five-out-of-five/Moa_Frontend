@@ -259,7 +259,7 @@ export function TaskBoardPageClient({
                 ) : (
                   <ul className="flex flex-col gap-2">
                     {items.map((t) => (
-                      <li key={t.taskId}>
+                      <li key={t.taskId} data-briefing-id={t.taskId} className="rounded-control data-briefing-highlight:ring-primary data-briefing-highlight:ring-2">
                         <TaskCard
                           summary={t}
                           attachmentCount={

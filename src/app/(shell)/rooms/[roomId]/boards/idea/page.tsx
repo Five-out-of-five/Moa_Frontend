@@ -4,6 +4,8 @@ import { notFound } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { getMyAccount } from "@/features/account/server";
+import { BriefingFocus } from "@/features/briefing/BriefingFocus";
+import { readBriefingFocus } from "@/features/briefing/model";
 import { IdeaBoard } from "@/features/idea/IdeaBoard";
 import { IdeaBoardLive } from "@/features/idea/IdeaBoardLive";
 import { CloseIdeaDialog, IdeaCardDialog, StartIdeaDialog } from "@/features/idea/IdeaDialogs";
@@ -14,7 +16,7 @@ import { listRoomMembers } from "@/features/room/server";
 
 export default async function IdeaBoardPage({ params, searchParams }: {
   params: Promise<{ roomId: string }>;
-  searchParams: Promise<{ session?: string }>;
+  searchParams: Promise<{ session?: string; briefingFocus?: string }>;
 }) {
   const [{ roomId }, query] = await Promise.all([params, searchParams]);
   const entry = await getFirstRoomProfile(roomId);
@@ -36,6 +38,7 @@ export default async function IdeaBoardPage({ params, searchParams }: {
 
   return (
     <section className="mx-auto max-w-7xl space-y-4">
+      <BriefingFocus ids={readBriefingFocus(query.briefingFocus)} />
       {board.editable && <IdeaBoardLive roomId={id} revision={board.revision} />}
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>

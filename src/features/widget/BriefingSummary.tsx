@@ -1,38 +1,25 @@
-import { Clock3, Newspaper, Vote } from "lucide-react";
+import { Clock3, Newspaper } from "lucide-react";
 import Link from "next/link";
 
-import { getMyAccount } from "@/features/account/server";
-import { listBoardEvents } from "@/features/briefing/server";
-import { listTasksInRoom } from "@/features/task/server";
-import { listOpenVotesInRoom } from "@/features/vote/server";
+import { getRoomBriefing } from "@/features/briefing/server";
 
 import { BriefingTabs } from "./BriefingTabs";
 import { formatWidgetDate, WidgetEmpty } from "./SummaryUi";
 
 export async function BriefingSummary({ roomId }: { roomId: number }) {
-  const [events, me, tasks, votes] = await Promise.all([
-    listBoardEvents(roomId), getMyAccount(), listTasksInRoom(roomId), listOpenVotesInRoom(roomId),
-  ]);
-  const pending = [
-    ...tasks.filter(({ assignee, status }) => assignee?.accountId === me.id && status !== "DONE")
-      .map(({ taskId, title, dueDate }) => ({
-        key: `task-${taskId}`, title, date: dueDate, icon: Clock3, href: `/rooms/${roomId}/boards/task`,
-      })),
-    ...votes.filter(({ votedByMe }) => !votedByMe)
-      .map(({ voteId, title, deadlineAt }) => ({
-        key: `vote-${voteId}`, title, date: deadlineAt, icon: Vote, href: `/rooms/${roomId}/votes`,
-      })),
-  ].sort((a, b) => (a.date ?? "\uffff").localeCompare(b.date ?? "\uffff"));
+  const briefing = await getRoomBriefing(roomId);
+  if (!briefing) return null;
+  const { pending, news: events } = briefing;
   return (
     <BriefingTabs
       pendingCount={pending.length}
       newsCount={events.length}
       pending={pending.length ? (
         <ul className="divide-border divide-y">
-          {pending.slice(0, 3).map(({ key, title, date, icon: Icon, href }, index) => (
+          {pending.slice(0, 3).map(({ key, title, date, href }, index) => (
             <li key={key} data-preview-extra={index === 2 ? "list-row" : undefined}>
               <Link href={href} className="hover:bg-muted flex items-center gap-2 py-1.5">
-                <Icon aria-hidden="true" className="text-warning size-4 shrink-0" />
+                <Clock3 aria-hidden="true" className="text-warning size-4 shrink-0" />
                 <div className="min-w-0">
                   <p className="truncate text-xs font-semibold" title={title}>{title}</p>
                   {date && <time dateTime={date} className="text-muted-foreground text-xs">{formatWidgetDate(date)} 마감</time>}
@@ -45,7 +32,7 @@ export async function BriefingSummary({ roomId }: { roomId: number }) {
       news={events.length ? (
         <ul className="divide-border divide-y">
           {events.slice(0, 3).map((event, index) => (
-            <li key={event.id} data-preview-extra={index === 2 ? "list-row" : undefined} className="flex items-center gap-2 py-1.5">
+            <li key={event.key} data-preview-extra={index === 2 ? "list-row" : undefined} className="flex items-center gap-2 py-1.5">
               <Newspaper aria-hidden="true" className="text-primary size-4 shrink-0" />
               <div className="min-w-0">
                 <p className="line-clamp-2 text-xs font-semibold">{event.summary}</p>

@@ -237,7 +237,7 @@ export const moodStatuses: MoodStatus[] = shareSettingsMock("moodStatuses", [
 
 // ===== 아이디어 보드 (IDEA_BOARD) =====
 
-export const boardSessions: BoardSession[] = shareSettingsMock("boardSessions", fixtureRooms.map((room) => ({
+export const boardSessions: (BoardSession & { closedBy?: number })[] = shareSettingsMock("boardSessions", fixtureRooms.map((room) => ({
   id: seq("session"),
   roomId: room.id,
   title: "이번 주 회고",
@@ -514,9 +514,12 @@ function makeVotes(roomId: number): VoteDetail[] {
   return list;
 }
 
-export const votes: Array<VoteDetail & { roomId: number }> = fixtureRooms.flatMap(
-  (room) => makeVotes(room.id).map((v) => ({ ...v, roomId: room.id })),
-);
+export const votes: Array<VoteDetail & { roomId: number; createdAt: string; closedAt?: string }> =
+  shareSettingsMock("votes", fixtureRooms.flatMap((room) => makeVotes(room.id).map((v) => ({
+    ...v, roomId: room.id,
+    createdAt: new Date(Date.now() - 6 * 3600_000).toISOString(),
+    closedAt: v.status === "CLOSED" ? new Date(Date.now() - 2 * 3600_000).toISOString() : undefined,
+  }))));
 
 // ===== 캐치업 브리핑 (CATCHUP_BRIEFING) =====
 

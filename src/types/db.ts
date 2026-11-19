@@ -306,7 +306,11 @@ export interface VoteDetail {
 
 export type BoardEventKind =
   | "IDEA_CARD_CREATED"
+  | "IDEA_CARD_COMMENTED"
   | "IDEA_CARD_CONVERTED"
+  | "TASK_CREATED"
+  | "TASK_COMPLETED"
+  | "MEMBER_JOINED"
   | "TASK_STATUS_CHANGED"
   | "VOTE_OPENED"
   | "VOTE_CLOSED"

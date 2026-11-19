@@ -52,10 +52,12 @@ export async function startIdeaSession(roomId: number, _: IdeaFormResult, form: 
 }
 
 export async function closeIdeaSession(roomId: number, sessionId: number): Promise<IdeaFormResult> {
-  if (!(await authorize(roomId))) return { error: "이 방의 회차를 마감할 수 없어요." };
+  const context = await authorize(roomId);
+  if (!context) return { error: "이 방의 회차를 마감할 수 없어요." };
   const session = boardSessions.find((item) => item.id === sessionId && item.roomId === roomId && item.state === "ACTIVE");
   if (!session) return { error: "진행 중인 회차가 아니에요." };
   session.state = "CLOSED";
+  session.closedBy = context.account.id;
   session.endsAt = new Date().toISOString();
   return refreshBoard(roomId);
 }
