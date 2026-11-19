@@ -4,6 +4,7 @@ import { shiftMoodDate, todayMoodDate } from "@/features/mood/date";
 import { computeDDay, computeOverdue } from "@/features/task/lib/d-day";
 import type {
   Account,
+  AccountRole,
   BoardEvent,
   BoardSession,
   CardConflict,
@@ -68,13 +69,17 @@ function pick<T>(arr: readonly T[]): T {
 
 const PROVIDERS = ["GOOGLE", "KAKAO", "NAVER"] as const;
 
-function makeAccount(name: string, email: string): Account {
+function makeAccount(
+  name: string,
+  email: string,
+  role: AccountRole = "USER",
+): Account {
   return {
     id: seq("account"),
     provider: pick(PROVIDERS),
     name,
     email,
-    role: "USER",
+    role,
     toneMode: "POLISH",
     lastRoomId: null,
     createdAt: nowIso(),
@@ -82,7 +87,9 @@ function makeAccount(name: string, email: string): Account {
 }
 
 export const accounts: Account[] = shareSettingsMock("accounts", [
-  makeAccount("이홍근", "zana0422@gmail.com"),
+  // 목 모드 전용: 관리자 콘솔(/admin) 가드 검증을 위해 첫 계정을 ADMIN 으로 둔다.
+  // 실 BE 는 가입 시 USER 로 출발하고 승격은 서버 쪽 전용 액션으로만 처리.
+  makeAccount("이홍근", "zana0422@gmail.com", "ADMIN"),
   makeAccount("이주은", "jueun@example.com"),
   makeAccount("이하연", "hayeon@example.com"),
   makeAccount("백승재", "seungjae@example.com"),
