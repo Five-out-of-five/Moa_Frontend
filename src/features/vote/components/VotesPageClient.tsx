@@ -196,7 +196,7 @@ export function VotesPageClient({
       ) : (
         <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {visible.map((v) => (
-            <li key={v.voteId}>
+            <li key={v.voteId} data-briefing-id={v.voteId} className="rounded-control data-briefing-highlight:ring-primary data-briefing-highlight:ring-2">
               <VoteCard summary={v} onClick={() => openCard(v.voteId)} />
             </li>
           ))}
