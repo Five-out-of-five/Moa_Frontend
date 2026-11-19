@@ -43,7 +43,7 @@ const mockRuntime = globalThis as typeof globalThis & {
 };
 const settingsMock = (mockRuntime.moaSettingsMock ??= new Map());
 
-function shareSettingsMock<T>(key: string, seed: T): T {
+export function shareSettingsMock<T>(key: string, seed: T): T {
   if (!settingsMock.has(key)) settingsMock.set(key, seed);
   return settingsMock.get(key) as T;
 }

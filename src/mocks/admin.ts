@@ -1,17 +1,21 @@
 /**
- * 관리자 영역 목 데이터 — 실 BE 응답 shape(`StatsOverviewResponse`, `AiUsageStatsResponse`)
- * 를 그대로 흉내 낸다. 수치는 그럴듯한 추이가 보이도록 손으로 깔아 둔 값.
+ * 관리자 영역 목 데이터 — 실 BE 응답 shape 를 그대로 흉내 낸다. 수치/시드는 손으로 깔아 둔 값.
  *
- * ⚠️ 실 API 전환 시 이 파일은 수정하지 않는다 — `features/admin/server.ts` 의 `isMock`
- *    분기에서 이걸 호출하는 쪽을 바꾸면 끝이다.
+ * ⚠️ 실 API 전환 시 이 파일은 수정하지 않는다 — `features/admin/server.ts`·`actions.ts` 의
+ *    `isMock` 분기에서 이걸 호출하는 쪽을 바꾸면 끝이다.
  */
 
 import type {
+  AdminAccountDetail,
+  AdminAccountStatus,
+  AdminSuspension,
+  AdminSuspensionPeriod,
   AiUsageByFeature,
   AiUsageStats,
   StatsOverview,
   StatsSeriesPoint,
 } from "@/features/admin/types";
+import { accounts, shareSettingsMock } from "@/mocks/db";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -108,3 +112,120 @@ export const adminAiUsageMock: AiUsageStats = {
     exceeded: false,
   },
 };
+
+// ===== 회원 관리 overlay =====
+//
+// BE 가 돌면 하나의 서버가 정답이지만, 목 모드에서는 `accounts` 와 "관리자 뷰에서 추가로
+// 보는 필드(status/suspension/lastLoginAt/roomCount)" 사이에 drift 가 생길 수 있다.
+// 그래서 overlay 를 별도 Map 으로 두되 **accounts 를 유일 신분 원본** 으로 삼고,
+// listAdminAccounts/getAdminAccountDetail 가 매 호출마다 overlay 와 합성해 돌려준다.
+// `shareSettingsMock` 로 globalThis 에 올려 Server Action 과 라우트가 같은 Map 을 본다.
+
+export interface AdminOverlayEntry {
+  status: AdminAccountStatus;
+  suspendedUntil: string | null;
+  lastLoginAt: string | null;
+  roomCount: number;
+  ownedRoomCount: number;
+  reportBlockedUntil: string | null;
+  suspensions: AdminSuspension[];
+}
+
+const DAY_MS_IN_HOURS = 24 * 60 * 60 * 1000;
+
+function seedOverlay(): Map<number, AdminOverlayEntry> {
+  const m = new Map<number, AdminOverlayEntry>();
+  accounts.forEach((acc, i) => {
+    const loggedDaysAgo = (i * 3 + 1) % 17;
+    m.set(acc.id, {
+      status: "ACTIVE",
+      suspendedUntil: null,
+      lastLoginAt: new Date(Date.now() - loggedDaysAgo * DAY_MS_IN_HOURS).toISOString(),
+      roomCount: Math.max(1, (i * 2) % 5),
+      ownedRoomCount: i % 2,
+      reportBlockedUntil: null,
+      suspensions: [],
+    });
+  });
+  return m;
+}
+
+export const adminAccountsOverlay = shareSettingsMock(
+  "adminAccountsOverlay",
+  seedOverlay(),
+);
+
+/** 정지 기간 enum → 밀리초. BE 가 실제 종료일을 돌려주므로 목에서만 쓰는 매핑. */
+const PERIOD_MS: Record<AdminSuspensionPeriod, number | null> = {
+  DAYS_3: 3 * DAY_MS_IN_HOURS,
+  DAYS_7: 7 * DAY_MS_IN_HOURS,
+  DAYS_30: 30 * DAY_MS_IN_HOURS,
+  PERMANENT: null,
+};
+
+export function suspendInOverlay(
+  accountId: number,
+  period: AdminSuspensionPeriod,
+  reason: string,
+  adminRef: { accountId: number; displayName: string },
+  reportId?: number,
+): void {
+  const entry = adminAccountsOverlay.get(accountId);
+  if (!entry) throw new Error(`overlay entry missing for account ${accountId}`);
+  const now = new Date();
+  const ms = PERIOD_MS[period];
+  const endsAt =
+    ms === null ? null : new Date(now.getTime() + ms).toISOString();
+  const suspension: AdminSuspension = {
+    suspensionId: Date.now(),
+    period,
+    reason,
+    startedAt: now.toISOString(),
+    endsAt: endsAt ?? undefined,
+    admin: {
+      accountId: adminRef.accountId,
+      displayName: adminRef.displayName,
+      // AdminRef 추가 필드는 미사용
+    } as AdminSuspension["admin"],
+  };
+  // reportId 가 BE 스키마엔 Suspension 에 없지만 SuspendRequest 엔 있어서 로그로만 남긴다.
+  void reportId;
+  entry.status = "SUSPENDED";
+  entry.suspendedUntil = endsAt;
+  entry.suspensions = [suspension, ...entry.suspensions];
+}
+
+export function unsuspendInOverlay(accountId: number): void {
+  const entry = adminAccountsOverlay.get(accountId);
+  if (!entry) throw new Error(`overlay entry missing for account ${accountId}`);
+  if (entry.status !== "SUSPENDED") return;
+  const now = new Date().toISOString();
+  entry.status = "ACTIVE";
+  entry.suspendedUntil = null;
+  if (entry.suspensions[0] && !entry.suspensions[0].releasedAt) {
+    entry.suspensions[0] = { ...entry.suspensions[0], releasedAt: now };
+  }
+}
+
+export function toAdminDetail(
+  accountId: number,
+): AdminAccountDetail | null {
+  const acc = accounts.find((a) => a.id === accountId);
+  const entry = adminAccountsOverlay.get(accountId);
+  if (!acc || !entry) return null;
+  return {
+    accountId: acc.id,
+    name: acc.name,
+    email: acc.email,
+    provider: acc.provider,
+    role: acc.role,
+    status: entry.status,
+    suspendedUntil: entry.suspendedUntil ?? undefined,
+    createdAt: acc.createdAt,
+    lastLoginAt: entry.lastLoginAt ?? undefined,
+    roomCount: entry.roomCount,
+    ownedRoomCount: entry.ownedRoomCount,
+    reportBlockedUntil: entry.reportBlockedUntil ?? undefined,
+    suspensions: entry.suspensions,
+  };
+}

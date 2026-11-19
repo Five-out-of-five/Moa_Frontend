@@ -1,0 +1,157 @@
+"use client";
+
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useTransition } from "react";
+
+import { cn } from "@/lib/utils";
+
+import { accountProviderLabel } from "../lib/account-labels";
+import type { AdminAccountPage } from "../types";
+import {
+  AdminAccountRoleBadge,
+  AdminAccountStatusBadge,
+} from "./AdminAccountStatusBadge";
+
+/**
+ * 회원 테이블 + 페이지네이션. "상세" 버튼을 누르면 `?selected=<id>` 가 URL 에 붙어 부모 레벨의
+ * Sheet 가 열린다 — 쿼리를 상태 저장소로 삼아 **공유 가능한 링크** 를 유지한다.
+ */
+
+interface AdminAccountsTableProps {
+  page: AdminAccountPage;
+  selectedId: number | null;
+}
+
+function formatDate(iso: string | undefined): string {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "-";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export function AdminAccountsTable({
+  page,
+  selectedId,
+}: AdminAccountsTableProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [, startTransition] = useTransition();
+
+  function navigateToPage(nextPage: number) {
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("page", String(nextPage));
+    startTransition(() =>
+      router.replace(`${pathname}?${next.toString()}`, { scroll: false }),
+    );
+  }
+
+  function openDetail(accountId: number) {
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("selected", String(accountId));
+    startTransition(() =>
+      router.replace(`${pathname}?${next.toString()}`, { scroll: false }),
+    );
+  }
+
+  const rows = page.content;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wider">
+            <tr>
+              <th className="px-4 py-2.5 text-left font-medium">이름</th>
+              <th className="px-4 py-2.5 text-left font-medium">이메일</th>
+              <th className="px-4 py-2.5 text-left font-medium">제공자</th>
+              <th className="px-4 py-2.5 text-left font-medium">역할</th>
+              <th className="px-4 py-2.5 text-left font-medium">상태</th>
+              <th className="px-4 py-2.5 text-left font-medium">가입일</th>
+              <th className="px-4 py-2.5 text-left font-medium">최근 로그인</th>
+              <th className="px-4 py-2.5 text-right font-medium sr-only">액션</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 text-slate-700">
+            {rows.map((row) => {
+              const highlighted = row.accountId === selectedId;
+              return (
+                <tr
+                  key={row.accountId}
+                  className={cn(
+                    "hover:bg-slate-50",
+                    highlighted && "bg-slate-50",
+                  )}
+                >
+                  <td className="px-4 py-2.5 font-medium text-slate-900">
+                    {row.name}
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-600">{row.email}</td>
+                  <td className="px-4 py-2.5 text-slate-600">
+                    {accountProviderLabel(row.provider)}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <AdminAccountRoleBadge role={row.role} />
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <AdminAccountStatusBadge status={row.status} />
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-500 tabular-nums">
+                    {formatDate(row.createdAt)}
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-500 tabular-nums">
+                    {formatDate(row.lastLoginAt)}
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <button
+                      type="button"
+                      onClick={() => openDetail(row.accountId ?? 0)}
+                      className="rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                    >
+                      상세
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+            {rows.length === 0 && (
+              <tr>
+                <td
+                  colSpan={8}
+                  className="px-4 py-10 text-center text-sm text-slate-400"
+                >
+                  조건에 맞는 회원이 없습니다.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex items-center justify-between px-1 text-xs text-slate-500">
+        <span>
+          총 <span className="font-semibold text-slate-800">{page.totalElements.toLocaleString("ko-KR")}</span> 명 · {page.page + 1} / {page.totalPages} 페이지
+        </span>
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => navigateToPage(page.page - 1)}
+            disabled={page.page <= 0}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white"
+          >
+            <ChevronLeft aria-hidden className="h-3.5 w-3.5" /> 이전
+          </button>
+          <button
+            type="button"
+            onClick={() => navigateToPage(page.page + 1)}
+            disabled={!page.hasNext}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white"
+          >
+            다음 <ChevronRight aria-hidden className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -23,3 +23,34 @@ export interface StatsRangeQuery {
   /** yyyy-MM-dd */
   to: string;
 }
+
+// ===== 회원 관리 =====
+
+export type AdminAccount = components["schemas"]["AdminAccountResponse"];
+export type AdminAccountDetail = components["schemas"]["AdminAccountDetailResponse"];
+export type AdminSuspension = components["schemas"]["Suspension"];
+
+export type AdminAccountRole = "USER" | "ADMIN";
+export type AdminAccountStatus = "ACTIVE" | "SUSPENDED" | "WITHDRAWN";
+export type AdminSocialProvider = "GOOGLE" | "KAKAO" | "NAVER";
+export type AdminSuspensionPeriod = "DAYS_3" | "DAYS_7" | "DAYS_30" | "PERMANENT";
+
+export interface AdminAccountListQuery {
+  keyword?: string;
+  provider?: AdminSocialProvider;
+  status?: AdminAccountStatus;
+  role?: AdminAccountRole;
+  joinedFrom?: string;
+  joinedTo?: string;
+  page?: number;
+  size?: number;
+}
+
+export interface AdminAccountPage {
+  content: AdminAccount[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  hasNext: boolean;
+}
