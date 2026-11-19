@@ -1,5 +1,6 @@
 import { AlertTriangle } from "lucide-react";
 
+import { aiFeatureLabel } from "../lib/ai-feature";
 import { getAiUsageStats, getStatsOverview } from "../server";
 import type { StatsRangeQuery } from "../types";
 import { MiniSparkline } from "./MiniSparkline";
@@ -154,7 +155,7 @@ export async function AdminDashboard() {
                     return (
                       <tr key={row.feature}>
                         <td className="px-4 py-2.5 font-medium text-slate-800">
-                          {row.feature}
+                          {aiFeatureLabel(row.feature)}
                         </td>
                         <td className="px-4 py-2.5 text-right tabular-nums">
                           {formatNumber(calls)}
