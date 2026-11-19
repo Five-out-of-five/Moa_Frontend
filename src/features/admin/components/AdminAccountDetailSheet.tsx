@@ -108,10 +108,10 @@ export function AdminAccountDetailSheet({
         if (!next) closeSheet();
       }}
     >
-      <SheetContent className="sm:max-w-md" closeButtonMobileOnly>
+      <SheetContent className="w-full sm:max-w-lg" closeButtonMobileOnly>
         {detail && (
           <>
-            <SheetHeader className="pr-12 sm:pr-5">
+            <SheetHeader className="px-5 pr-12 sm:pr-5">
               <SheetTitle>{detail.name}</SheetTitle>
               <SheetDescription>{detail.email}</SheetDescription>
               <div className="mt-2 flex items-center gap-1.5">
@@ -125,7 +125,7 @@ export function AdminAccountDetailSheet({
               </div>
             </SheetHeader>
 
-            <div className="mt-6 flex flex-col gap-5 px-1">
+            <div className="flex flex-col gap-5 overflow-y-auto px-5 pt-1 pb-6">
               <section className="grid grid-cols-2 gap-3 text-sm">
                 <KeyVal label="제공자" value={accountProviderLabel(detail.provider)} />
                 <KeyVal label="가입일" value={fmtDate(detail.createdAt)} />

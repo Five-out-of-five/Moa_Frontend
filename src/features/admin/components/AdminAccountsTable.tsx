@@ -70,17 +70,27 @@ export function AdminAccountsTable({
               <th className="px-4 py-2.5 text-left font-medium">상태</th>
               <th className="px-4 py-2.5 text-left font-medium">가입일</th>
               <th className="px-4 py-2.5 text-left font-medium">최근 로그인</th>
-              <th className="px-4 py-2.5 text-right font-medium sr-only">액션</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-slate-700">
             {rows.map((row) => {
               const highlighted = row.accountId === selectedId;
+              const accountId = row.accountId ?? 0;
               return (
                 <tr
-                  key={row.accountId}
+                  key={accountId}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${row.name} 상세 열기`}
+                  onClick={() => openDetail(accountId)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openDetail(accountId);
+                    }
+                  }}
                   className={cn(
-                    "hover:bg-slate-50",
+                    "cursor-pointer transition-colors hover:bg-slate-50 focus:bg-slate-100 focus:outline-none",
                     highlighted && "bg-slate-50",
                   )}
                 >
@@ -103,22 +113,13 @@ export function AdminAccountsTable({
                   <td className="px-4 py-2.5 text-slate-500 tabular-nums">
                     {formatDate(row.lastLoginAt)}
                   </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <button
-                      type="button"
-                      onClick={() => openDetail(row.accountId ?? 0)}
-                      className="rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
-                    >
-                      상세
-                    </button>
-                  </td>
                 </tr>
               );
             })}
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={7}
                   className="px-4 py-10 text-center text-sm text-slate-400"
                 >
                   조건에 맞는 회원이 없습니다.
