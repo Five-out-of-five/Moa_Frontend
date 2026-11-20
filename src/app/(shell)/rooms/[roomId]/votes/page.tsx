@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 
 import { getMyAccount } from "@/features/account/server";
+import { BriefingFocus } from "@/features/briefing/BriefingFocus";
+import { readBriefingFocus } from "@/features/briefing/model";
 import { listMyRooms } from "@/features/room/server";
 import { VotesPageClient } from "@/features/vote/components/VotesPageClient";
 import { getVoteDetail, listVotesInRoom } from "@/features/vote/server";
@@ -8,7 +10,7 @@ import type { VoteDetail } from "@/types/db";
 
 interface Props {
   params: Promise<{ roomId: string }>;
-  searchParams: Promise<{ open?: string | string[] }>;
+  searchParams: Promise<{ open?: string | string[]; briefingFocus?: string }>;
 }
 
 /**
@@ -20,7 +22,7 @@ interface Props {
  */
 export default async function RoomVotesPage({ params, searchParams }: Props) {
   const { roomId: roomIdParam } = await params;
-  const { open: openRaw } = await searchParams;
+  const { open: openRaw, briefingFocus } = await searchParams;
   const roomId = Number(roomIdParam);
   if (!Number.isFinite(roomId)) notFound();
 
@@ -73,6 +75,8 @@ export default async function RoomVotesPage({ params, searchParams }: Props) {
   });
 
   return (
+    <>
+    <BriefingFocus ids={readBriefingFocus(briefingFocus)} />
     <VotesPageClient
       roomId={roomId}
       roomName={room.name}
@@ -81,5 +85,6 @@ export default async function RoomVotesPage({ params, searchParams }: Props) {
       meAccountId={meResult}
       initialOpenVoteId={openVoteId}
     />
+    </>
   );
 }

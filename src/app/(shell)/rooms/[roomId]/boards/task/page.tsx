@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 
 import { getMyAccount } from "@/features/account/server";
+import { BriefingFocus } from "@/features/briefing/BriefingFocus";
+import { readBriefingFocus } from "@/features/briefing/model";
 import { listMyRooms, listRoomMembers } from "@/features/room/server";
 import { TaskBoardPageClient } from "@/features/task/components/TaskBoardPageClient";
 import {
@@ -12,7 +14,7 @@ import type { MemberRef, Sprint, TaskDetail } from "@/types/db";
 
 interface Props {
   params: Promise<{ roomId: string }>;
-  searchParams: Promise<{ open?: string | string[] }>;
+  searchParams: Promise<{ open?: string | string[]; briefingFocus?: string }>;
 }
 
 /**
@@ -26,7 +28,7 @@ export default async function RoomTaskBoardPage({
   searchParams,
 }: Props) {
   const { roomId: roomIdParam } = await params;
-  const { open: openRaw } = await searchParams;
+  const { open: openRaw, briefingFocus } = await searchParams;
   const roomId = Number(roomIdParam);
   if (!Number.isFinite(roomId)) notFound();
 
@@ -102,6 +104,8 @@ export default async function RoomTaskBoardPage({
   });
 
   return (
+    <>
+    <BriefingFocus ids={readBriefingFocus(briefingFocus)} />
     <TaskBoardPageClient
       roomId={roomId}
       roomName={room.name}
@@ -113,5 +117,6 @@ export default async function RoomTaskBoardPage({
       initialOpenTaskId={openTaskId}
       unavailableTaskIds={unavailableTaskIds}
     />
+    </>
   );
 }

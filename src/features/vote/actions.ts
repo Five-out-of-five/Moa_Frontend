@@ -191,7 +191,7 @@ export async function createVoteAction(
       })),
       tied: false,
     };
-    votes.push({ ...detail, roomId });
+    votes.push({ ...detail, roomId, createdAt: new Date().toISOString() });
     revalidatePath(`/rooms/${roomId}/votes`, "page");
     return { kind: "ok", vote: detail };
   }
@@ -332,6 +332,7 @@ export async function closeVoteAction(
       return { kind: "error", message: "투표 작성자만 마감할 수 있어요." };
     }
     v.status = "CLOSED";
+    v.closedAt = new Date().toISOString();
     v.closeReason = "MANUAL";
     v.version += 1;
     // 마감 시점에 득표 수를 공개한다 (참여 결과를 그 자리에서 보여줘야 함). 목에선
@@ -584,7 +585,7 @@ export async function createRevoteAction(
       })),
       tied: false,
     };
-    votes.push({ ...detail, roomId });
+    votes.push({ ...detail, roomId, createdAt: new Date().toISOString() });
     revalidatePath(`/rooms/${roomId}/votes`, "page");
     return { kind: "ok", vote: detail };
   }
@@ -642,6 +643,7 @@ export async function submitBallotAction(
     // 서버 시각 기준 마감 지남 — CLOSED 로 전환하고 리스트도 재검증
     if (new Date(v.deadlineAt).getTime() <= Date.now()) {
       v.status = "CLOSED";
+      v.closedAt = v.deadlineAt;
       v.closeReason = "DEADLINE";
       revalidatePath(`/rooms/${roomId}/votes`, "page");
       return { kind: "closed", vote: stripRoom(), message: CLOSED_MSG };

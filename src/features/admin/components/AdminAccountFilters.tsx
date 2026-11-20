@@ -51,10 +51,17 @@ export function AdminAccountFilters({
     searchParamsRef.current = searchParams;
   }, [searchParams]);
 
+  // 디바운스 submit 때 "곧 initialKeyword 로 돌아올 것으로 기대하는 값" 을 남겨 두고, 그대로
+  // 돌아온 initialKeyword 변화는 외부 변경이 아니라 "내가 방금 쓴 결과" 로 보고 로컬 상태를
+  // 덮지 않는다. 그렇지 않으면 사용자가 submit 직후에 글자를 더 쳐도 URL 왕복 과정에서 그
+  // 입력이 사라진다.
+  const expectingInitRef = useRef<string | null>(null);
+
   // 디바운스: 입력 멈춘 뒤 350ms 후 반영.
   useEffect(() => {
     if (keyword === initialKeyword) return;
     const t = setTimeout(() => {
+      expectingInitRef.current = keyword;
       const sp = searchParamsRef.current;
       const next = new URLSearchParams(sp.toString());
       if (keyword) next.set("keyword", keyword);
@@ -66,6 +73,16 @@ export function AdminAccountFilters({
     }, 350);
     return () => clearTimeout(t);
   }, [keyword, initialKeyword, pathname, router]);
+
+  // URL 쪽 keyword 가 외부에서 바뀌면 (뒤로가기 / 앞으로가기 / 다른 UI 가 쿼리를 바꿈) 입력창도
+  // 그 값으로 동기화. 내가 debounce 로 submit 한 결과로 돌아온 경우는 skip.
+  useEffect(() => {
+    if (expectingInitRef.current === initialKeyword) {
+      expectingInitRef.current = null;
+      return;
+    }
+    setKeyword(initialKeyword);
+  }, [initialKeyword]);
 
   function updateQuery(patch: Record<string, string>) {
     const next = new URLSearchParams(searchParams.toString());
