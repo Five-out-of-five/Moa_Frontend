@@ -4,11 +4,26 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 
 import { api } from "@/lib/api";
-import { getAdminAiUsageMock, getAdminStatsOverviewMock } from "@/mocks/admin";
+import {
+  adminAccountsOverlay,
+  expireSuspensionIfDue,
+  getAdminAiUsageMock,
+  getAdminStatsOverviewMock,
+  toAdminDetail,
+} from "@/mocks/admin";
 import { isMock } from "@/mocks/config";
+import { accounts } from "@/mocks/db";
 import type { operations } from "@/types/api";
 
-import type { AiUsageStats, StatsOverview, StatsRangeQuery } from "./types";
+import type {
+  AdminAccount,
+  AdminAccountDetail,
+  AdminAccountListQuery,
+  AdminAccountPage,
+  AiUsageStats,
+  StatsOverview,
+  StatsRangeQuery,
+} from "./types";
 
 /**
  * 관리자 통계 로더 — 대시보드가 쓴다.
@@ -60,3 +75,94 @@ export const getAiUsageStats = cache(
     );
   },
 );
+
+// ===== 회원 관리 =====
+
+/**
+ * 관리자 회원 목록 로더. URL 검색 파라미터가 넓어서 호출부에서 **먼저 유효성 정리** 를 끝내고
+ * 넘긴다 — 쿼리 유틸은 undefined 값을 자동으로 떨구므로, 선택 안 된 필터가 섞여도 문제 없다.
+ */
+function listQuery(q: AdminAccountListQuery): string {
+  const params = new URLSearchParams();
+  if (q.keyword) params.set("keyword", q.keyword);
+  if (q.provider) params.set("provider", q.provider);
+  if (q.status) params.set("status", q.status);
+  if (q.role) params.set("role", q.role);
+  if (q.joinedFrom) params.set("joinedFrom", q.joinedFrom);
+  if (q.joinedTo) params.set("joinedTo", q.joinedTo);
+  if (q.page !== undefined) params.set("page", String(q.page));
+  if (q.size !== undefined) params.set("size", String(q.size));
+  return params.toString();
+}
+
+export const listAdminAccounts = cache(
+  async (q: AdminAccountListQuery = {}): Promise<AdminAccountPage> => {
+    if (isMock) {
+      // 목에선 overlay 와 accounts 를 합성한 뒤 필터·검색·페이지네이션을 여기서 처리.
+      const size = q.size ?? 20;
+      const page = q.page ?? 0;
+      const keyword = (q.keyword ?? "").trim().toLowerCase();
+
+      const joined = accounts
+        .map((acc): AdminAccount | null => {
+          const rawEntry = adminAccountsOverlay.get(acc.id);
+          if (!rawEntry) return null;
+          // 조회 직전 만료된 정지를 ACTIVE 로 전환 — 상태 필터가 이후 값을 보게.
+          const entry = expireSuspensionIfDue(rawEntry);
+          return {
+            accountId: acc.id,
+            name: acc.name,
+            email: acc.email,
+            provider: acc.provider,
+            role: acc.role,
+            status: entry.status,
+            suspendedUntil: entry.suspendedUntil ?? undefined,
+            createdAt: acc.createdAt,
+            lastLoginAt: entry.lastLoginAt ?? undefined,
+          };
+        })
+        .filter((v): v is AdminAccount => v !== null)
+        .filter((v) => (q.role ? v.role === q.role : true))
+        .filter((v) => (q.status ? v.status === q.status : true))
+        .filter((v) => (q.provider ? v.provider === q.provider : true))
+        .filter((v) => {
+          // 가입일 범위 (yyyy-MM-dd). `createdAt` 이 `yyyy-MM-ddTHH:mm:ssZ` 형식이면 날짜만
+          // 떼어 **같은 길이로 맞춰 비교** — 당일 09:00 레코드가 `joinedTo="…11-10"` 에서
+          // 밀려나던 문제를 피한다.
+          const createdDate = (v.createdAt ?? "").slice(0, 10);
+          if (!createdDate) return true;
+          if (q.joinedFrom && createdDate < q.joinedFrom) return false;
+          if (q.joinedTo && createdDate > q.joinedTo) return false;
+          return true;
+        })
+        .filter((v) => {
+          if (!keyword) return true;
+          return (
+            (v.name ?? "").toLowerCase().includes(keyword) ||
+            (v.email ?? "").toLowerCase().includes(keyword)
+          );
+        });
+
+      const total = joined.length;
+      const totalPages = Math.max(1, Math.ceil(total / size));
+      const safePage = Math.min(Math.max(0, page), totalPages - 1);
+      const content = joined.slice(safePage * size, safePage * size + size);
+      return {
+        content,
+        page: safePage,
+        size,
+        totalElements: total,
+        totalPages,
+        hasNext: safePage < totalPages - 1,
+      };
+    }
+    return api<AdminAccountPage>(`/api/v1/admin/accounts?${listQuery(q)}`);
+  },
+);
+
+export async function getAdminAccountDetail(
+  accountId: number,
+): Promise<AdminAccountDetail | null> {
+  if (isMock) return toAdminDetail(accountId);
+  return api<AdminAccountDetail>(`/api/v1/admin/accounts/${accountId}`);
+}
