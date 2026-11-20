@@ -6,10 +6,13 @@ import { cache } from "react";
 import { api } from "@/lib/api";
 import {
   adminAccountsOverlay,
+  adminReportsStore,
   expireSuspensionIfDue,
   getAdminAiUsageMock,
   getAdminStatsOverviewMock,
   toAdminDetail,
+  toAdminReport,
+  toAdminReportDetail,
 } from "@/mocks/admin";
 import { isMock } from "@/mocks/config";
 import { accounts } from "@/mocks/db";
@@ -20,6 +23,10 @@ import type {
   AdminAccountDetail,
   AdminAccountListQuery,
   AdminAccountPage,
+  AdminReport,
+  AdminReportDetail,
+  AdminReportListQuery,
+  AdminReportPage,
   AiUsageStats,
   StatsOverview,
   StatsRangeQuery,
@@ -164,5 +171,71 @@ export async function getAdminAccountDetail(
   accountId: number,
 ): Promise<AdminAccountDetail | null> {
   if (isMock) return toAdminDetail(accountId);
-  return api<AdminAccountDetail>(`/api/v1/admin/accounts/${accountId}`);
+  const accessToken = await readAccessToken();
+  return api<AdminAccountDetail>(
+    `/api/v1/admin/accounts/${accountId}`,
+    { accessToken },
+  );
+}
+
+// ===== 신고 관리 =====
+
+/**
+ * 관리자 신고 목록. BE 쿼리 (`status`, `targetType`, `reason`, `page`, `size`) 를 그대로 넘긴다.
+ * 목에서는 store 를 전체 읽은 뒤 메모리에서 필터·정렬·페이지네이션을 수행한다 — 접수된 신고를
+ * **접수일 내림차순** 으로 정렬해, 오래된 건이 위로 올라오지 않도록 한다.
+ */
+function reportListQuery(q: AdminReportListQuery): string {
+  const params = new URLSearchParams();
+  if (q.status) params.set("status", q.status);
+  if (q.targetType) params.set("targetType", q.targetType);
+  if (q.reason) params.set("reason", q.reason);
+  if (q.page !== undefined) params.set("page", String(q.page));
+  if (q.size !== undefined) params.set("size", String(q.size));
+  return params.toString();
+}
+
+export const listAdminReports = cache(
+  async (q: AdminReportListQuery = {}): Promise<AdminReportPage> => {
+    if (isMock) {
+      const size = q.size ?? 20;
+      const page = q.page ?? 0;
+
+      const filtered = Array.from(adminReportsStore.values())
+        .filter((v) => (q.status ? v.status === q.status : true))
+        .filter((v) => (q.targetType ? v.targetType === q.targetType : true))
+        .filter((v) => (q.reason ? v.reason === q.reason : true))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .map((v): AdminReport => toAdminReport(v));
+
+      const total = filtered.length;
+      const totalPages = Math.max(1, Math.ceil(total / size));
+      const safePage = Math.min(Math.max(0, page), totalPages - 1);
+      const content = filtered.slice(safePage * size, safePage * size + size);
+      return {
+        content,
+        page: safePage,
+        size,
+        totalElements: total,
+        totalPages,
+        hasNext: safePage < totalPages - 1,
+      };
+    }
+    const accessToken = await readAccessToken();
+    return api<AdminReportPage>(
+      `/api/v1/admin/reports?${reportListQuery(q)}`,
+      { accessToken },
+    );
+  },
+);
+
+export async function getAdminReportDetail(
+  reportId: number,
+): Promise<AdminReportDetail | null> {
+  if (isMock) return toAdminReportDetail(reportId);
+  const accessToken = await readAccessToken();
+  return api<AdminReportDetail>(
+    `/api/v1/admin/reports/${reportId}`,
+    { accessToken },
+  );
 }

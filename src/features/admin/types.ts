@@ -56,3 +56,39 @@ export interface AdminAccountPage {
   totalPages: number;
   hasNext: boolean;
 }
+
+// ===== 신고 관리 =====
+
+export type AdminReport = components["schemas"]["AdminReportResponse"];
+export type AdminReportDetail = components["schemas"]["AdminReportDetailResponse"];
+
+export type AdminReportStatus = "RECEIVED" | "IN_PROGRESS" | "RESOLVED" | "REJECTED";
+export type AdminReportTargetType = "CARD" | "COMMENT" | "MESSAGE";
+export type AdminReportReason =
+  | "ABUSE"
+  | "SPAM"
+  | "INAPPROPRIATE_FILE"
+  | "PRIVACY"
+  | "ETC";
+export type AdminReportAction =
+  | "DELETE_CONTENT"
+  | "SUSPEND_ACCOUNT"
+  | "WARN"
+  | "NONE";
+
+export interface AdminReportListQuery {
+  status?: AdminReportStatus;
+  targetType?: AdminReportTargetType;
+  reason?: AdminReportReason;
+  page?: number;
+  size?: number;
+}
+
+export interface AdminReportPage {
+  content: AdminReport[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  hasNext: boolean;
+}

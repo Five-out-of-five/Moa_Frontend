@@ -8,8 +8,13 @@ import { api, ApiError } from "@/lib/api";
 import { isServiceAdmin } from "@/lib/permission";
 import {
   adminAccountsOverlay,
+  adminReportsStore,
+  rejectReportInStore,
+  resolveReportInStore,
+  reviewReportInStore,
   suspendInOverlay,
   toAdminDetail,
+  toAdminReportDetail,
   unsuspendInOverlay,
 } from "@/mocks/admin";
 import { isMock } from "@/mocks/config";
@@ -18,6 +23,8 @@ import { accounts } from "@/mocks/db";
 import type {
   AdminAccountDetail,
   AdminAccountRole,
+  AdminReportAction,
+  AdminReportDetail,
   AdminSuspensionPeriod,
 } from "./types";
 
@@ -197,6 +204,181 @@ export async function unsuspendAccountAction(accountId: number): Promise<Result>
       { method: "DELETE", accessToken },
     );
     revalidatePath("/admin/accounts");
+    return { kind: "ok", detail };
+  } catch (e) {
+    return wrapError(e);
+  }
+}
+
+// ===== 신고 관리 Server Actions =====
+//
+// 상태 전이: RECEIVED ──review──> IN_PROGRESS ──resolve──> RESOLVED
+//                                            └─reject───> REJECTED
+// 모든 액션이 가드를 재검증하고, 실 API 모드에서는 쿠키 accessToken 을 함께 넘긴다.
+
+type ReportResult = Ok<AdminReportDetail> | Guard | Conflict | Err;
+
+export async function reviewReportAction(reportId: number): Promise<ReportResult> {
+  try {
+    const guard = await ensureAdmin();
+    if (!guard.ok) return guard.guard;
+
+    if (isMock) {
+      const entry = adminReportsStore.get(reportId);
+      if (!entry) return { kind: "error", message: "신고를 찾지 못했습니다." };
+      if (entry.status !== "RECEIVED") {
+        return { kind: "conflict", message: "이미 처리 중이거나 완료된 신고입니다." };
+      }
+      reviewReportInStore(reportId, guard.adminId);
+      const detail = toAdminReportDetail(reportId);
+      revalidatePath("/admin/reports");
+      if (!detail) return { kind: "error", message: "상세를 다시 불러오지 못했습니다." };
+      return { kind: "ok", detail };
+    }
+
+    const accessToken = await readAccessToken();
+    const detail = await api<AdminReportDetail>(
+      `/api/v1/admin/reports/${reportId}/review?adminId=${guard.adminId}`,
+      { method: "POST", accessToken },
+    );
+    revalidatePath("/admin/reports");
+    return { kind: "ok", detail };
+  } catch (e) {
+    return wrapError(e);
+  }
+}
+
+export async function resolveReportAction(
+  reportId: number,
+  input: {
+    action: AdminReportAction;
+    actionReason: string;
+    suspensionPeriod?: AdminSuspensionPeriod;
+    falseReport?: boolean;
+    /**
+     * UI 가 들고 있는 피신고자 ID. `SUSPEND_ACCOUNT` 본인 보호 가드에 쓰며, 목 모드에서는
+     * store 의 값으로 다시 확인한다. BE 는 reportId 로 자체 검증하되 UI 가 미리 걸러 준다.
+     */
+    targetAccountId?: number;
+  },
+): Promise<ReportResult> {
+  try {
+    const guard = await ensureAdmin();
+    if (!guard.ok) return guard.guard;
+
+    const reason = input.actionReason.trim();
+    if (reason.length === 0) {
+      return { kind: "guard", message: "조치 사유를 입력해 주세요." };
+    }
+    if (input.action === "SUSPEND_ACCOUNT" && !input.suspensionPeriod) {
+      return { kind: "guard", message: "계정 정지를 선택하면 정지 기간이 필요합니다." };
+    }
+
+    if (isMock) {
+      const entry = adminReportsStore.get(reportId);
+      if (!entry) return { kind: "error", message: "신고를 찾지 못했습니다." };
+      if (entry.status === "RESOLVED" || entry.status === "REJECTED") {
+        return { kind: "conflict", message: "이미 처리된 신고입니다." };
+      }
+      // SUSPEND_ACCOUNT 액션이면 피신고자 상태를 먼저 검증해 "상태만 바뀌고 실제 정지는 생략"
+      // 되는 사고를 막는다. 본인/관리자/존재하지 않는 대상은 상태 변경 **전에** 거절.
+      if (input.action === "SUSPEND_ACCOUNT" && input.suspensionPeriod) {
+        if (entry.targetAccountId === guard.adminId) {
+          return { kind: "guard", message: "본인 계정은 정지할 수 없습니다." };
+        }
+        const target = accounts.find((a) => a.id === entry.targetAccountId);
+        if (!target) {
+          return { kind: "error", message: "정지할 대상 계정을 찾지 못했습니다." };
+        }
+        if (target.role === "ADMIN") {
+          return { kind: "conflict", message: "관리자 계정은 정지할 수 없습니다." };
+        }
+        suspendInOverlay(
+          entry.targetAccountId,
+          input.suspensionPeriod,
+          reason,
+          { accountId: guard.adminId, displayName: guard.displayName },
+          reportId,
+        );
+      }
+      resolveReportInStore(reportId, guard.adminId, {
+        action: input.action,
+        actionReason: reason,
+        falseReport: input.falseReport,
+      });
+      const detail = toAdminReportDetail(reportId);
+      revalidatePath("/admin/reports");
+      if (input.action === "SUSPEND_ACCOUNT") revalidatePath("/admin/accounts");
+      if (!detail) return { kind: "error", message: "상세를 다시 불러오지 못했습니다." };
+      return { kind: "ok", detail };
+    }
+
+    // 실 API 분기 — 대상 ID 를 모르면 BE 검증에 맡기지만, UI 가 알고 있는 값이 있으면 본인
+    // 정지 요청을 사전 차단한다 (BE 가드 누락 대비).
+    if (
+      input.action === "SUSPEND_ACCOUNT" &&
+      input.targetAccountId !== undefined &&
+      input.targetAccountId === guard.adminId
+    ) {
+      return { kind: "guard", message: "본인 계정은 정지할 수 없습니다." };
+    }
+
+    const accessToken = await readAccessToken();
+    const payload: Record<string, unknown> = {
+      action: input.action,
+      actionReason: reason,
+    };
+    if (input.suspensionPeriod) payload.suspensionPeriod = input.suspensionPeriod;
+    if (input.falseReport !== undefined) payload.falseReport = input.falseReport;
+    const detail = await api<AdminReportDetail>(
+      `/api/v1/admin/reports/${reportId}/resolve?adminId=${guard.adminId}`,
+      { method: "POST", json: payload, accessToken },
+    );
+    revalidatePath("/admin/reports");
+    if (input.action === "SUSPEND_ACCOUNT") revalidatePath("/admin/accounts");
+    return { kind: "ok", detail };
+  } catch (e) {
+    return wrapError(e);
+  }
+}
+
+export async function rejectReportAction(
+  reportId: number,
+  input: { actionReason: string; falseReport?: boolean },
+): Promise<ReportResult> {
+  try {
+    const guard = await ensureAdmin();
+    if (!guard.ok) return guard.guard;
+
+    const reason = input.actionReason.trim();
+    if (reason.length === 0) {
+      return { kind: "guard", message: "반려 사유를 입력해 주세요." };
+    }
+
+    if (isMock) {
+      const entry = adminReportsStore.get(reportId);
+      if (!entry) return { kind: "error", message: "신고를 찾지 못했습니다." };
+      if (entry.status === "RESOLVED" || entry.status === "REJECTED") {
+        return { kind: "conflict", message: "이미 처리된 신고입니다." };
+      }
+      rejectReportInStore(reportId, guard.adminId, {
+        actionReason: reason,
+        falseReport: input.falseReport,
+      });
+      const detail = toAdminReportDetail(reportId);
+      revalidatePath("/admin/reports");
+      if (!detail) return { kind: "error", message: "상세를 다시 불러오지 못했습니다." };
+      return { kind: "ok", detail };
+    }
+
+    const accessToken = await readAccessToken();
+    const payload: Record<string, unknown> = { actionReason: reason };
+    if (input.falseReport !== undefined) payload.falseReport = input.falseReport;
+    const detail = await api<AdminReportDetail>(
+      `/api/v1/admin/reports/${reportId}/reject?adminId=${guard.adminId}`,
+      { method: "POST", json: payload, accessToken },
+    );
+    revalidatePath("/admin/reports");
     return { kind: "ok", detail };
   } catch (e) {
     return wrapError(e);
