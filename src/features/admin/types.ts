@@ -92,3 +92,17 @@ export interface AdminReportPage {
   totalPages: number;
   hasNext: boolean;
 }
+
+// ===== 감사 로그 =====
+
+export interface AdminAuditLogListQuery {
+  adminId?: number;
+  actionType?: string;
+  targetType?: string;
+  /** yyyy-MM-dd */
+  from?: string;
+  /** yyyy-MM-dd */
+  to?: string;
+  page?: number;
+  size?: number;
+}

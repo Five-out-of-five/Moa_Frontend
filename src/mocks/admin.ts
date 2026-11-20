@@ -15,6 +15,7 @@
 import type {
   AdminAccountDetail,
   AdminAccountStatus,
+  AdminAuditLogListQuery,
   AdminAuditLogPage,
   AdminReport,
   AdminReportAction,
@@ -142,60 +143,82 @@ export function getAdminAiUsageMock(): AiUsageStats {
 }
 
 /**
- * 감사 로그 목 — 이슈 #72 "포함 작업" 요구. `AuditLogResponse` 스키마 그대로.
- * 관리자가 방금 한 행동을 역순으로 보여 주도록 `createdAt` 은 요청 시점에서 분 단위로 뒤로 민다.
+ * 감사 로그 목 — `AuditLogResponse` 스키마 그대로. 요청 시점을 기준으로 상대 시각을 쌓아
+ * "방금 한 행동이 맨 위" 가 되도록 돌려준다. 필터 (`actionType`, `targetType`, `from`, `to`,
+ * `adminId`) 와 페이지네이션은 메모리에서 수행.
+ *
+ * ⚠️ 날짜 범위는 `from`/`to` 모두 `yyyy-MM-dd` 문자열. `createdAt` 의 날짜 부분으로 비교해
+ *    당일 레코드가 상한 밖으로 밀리지 않게.
  */
-export function getAdminAuditLogsMock(): AdminAuditLogPage {
-  const now = new Date();
-  const entries: AdminAuditLogPage["content"] = [
-    {
-      auditLogId: 1_024,
-      admin: { accountId: 1, name: "이홍근" },
-      actionType: "ACCOUNT_ROLE_CHANGE",
-      targetType: "ACCOUNT",
-      targetId: 42,
-      detail: "역할 USER → ADMIN",
-      ipAddress: "10.0.0.14",
-      createdAt: new Date(now.getTime() - 5 * 60 * 1000).toISOString(),
-    },
-    {
-      auditLogId: 1_023,
-      admin: { accountId: 1, name: "이홍근" },
-      actionType: "ACCOUNT_SUSPEND",
-      targetType: "ACCOUNT",
-      targetId: 118,
-      detail: "7일 정지 · 사유: 반복 신고",
-      ipAddress: "10.0.0.14",
-      createdAt: new Date(now.getTime() - 45 * 60 * 1000).toISOString(),
-    },
-    {
-      auditLogId: 1_022,
-      admin: { accountId: 1, name: "이홍근" },
-      actionType: "REPORT_RESOLVE",
-      targetType: "REPORT",
-      targetId: 904,
-      detail: "스팸 메시지 · 제재 완료",
-      ipAddress: "10.0.0.14",
-      createdAt: new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      auditLogId: 1_021,
-      admin: { accountId: 1, name: "이홍근" },
-      actionType: "ROOM_ARCHIVE",
-      targetType: "ROOM",
-      targetId: 31,
-      detail: "비활성 방 아카이빙",
-      ipAddress: "10.0.0.14",
-      createdAt: new Date(now.getTime() - 6 * 60 * 60 * 1000).toISOString(),
-    },
-  ];
+
+type AuditLogEntry = NonNullable<AdminAuditLogPage["content"]>[number];
+
+/**
+ * 시드 — 요청 시점 기준 상대 분(minutes-ago) 으로 각 로그 시각을 계산해 "지금으로부터 X 분 전"
+ * 처럼 보이게 한다. 운영자가 방금 한 액션이 맨 위로 노출됨.
+ */
+const AUDIT_SEED_INPUT: {
+  auditLogId: number;
+  minutesAgo: number;
+  adminId: number;
+  adminName: string;
+  actionType: string;
+  targetType: string;
+  targetId: number;
+  detail: string;
+  ipAddress: string;
+}[] = [
+  { auditLogId: 1_024, minutesAgo: 5, adminId: 1, adminName: "이홍근", actionType: "ACCOUNT_ROLE_CHANGE", targetType: "ACCOUNT", targetId: 4, detail: "역할 USER → ADMIN", ipAddress: "10.0.0.14" },
+  { auditLogId: 1_023, minutesAgo: 45, adminId: 1, adminName: "이홍근", actionType: "ACCOUNT_SUSPEND", targetType: "ACCOUNT", targetId: 5, detail: "7일 정지 · 사유: 반복 신고", ipAddress: "10.0.0.14" },
+  { auditLogId: 1_022, minutesAgo: 180, adminId: 1, adminName: "이홍근", actionType: "REPORT_RESOLVE", targetType: "REPORT", targetId: 103, detail: "개인정보 포함 댓글 삭제", ipAddress: "10.0.0.14" },
+  { auditLogId: 1_021, minutesAgo: 360, adminId: 1, adminName: "이홍근", actionType: "ROOM_ARCHIVE", targetType: "ROOM", targetId: 31, detail: "비활성 방 아카이빙", ipAddress: "10.0.0.14" },
+  { auditLogId: 1_020, minutesAgo: 1_440, adminId: 1, adminName: "이홍근", actionType: "REPORT_REJECT", targetType: "REPORT", targetId: 104, detail: "커뮤니티 공지 범위 내 판단", ipAddress: "10.0.0.14" },
+  { auditLogId: 1_019, minutesAgo: 1_680, adminId: 1, adminName: "이홍근", actionType: "NOTICE_CREATE", targetType: "NOTICE", targetId: 51, detail: "정기 점검 공지", ipAddress: "10.0.0.14" },
+  { auditLogId: 1_018, minutesAgo: 2_880, adminId: 1, adminName: "이홍근", actionType: "ACCOUNT_UNSUSPEND", targetType: "ACCOUNT", targetId: 6, detail: "3일 정지 종료 자동 해제", ipAddress: "10.0.0.14" },
+  { auditLogId: 1_017, minutesAgo: 4_320, adminId: 1, adminName: "이홍근", actionType: "REPORT_REVIEW", targetType: "REPORT", targetId: 102, detail: "담당자 지정", ipAddress: "10.0.0.14" },
+  { auditLogId: 1_016, minutesAgo: 5_760, adminId: 1, adminName: "이홍근", actionType: "NOTICE_UPDATE", targetType: "NOTICE", targetId: 48, detail: "채팅 전송 지연 공지 수정", ipAddress: "10.0.0.14" },
+  { auditLogId: 1_015, minutesAgo: 10_080, adminId: 1, adminName: "이홍근", actionType: "ROOM_DELETE", targetType: "ROOM", targetId: 22, detail: "오너 요청으로 영구 삭제", ipAddress: "10.0.0.14" },
+];
+
+export function getAdminAuditLogsMock(q: AdminAuditLogListQuery = {}): AdminAuditLogPage {
+  const now = Date.now();
+  const size = q.size ?? 20;
+  const page = q.page ?? 0;
+
+  const all: AuditLogEntry[] = AUDIT_SEED_INPUT.map((s) => ({
+    auditLogId: s.auditLogId,
+    admin: { accountId: s.adminId, name: s.adminName },
+    actionType: s.actionType,
+    targetType: s.targetType,
+    targetId: s.targetId,
+    detail: s.detail,
+    ipAddress: s.ipAddress,
+    createdAt: new Date(now - s.minutesAgo * 60 * 1000).toISOString(),
+  }));
+
+  const filtered = all
+    .filter((v) => (q.adminId ? v.admin?.accountId === q.adminId : true))
+    .filter((v) => (q.actionType ? v.actionType === q.actionType : true))
+    .filter((v) => (q.targetType ? v.targetType === q.targetType : true))
+    .filter((v) => {
+      const createdDate = (v.createdAt ?? "").slice(0, 10);
+      if (!createdDate) return true;
+      if (q.from && createdDate < q.from) return false;
+      if (q.to && createdDate > q.to) return false;
+      return true;
+    });
+
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / size));
+  const safePage = Math.min(Math.max(0, page), totalPages - 1);
+  const content = filtered.slice(safePage * size, safePage * size + size);
   return {
-    content: entries,
-    page: 0,
-    size: 20,
-    totalElements: entries.length,
-    totalPages: 1,
-    hasNext: false,
+    content,
+    page: safePage,
+    size,
+    totalElements: total,
+    totalPages,
+    hasNext: safePage < totalPages - 1,
   };
 }
 
