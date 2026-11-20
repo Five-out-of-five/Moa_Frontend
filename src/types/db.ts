@@ -131,6 +131,8 @@ export interface BoardSession {
 }
 
 export interface IdeaCard {
+  aiSuggested?: boolean;
+  sourceCardIds?: number[];
   id: number;
   roomId: number;
   sessionId: number;

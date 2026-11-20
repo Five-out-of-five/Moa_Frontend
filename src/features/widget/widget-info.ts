@@ -23,6 +23,7 @@ export const WIDGET_ICONS = {
 } satisfies Record<WidgetType, typeof Smile>;
 
 export function getWidgetDetailHref(roomId: number, type: WidgetType) {
+  if (type === "MEDIATION") return `/rooms/${roomId}/mediation`;
   if (type === "MOOD") return `/rooms/${roomId}/moods`;
   if (type === "IDEA_BOARD") return `/rooms/${roomId}/boards/idea`;
   if (type === "CATCHUP_BRIEFING") return `/rooms/${roomId}/briefing`;
