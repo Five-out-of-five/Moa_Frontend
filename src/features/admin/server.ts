@@ -9,6 +9,7 @@ import {
   adminReportsStore,
   expireSuspensionIfDue,
   getAdminAiUsageMock,
+  getAdminAuditLogsMock,
   getAdminStatsOverviewMock,
   toAdminDetail,
   toAdminReport,
@@ -23,6 +24,8 @@ import type {
   AdminAccountDetail,
   AdminAccountListQuery,
   AdminAccountPage,
+  AdminAuditLogListQuery,
+  AdminAuditLogPage,
   AdminReport,
   AdminReportDetail,
   AdminReportListQuery,
@@ -239,3 +242,28 @@ export async function getAdminReportDetail(
     { accessToken },
   );
 }
+
+// ===== 감사 로그 =====
+
+function auditLogQuery(q: AdminAuditLogListQuery): string {
+  const params = new URLSearchParams();
+  if (q.adminId !== undefined) params.set("adminId", String(q.adminId));
+  if (q.actionType) params.set("actionType", q.actionType);
+  if (q.targetType) params.set("targetType", q.targetType);
+  if (q.from) params.set("from", q.from);
+  if (q.to) params.set("to", q.to);
+  if (q.page !== undefined) params.set("page", String(q.page));
+  if (q.size !== undefined) params.set("size", String(q.size));
+  return params.toString();
+}
+
+export const listAdminAuditLogs = cache(
+  async (q: AdminAuditLogListQuery = {}): Promise<AdminAuditLogPage> => {
+    if (isMock) return getAdminAuditLogsMock(q);
+    const accessToken = await readAccessToken();
+    return api<AdminAuditLogPage>(
+      `/api/v1/admin/audit-logs?${auditLogQuery(q)}`,
+      { accessToken },
+    );
+  },
+);
