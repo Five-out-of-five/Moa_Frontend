@@ -2,7 +2,7 @@
 
 import { Search } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 import {
   PROVIDER_OPTIONS,
@@ -43,15 +43,29 @@ export function AdminAccountFilters({
   const [keyword, setKeyword] = useState(initialKeyword);
   const [, startTransition] = useTransition();
 
+  // searchParams 는 자주 바뀌므로 effect 의존성에 직접 넣으면 타이머가 매번 리셋돼 디바운스가
+  // 깨진다. ref 로 최신 값을 참조해 **타이머 콜백에서 현재 URL 조건을 읽도록** 한다. 이렇게
+  // 두면 "검색어 치는 중에 역할 셀렉트를 바꿔도" 그 역할이 사라지지 않는다.
+  const searchParamsRef = useRef(searchParams);
+  useEffect(() => {
+    searchParamsRef.current = searchParams;
+  }, [searchParams]);
+
   // 디바운스: 입력 멈춘 뒤 350ms 후 반영.
   useEffect(() => {
     if (keyword === initialKeyword) return;
     const t = setTimeout(() => {
-      updateQuery({ keyword });
+      const sp = searchParamsRef.current;
+      const next = new URLSearchParams(sp.toString());
+      if (keyword) next.set("keyword", keyword);
+      else next.delete("keyword");
+      next.delete("page");
+      startTransition(() => {
+        router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+      });
     }, 350);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keyword]);
+  }, [keyword, initialKeyword, pathname, router]);
 
   function updateQuery(patch: Record<string, string>) {
     const next = new URLSearchParams(searchParams.toString());

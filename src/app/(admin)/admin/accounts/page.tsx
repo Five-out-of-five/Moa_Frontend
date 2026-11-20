@@ -69,6 +69,11 @@ export default async function AdminAccountsPage({ searchParams }: PageProps) {
     pageRes.status === "fulfilled" ? pageRes.value : null;
   const selectedDetail =
     detailRes.status === "fulfilled" ? detailRes.value : null;
+  // selectedId 는 있는데 상세 응답이 null/reject 면 "조회 실패" 로 간주. "선택 안 함" 과 구분해
+  // Sheet 가 오류 안내+재시도를 보여 준다.
+  const selectedDetailFailed =
+    selectedId !== null &&
+    (detailRes.status === "rejected" || selectedDetail === null);
   const me = meRes.status === "fulfilled" ? meRes.value : null;
 
   return (
@@ -98,6 +103,8 @@ export default async function AdminAccountsPage({ searchParams }: PageProps) {
       {me && (
         <AdminAccountDetailSheet
           initialDetail={selectedDetail}
+          selectedId={selectedId}
+          loadFailed={selectedDetailFailed}
           meAccountId={me.id}
         />
       )}

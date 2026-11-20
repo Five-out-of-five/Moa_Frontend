@@ -7,6 +7,7 @@ import {
   adminAccountsOverlay,
   adminAiUsageMock,
   adminStatsOverviewMock,
+  expireSuspensionIfDue,
   toAdminDetail,
 } from "@/mocks/admin";
 import { isMock } from "@/mocks/config";
@@ -83,8 +84,10 @@ export const listAdminAccounts = cache(
 
       const joined = accounts
         .map((acc): AdminAccount | null => {
-          const entry = adminAccountsOverlay.get(acc.id);
-          if (!entry) return null;
+          const rawEntry = adminAccountsOverlay.get(acc.id);
+          if (!rawEntry) return null;
+          // 조회 직전 만료된 정지를 ACTIVE 로 전환 — 상태 필터가 이후 값을 보게.
+          const entry = expireSuspensionIfDue(rawEntry);
           return {
             accountId: acc.id,
             name: acc.name,
@@ -101,6 +104,13 @@ export const listAdminAccounts = cache(
         .filter((v) => (q.role ? v.role === q.role : true))
         .filter((v) => (q.status ? v.status === q.status : true))
         .filter((v) => (q.provider ? v.provider === q.provider : true))
+        .filter((v) => {
+          // 가입일 범위 (yyyy-MM-dd). 문자열 비교로 충분 — ISO 날짜라 사전식 순서 = 시간 순서.
+          const createdAt = v.createdAt ?? "";
+          if (q.joinedFrom && createdAt < q.joinedFrom) return false;
+          if (q.joinedTo && createdAt > q.joinedTo) return false;
+          return true;
+        })
         .filter((v) => {
           if (!keyword) return true;
           return (

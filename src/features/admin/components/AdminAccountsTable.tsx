@@ -14,8 +14,12 @@ import {
 } from "./AdminAccountStatusBadge";
 
 /**
- * 회원 테이블 + 페이지네이션. "상세" 버튼을 누르면 `?selected=<id>` 가 URL 에 붙어 부모 레벨의
+ * 회원 테이블 + 페이지네이션. 행 아무 셀을 눌러도 `?selected=<id>` 가 URL 에 붙고 부모 레벨의
  * Sheet 가 열린다 — 쿼리를 상태 저장소로 삼아 **공유 가능한 링크** 를 유지한다.
+ *
+ * ⚠️ `<tr>` 에 `role="button"` 을 주지 않는다. WAI-ARIA 에서 button 의 자손은 표시용으로
+ *    처리돼 셀/열 제목 연결을 잃기 때문. 키보드 접근은 **이름 셀 안의 투명 버튼** 으로 열어 두고,
+ *    마우스 사용자를 위한 행 전체 클릭은 `<tr>` 의 onClick 만으로 처리한다.
  */
 
 interface AdminAccountsTableProps {
@@ -59,8 +63,8 @@ export function AdminAccountsTable({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <table className="w-full min-w-[720px] text-sm">
           <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wider">
             <tr>
               <th className="px-4 py-2.5 text-left font-medium">이름</th>
@@ -79,23 +83,24 @@ export function AdminAccountsTable({
               return (
                 <tr
                   key={accountId}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`${row.name} 상세 열기`}
                   onClick={() => openDetail(accountId)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      openDetail(accountId);
-                    }
-                  }}
                   className={cn(
-                    "cursor-pointer transition-colors hover:bg-slate-50 focus:bg-slate-100 focus:outline-none",
+                    "cursor-pointer transition-colors hover:bg-slate-50",
                     highlighted && "bg-slate-50",
                   )}
                 >
                   <td className="px-4 py-2.5 font-medium text-slate-900">
-                    {row.name}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openDetail(accountId);
+                      }}
+                      aria-label={`${row.name} 상세 열기`}
+                      className="-mx-1 rounded px-1 text-left hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-slate-500"
+                    >
+                      {row.name}
+                    </button>
                   </td>
                   <td className="px-4 py-2.5 text-slate-600">{row.email}</td>
                   <td className="px-4 py-2.5 text-slate-600">

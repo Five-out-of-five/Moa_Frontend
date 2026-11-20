@@ -105,13 +105,14 @@ export function AdminSuspendDialog({
             <Label className="text-xs font-medium text-slate-600">
               정지 기간
             </Label>
-            <div className="mt-2 grid grid-cols-4 gap-2">
+            <div className="mt-2 grid grid-cols-4 gap-2" role="group" aria-label="정지 기간 선택">
               {SUSPENSION_PERIOD_OPTIONS.map((o) => (
                 <button
                   key={o.value}
                   type="button"
                   disabled={pending}
                   onClick={() => setPeriod(o.value)}
+                  aria-pressed={period === o.value}
                   className={
                     period === o.value
                       ? "rounded-md bg-slate-900 px-2 py-2 text-xs font-semibold text-white"

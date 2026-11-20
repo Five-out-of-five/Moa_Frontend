@@ -207,12 +207,31 @@ export function unsuspendInOverlay(accountId: number): void {
   }
 }
 
+/**
+ * 기간이 지난 정지를 ACTIVE 로 자동 전환. 조회 경로 (상세·목록) 가 돌려주기 직전에 한 번 거쳐야
+ * "정지 기간이 끝나면 자동으로 정상 전환" 안내와 실제 상태가 어긋나지 않는다. PERMANENT 와 아직
+ * 끝나지 않은 정지는 그대로.
+ */
+export function expireSuspensionIfDue(entry: AdminOverlayEntry): AdminOverlayEntry {
+  if (entry.status !== "SUSPENDED") return entry;
+  if (!entry.suspendedUntil) return entry; // PERMANENT
+  if (Date.parse(entry.suspendedUntil) > Date.now()) return entry;
+  const now = new Date().toISOString();
+  entry.status = "ACTIVE";
+  entry.suspendedUntil = null;
+  if (entry.suspensions[0] && !entry.suspensions[0].releasedAt) {
+    entry.suspensions[0] = { ...entry.suspensions[0], releasedAt: now };
+  }
+  return entry;
+}
+
 export function toAdminDetail(
   accountId: number,
 ): AdminAccountDetail | null {
   const acc = accounts.find((a) => a.id === accountId);
-  const entry = adminAccountsOverlay.get(accountId);
-  if (!acc || !entry) return null;
+  const rawEntry = adminAccountsOverlay.get(accountId);
+  if (!acc || !rawEntry) return null;
+  const entry = expireSuspensionIfDue(rawEntry);
   return {
     accountId: acc.id,
     name: acc.name,

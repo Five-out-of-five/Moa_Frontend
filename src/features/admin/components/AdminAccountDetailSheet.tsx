@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -38,6 +38,10 @@ import { AdminSuspendDialog } from "./AdminSuspendDialog";
 
 interface AdminAccountDetailSheetProps {
   initialDetail: AdminAccountDetail | null;
+  /** URL ?selected=<id>. `null` 이면 선택 안 함. */
+  selectedId: number | null;
+  /** 선택된 ID 는 있는데 상세 조회가 실패한 경우. "선택 안 함" 과 구분. */
+  loadFailed: boolean;
   /** 로그인한 관리자 본인 계정 ID — 자기 자신 보호 가드에 쓴다. */
   meAccountId: number;
 }
@@ -63,6 +67,8 @@ function fmtDateTime(iso: string | undefined): string {
 
 export function AdminAccountDetailSheet({
   initialDetail,
+  selectedId,
+  loadFailed,
   meAccountId,
 }: AdminAccountDetailSheetProps) {
   const router = useRouter();
@@ -71,21 +77,29 @@ export function AdminAccountDetailSheet({
   const [detail, setDetail] = useState<AdminAccountDetail | null>(initialDetail);
   const [unsuspending, startUnsuspendTransition] = useTransition();
 
-  // 서버가 바꿔서 넘긴 selected 가 다른 회원이면 state 교체.
-  if (detail && initialDetail && detail.accountId !== initialDetail.accountId) {
-    setDetail(initialDetail);
-  }
-  if (!detail && initialDetail) {
-    setDetail(initialDetail);
-  }
+  // 서버가 새 initialDetail 을 넘기면 반영 — accountId 가 같아도 참조가 바뀌면 서버 쪽에서
+  // revalidatePath 등으로 갱신된 스냅샷이므로 덮어쓴다. 액션 성공으로 setDetail 한 뒤
+  // revalidatePath 가 돌아 같은 데이터가 다시 내려와도 결과는 동일.
+  useEffect(() => {
+    if (initialDetail) setDetail(initialDetail);
+  }, [initialDetail]);
 
-  const open = initialDetail !== null;
+  // 선택 ID 는 있는데 조회가 실패했다면 로컬 캐시도 지워 "직전 스냅샷" 이 어긋나지 않게.
+  useEffect(() => {
+    if (loadFailed) setDetail(null);
+  }, [loadFailed]);
+
+  const open = selectedId !== null;
   const isMe = detail?.accountId === meAccountId;
 
   function closeSheet() {
     const next = new URLSearchParams(searchParams.toString());
     next.delete("selected");
     router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+  }
+
+  function retryLoad() {
+    router.refresh();
   }
 
   function handleUnsuspend() {
@@ -109,6 +123,32 @@ export function AdminAccountDetailSheet({
       }}
     >
       <SheetContent className="w-full sm:max-w-lg" closeButtonMobileOnly>
+        {loadFailed && !detail && (
+          <div className="flex flex-col gap-3 px-5 py-6">
+            <SheetHeader className="p-0">
+              <SheetTitle>상세를 불러오지 못했습니다</SheetTitle>
+              <SheetDescription>
+                네트워크 또는 권한 문제로 회원 상세를 가져오지 못했습니다.
+              </SheetDescription>
+            </SheetHeader>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={retryLoad}
+                className="inline-flex items-center justify-center rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+              >
+                다시 시도
+              </button>
+              <button
+                type="button"
+                onClick={closeSheet}
+                className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        )}
         {detail && (
           <>
             <SheetHeader className="px-5 pr-12 sm:pr-5">
