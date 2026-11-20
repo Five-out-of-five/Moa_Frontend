@@ -255,6 +255,11 @@ export async function resolveReportAction(
     actionReason: string;
     suspensionPeriod?: AdminSuspensionPeriod;
     falseReport?: boolean;
+    /**
+     * UI 가 들고 있는 피신고자 ID. `SUSPEND_ACCOUNT` 본인 보호 가드에 쓰며, 목 모드에서는
+     * store 의 값으로 다시 확인한다. BE 는 reportId 로 자체 검증하되 UI 가 미리 걸러 준다.
+     */
+    targetAccountId?: number;
   },
 ): Promise<ReportResult> {
   try {
@@ -275,18 +280,26 @@ export async function resolveReportAction(
       if (entry.status === "RESOLVED" || entry.status === "REJECTED") {
         return { kind: "conflict", message: "이미 처리된 신고입니다." };
       }
-      // SUSPEND_ACCOUNT 액션이면 피신고자 계정도 목 overlay 에서 함께 정지시킨다.
+      // SUSPEND_ACCOUNT 액션이면 피신고자 상태를 먼저 검증해 "상태만 바뀌고 실제 정지는 생략"
+      // 되는 사고를 막는다. 본인/관리자/존재하지 않는 대상은 상태 변경 **전에** 거절.
       if (input.action === "SUSPEND_ACCOUNT" && input.suspensionPeriod) {
-        const target = accounts.find((a) => a.id === entry.targetAccountId);
-        if (target && target.role !== "ADMIN") {
-          suspendInOverlay(
-            entry.targetAccountId,
-            input.suspensionPeriod,
-            reason,
-            { accountId: guard.adminId, displayName: guard.displayName },
-            reportId,
-          );
+        if (entry.targetAccountId === guard.adminId) {
+          return { kind: "guard", message: "본인 계정은 정지할 수 없습니다." };
         }
+        const target = accounts.find((a) => a.id === entry.targetAccountId);
+        if (!target) {
+          return { kind: "error", message: "정지할 대상 계정을 찾지 못했습니다." };
+        }
+        if (target.role === "ADMIN") {
+          return { kind: "conflict", message: "관리자 계정은 정지할 수 없습니다." };
+        }
+        suspendInOverlay(
+          entry.targetAccountId,
+          input.suspensionPeriod,
+          reason,
+          { accountId: guard.adminId, displayName: guard.displayName },
+          reportId,
+        );
       }
       resolveReportInStore(reportId, guard.adminId, {
         action: input.action,
@@ -298,6 +311,16 @@ export async function resolveReportAction(
       if (input.action === "SUSPEND_ACCOUNT") revalidatePath("/admin/accounts");
       if (!detail) return { kind: "error", message: "상세를 다시 불러오지 못했습니다." };
       return { kind: "ok", detail };
+    }
+
+    // 실 API 분기 — 대상 ID 를 모르면 BE 검증에 맡기지만, UI 가 알고 있는 값이 있으면 본인
+    // 정지 요청을 사전 차단한다 (BE 가드 누락 대비).
+    if (
+      input.action === "SUSPEND_ACCOUNT" &&
+      input.targetAccountId !== undefined &&
+      input.targetAccountId === guard.adminId
+    ) {
+      return { kind: "guard", message: "본인 계정은 정지할 수 없습니다." };
     }
 
     const accessToken = await readAccessToken();

@@ -84,11 +84,17 @@ export function AdminReportDetailSheet({
   }
 
   function handleReview() {
-    if (!detail?.reportId) return;
+    const requestedId = detail?.reportId;
+    if (!requestedId) return;
     startReviewTransition(async () => {
-      const result = await reviewReportAction(detail.reportId!);
+      const result = await reviewReportAction(requestedId);
       if (result.kind === "ok") {
-        setDetail(result.detail);
+        // 응답이 돌아오는 사이 사용자가 다른 신고를 선택했을 수 있다. 요청한 ID 와 현재 로컬
+        // 상세의 ID 가 어긋나면 **무시** — 아니면 늦게 도착한 응답이 지금 화면을 이전 신고의
+        // 상세로 바꿔 Dialog 들이 잘못된 대상에 액션을 실행한다.
+        setDetail((current) =>
+          current?.reportId === requestedId ? result.detail : current,
+        );
         toast.success("처리 담당자로 지정되었습니다.");
         return;
       }

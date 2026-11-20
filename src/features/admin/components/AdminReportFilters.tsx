@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useTransition } from "react";
+import { useEffect, useRef, useTransition } from "react";
 
 import {
   REPORT_REASON_OPTIONS,
@@ -38,13 +38,22 @@ export function AdminReportFilters({
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
 
+  // 연속된 필터 변경 (A 선택 → 전환이 끝나기 전에 B 선택) 이 A 를 덮어쓰지 않도록 **가장 최근
+  // 쿼리 문자열을 ref 에 누적**. 같은 tick 의 두 번째 호출이 첫 번째 변경을 포함한 URL 을 만든다.
+  const queryStringRef = useRef(searchParams.toString());
+  useEffect(() => {
+    queryStringRef.current = searchParams.toString();
+  }, [searchParams]);
+
   function updateQuery(patch: Record<string, string>) {
-    const next = new URLSearchParams(searchParams.toString());
+    const next = new URLSearchParams(queryStringRef.current);
     for (const [key, value] of Object.entries(patch)) {
       if (value) next.set(key, value);
       else next.delete(key);
     }
     next.delete("page");
+    // 다음 호출이 이 변경을 이미 반영된 상태로 시작하도록 ref 를 즉시 갱신.
+    queryStringRef.current = next.toString();
     startTransition(() => {
       router.replace(`${pathname}?${next.toString()}`, { scroll: false });
     });

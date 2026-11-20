@@ -69,6 +69,8 @@ export function AdminReportResolveDialog({ detail, onUpdated }: Props) {
         actionReason: reason,
         suspensionPeriod: action === "SUSPEND_ACCOUNT" ? period : undefined,
         falseReport,
+        // 실 API 분기에서 본인 정지 요청 사전 차단에 사용. 목 모드는 서버가 store 로 재확인.
+        targetAccountId: detail.targetAccount?.accountId,
       });
       if (result.kind === "ok") {
         onUpdated(result.detail);
