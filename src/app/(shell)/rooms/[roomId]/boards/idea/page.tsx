@@ -11,6 +11,7 @@ import { IdeaBoardLive } from "@/features/idea/IdeaBoardLive";
 import { CloseIdeaDialog, IdeaCardDialog, StartIdeaDialog } from "@/features/idea/IdeaDialogs";
 import { ideaDateTime } from "@/features/idea/model";
 import { getIdeaBoard, getIdeaDiscussions } from "@/features/idea/server";
+import { listConflicts } from "@/features/mediation/server";
 import { getFirstRoomProfile } from "@/features/room/first-profile/server";
 import { listRoomMembers } from "@/features/room/server";
 
@@ -29,6 +30,9 @@ export default async function IdeaBoardPage({ params, searchParams }: {
   const roster = board.editable && cards.some(({ commentCount }) => commentCount > 0)
     ? await listRoomMembers(id) : [];
   const discussion = getIdeaDiscussions(cards, roster);
+  const conflicts = await listConflicts(id);
+  const conflictByCard = Object.fromEntries(conflicts.filter(({ state }) => state === "OPEN")
+    .flatMap((conflict) => [[conflict.leftCardId, conflict.id], [conflict.rightCardId, conflict.id]]));
   const participants = new Set([
     ...cards.map(({ author }) => author.accountId),
     ...Object.values(discussion).flatMap(({ comments }) => comments.map(({ authorId }) => authorId)),
@@ -81,7 +85,7 @@ export default async function IdeaBoardPage({ params, searchParams }: {
           {board.editable && !selected && <StartIdeaDialog roomId={id} trigger={<Button size="sm"><Plus aria-hidden="true" />회차 시작</Button>} />}
         </div>
       </header>
-      {selected ? <IdeaBoard session={selected} cards={cards} accountId={account.id} editable={board.editable} discussion={discussion} />
+      {selected ? <IdeaBoard session={selected} cards={cards} accountId={account.id} editable={board.editable} discussion={discussion} conflictByCard={conflictByCard} />
         : <p className="bg-card border-border rounded-card text-muted-foreground border p-5 text-sm">진행 중인 회차가 없어요.</p>}
     </section>
   );

@@ -1,4 +1,5 @@
 import { MessageCircle, SmilePlus } from "lucide-react";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -7,14 +8,17 @@ import type { IdeaCard } from "@/types/db";
 import { DeleteIdeaDialog, IdeaCardDialog } from "./IdeaDialogs";
 import { IDEA_COLUMNS, ideaDateTime,type IdeaDiscussion } from "./model";
 
-export function IdeaCardDetails({ card, canEdit, discussion }: { card: IdeaCard; canEdit: boolean; discussion?: IdeaDiscussion }) {
+export function IdeaCardDetails({ card, canEdit, discussion, conflictId }: { card: IdeaCard; canEdit: boolean; discussion?: IdeaDiscussion; conflictId?: number }) {
   const label = IDEA_COLUMNS.find(({ type }) => type === card.cardType)?.title;
   return (
+    <>
+    {conflictId && <Link className="text-warning mb-1 block text-xs font-semibold underline" href={`/rooms/${card.roomId}/mediation?conflict=${conflictId}`}>충돌 감지 · 비교하기</Link>}
     <Sheet>
       <SheetTrigger asChild>
         <button type="button" className="bg-card border-border rounded-control hover:border-primary/40 focus-visible:ring-ring block w-full space-y-2 border p-3 text-left focus-visible:ring-2">
           <span className="bg-secondary text-primary rounded px-1.5 py-0.5 text-xs">{label}</span>
           <span className="line-clamp-2 block text-sm font-semibold">{card.title}</span>
+          {card.aiSuggested && <span className="text-primary block text-xs">인공지능 제안</span>}
           {card.content && <span className="text-muted-foreground line-clamp-2 block text-xs">{card.content}</span>}
           <span className="text-muted-foreground border-border flex items-center gap-2 border-t pt-2 text-xs">
             <span className="min-w-0 flex-1 truncate">{card.author.displayName}</span>
@@ -57,5 +61,6 @@ export function IdeaCardDetails({ card, canEdit, discussion }: { card: IdeaCard;
         </div>
       </SheetContent>
     </Sheet>
+    </>
   );
 }
