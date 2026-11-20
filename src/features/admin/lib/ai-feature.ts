@@ -30,5 +30,10 @@ const AI_FEATURE_LABELS: Record<AiFeatureCode, string> = {
 
 export function aiFeatureLabel(code: string | undefined | null): string {
   if (!code) return "-";
-  return AI_FEATURE_LABELS[code as AiFeatureCode] ?? code;
+  // Object.hasOwn 로 자체 프로퍼티만 조회 — `constructor`/`__proto__` 같은 상속 키가 들어와도
+  // Function/Object 가 라벨로 반환되는 사고를 막는다.
+  if (Object.hasOwn(AI_FEATURE_LABELS, code)) {
+    return AI_FEATURE_LABELS[code as AiFeatureCode];
+  }
+  return code;
 }
