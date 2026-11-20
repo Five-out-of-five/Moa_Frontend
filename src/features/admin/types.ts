@@ -12,6 +12,8 @@ export type StatsOverview = components["schemas"]["StatsOverviewResponse"];
 export type AiUsageStats = components["schemas"]["AiUsageStatsResponse"];
 export type AiUsageByFeature = components["schemas"]["ByFeature"];
 export type StatsSeriesPoint = components["schemas"]["Point"];
+export type AdminAuditLog = components["schemas"]["AuditLogResponse"];
+export type AdminAuditLogPage = components["schemas"]["PageResponseAuditLogResponse"];
 
 /** 기간 집계 단위 — BE 쿼리 파라미터 `unit` 값. */
 export type StatsUnit = "DAY" | "WEEK" | "MONTH";

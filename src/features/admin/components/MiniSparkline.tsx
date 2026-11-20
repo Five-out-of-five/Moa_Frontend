@@ -25,8 +25,26 @@ export function MiniSparkline({
   const min = Math.min(...data);
   const max = Math.max(...data);
   const span = max - min || 1;
-  const stepX = data.length === 1 ? 0 : width / (data.length - 1);
 
+  // 좌표 1개면 polyline 이 선분을 못 그려서 그래프가 비어 보인다 — 가운데 점을 찍는다.
+  if (data.length === 1) {
+    const value = data[0];
+    const cx = width / 2;
+    const cy = height - ((value - min) / span) * (height - 6) - 3;
+    return (
+      <svg
+        role={ariaLabel ? "img" : undefined}
+        aria-label={ariaLabel}
+        viewBox={`0 0 ${width} ${height}`}
+        className="h-12 w-full"
+        preserveAspectRatio="none"
+      >
+        <circle cx={cx} cy={cy} r={2.5} fill="rgb(100 116 139)" />
+      </svg>
+    );
+  }
+
+  const stepX = width / (data.length - 1);
   const points = data
     .map((v, i) => {
       const x = i * stepX;
@@ -35,10 +53,7 @@ export function MiniSparkline({
     })
     .join(" ");
 
-  const areaPath =
-    data.length > 1
-      ? `M0,${height} L${points.replace(/\s/g, " L")} L${width},${height} Z`
-      : "";
+  const areaPath = `M0,${height} L${points.replace(/\s/g, " L")} L${width},${height} Z`;
 
   return (
     <svg
@@ -48,7 +63,7 @@ export function MiniSparkline({
       className="h-12 w-full"
       preserveAspectRatio="none"
     >
-      {areaPath && <path d={areaPath} fill="rgb(241 245 249)" />}
+      <path d={areaPath} fill="rgb(241 245 249)" />
       <polyline
         fill="none"
         stroke="rgb(100 116 139)"
