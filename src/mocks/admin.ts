@@ -16,6 +16,12 @@ import type {
   AdminAccountDetail,
   AdminAccountStatus,
   AdminAuditLogPage,
+  AdminReport,
+  AdminReportAction,
+  AdminReportDetail,
+  AdminReportReason,
+  AdminReportStatus,
+  AdminReportTargetType,
   AdminSuspension,
   AdminSuspensionPeriod,
   AiUsageByFeature,
@@ -325,4 +331,254 @@ export function toAdminDetail(
     reportBlockedUntil: entry.reportBlockedUntil ?? undefined,
     suspensions: entry.suspensions,
   };
+}
+
+// ===== 신고 관리 =====
+//
+// 접수된 신고를 Map 으로 들고, review/resolve/reject 액션이 상태 전이를 반영한다. 회원 overlay
+// 와 마찬가지로 `shareSettingsMock` 로 globalThis 에 올려 라우트와 Server Action 이 같은 저장소를
+// 공유한다. BE 로 넘어가면 이 Map 은 사용되지 않는다.
+
+/** overdue 판정 기준 — RECEIVED 상태로 이 시간 이상 지나면 `overdue: true`. */
+const REPORT_OVERDUE_MS = 72 * 60 * 60 * 1000;
+
+export interface AdminReportEntry {
+  reportId: number;
+  targetType: AdminReportTargetType;
+  reason: AdminReportReason;
+  status: AdminReportStatus;
+  reporterAccountId: number;
+  targetAccountId: number;
+  roomId: number;
+  roomName: string;
+  detail: string;
+  snapshot: string;
+  targetDeleted: boolean;
+  createdAt: string;
+  action: AdminReportAction | null;
+  actionReason: string | null;
+  handledByAccountId: number | null;
+  handledAt: string | null;
+  falseReport: boolean;
+}
+
+const REPORT_SEED: Omit<AdminReportEntry, "createdAt">[] = [
+  {
+    reportId: 101,
+    targetType: "MESSAGE",
+    reason: "ABUSE",
+    status: "RECEIVED",
+    reporterAccountId: 2,
+    targetAccountId: 4,
+    roomId: 1,
+    roomName: "모아 — 디자인 리뷰",
+    detail: "채팅에서 반복적으로 비방 표현을 사용합니다.",
+    snapshot: "이거 완전 쓰레기네 다시 해 와",
+    targetDeleted: false,
+    action: null,
+    actionReason: null,
+    handledByAccountId: null,
+    handledAt: null,
+    falseReport: false,
+  },
+  {
+    reportId: 102,
+    targetType: "CARD",
+    reason: "INAPPROPRIATE_FILE",
+    status: "IN_PROGRESS",
+    reporterAccountId: 3,
+    targetAccountId: 5,
+    roomId: 2,
+    roomName: "모아 — 백엔드 스터디",
+    detail: "아이디어 카드에 성인물 이미지가 첨부되었습니다.",
+    snapshot: "[사진] NSFW_image_01.png",
+    targetDeleted: false,
+    action: null,
+    actionReason: null,
+    handledByAccountId: 1,
+    handledAt: null,
+    falseReport: false,
+  },
+  {
+    reportId: 103,
+    targetType: "COMMENT",
+    reason: "PRIVACY",
+    status: "RESOLVED",
+    reporterAccountId: 4,
+    targetAccountId: 6,
+    roomId: 3,
+    roomName: "모아 — 운영팀",
+    detail: "제 전화번호가 댓글에 노출되었습니다.",
+    snapshot: "010-****-**** 로 연락 주세요",
+    targetDeleted: true,
+    action: "DELETE_CONTENT",
+    actionReason: "개인정보 포함된 댓글을 삭제했습니다.",
+    handledByAccountId: 1,
+    handledAt: null,
+    falseReport: false,
+  },
+  {
+    reportId: 104,
+    targetType: "MESSAGE",
+    reason: "SPAM",
+    status: "REJECTED",
+    reporterAccountId: 5,
+    targetAccountId: 7,
+    roomId: 4,
+    roomName: "모아 — 마케팅",
+    detail: "채팅에서 광고 메시지를 반복 전송합니다.",
+    snapshot: "할인 이벤트 클릭!",
+    targetDeleted: false,
+    action: null,
+    actionReason: "커뮤니티 공지 범위 내로 판단되어 반려했습니다.",
+    handledByAccountId: 1,
+    handledAt: null,
+    falseReport: true,
+  },
+  {
+    reportId: 105,
+    targetType: "CARD",
+    reason: "ETC",
+    status: "RECEIVED",
+    reporterAccountId: 6,
+    targetAccountId: 8,
+    roomId: 5,
+    roomName: "모아 — 디자인 리뷰",
+    detail: "저작권이 불분명한 이미지가 보드에 공유됩니다.",
+    snapshot: "[이미지] figma_export.png",
+    targetDeleted: false,
+    action: null,
+    actionReason: null,
+    handledByAccountId: null,
+    handledAt: null,
+    falseReport: false,
+  },
+];
+
+function seedReports(): Map<number, AdminReportEntry> {
+  const m = new Map<number, AdminReportEntry>();
+  const now = Date.now();
+  REPORT_SEED.forEach((s, i) => {
+    // 가장 오래된 건부터 72시간 전, 나머지는 균등 간격 — 첫 번째가 overdue 상태가 되도록.
+    const ageHours = (REPORT_SEED.length - i) * 30 + 6;
+    const createdAt = new Date(now - ageHours * 60 * 60 * 1000).toISOString();
+    // RESOLVED/REJECTED 는 접수 뒤 ~5시간 뒤 처리된 것처럼.
+    const handledAt =
+      s.status === "RESOLVED" || s.status === "REJECTED"
+        ? new Date(new Date(createdAt).getTime() + 5 * 60 * 60 * 1000).toISOString()
+        : s.handledAt;
+    m.set(s.reportId, { ...s, createdAt, handledAt });
+  });
+  return m;
+}
+
+export const adminReportsStore = shareSettingsMock(
+  "adminReportsStore",
+  seedReports(),
+);
+
+function personByAccountId(
+  accountId: number | null,
+): { accountId?: number; name?: string } | undefined {
+  if (accountId === null) return undefined;
+  const acc = accounts.find((a) => a.id === accountId);
+  if (!acc) return { accountId };
+  return { accountId: acc.id, name: acc.name };
+}
+
+function isOverdue(entry: AdminReportEntry): boolean {
+  if (entry.status !== "RECEIVED") return false;
+  return Date.now() - Date.parse(entry.createdAt) >= REPORT_OVERDUE_MS;
+}
+
+export function toAdminReport(entry: AdminReportEntry): AdminReport {
+  return {
+    reportId: entry.reportId,
+    targetType: entry.targetType,
+    reason: entry.reason,
+    status: entry.status,
+    reporter: personByAccountId(entry.reporterAccountId),
+    targetAccount: personByAccountId(entry.targetAccountId),
+    room: { roomId: entry.roomId, name: entry.roomName },
+    createdAt: entry.createdAt,
+    overdue: isOverdue(entry),
+  };
+}
+
+export function toAdminReportDetail(reportId: number): AdminReportDetail | null {
+  const entry = adminReportsStore.get(reportId);
+  if (!entry) return null;
+  return {
+    reportId: entry.reportId,
+    targetType: entry.targetType,
+    reason: entry.reason,
+    status: entry.status,
+    reporter: personByAccountId(entry.reporterAccountId),
+    targetAccount: personByAccountId(entry.targetAccountId),
+    room: { roomId: entry.roomId, name: entry.roomName },
+    createdAt: entry.createdAt,
+    overdue: isOverdue(entry),
+    detail: entry.detail,
+    snapshot: entry.snapshot,
+    targetDeleted: entry.targetDeleted,
+    action: entry.action ?? undefined,
+    actionReason: entry.actionReason ?? undefined,
+    handledBy: entry.handledByAccountId !== null
+      ? personByAccountId(entry.handledByAccountId)
+      : undefined,
+    handledAt: entry.handledAt ?? undefined,
+  };
+}
+
+export function reviewReportInStore(reportId: number, adminId: number): AdminReportEntry | null {
+  const entry = adminReportsStore.get(reportId);
+  if (!entry) return null;
+  if (entry.status !== "RECEIVED") return entry; // 멱등
+  entry.status = "IN_PROGRESS";
+  entry.handledByAccountId = adminId;
+  return entry;
+}
+
+export interface ResolveReportInput {
+  action: AdminReportAction;
+  actionReason: string;
+  falseReport?: boolean;
+}
+
+export function resolveReportInStore(
+  reportId: number,
+  adminId: number,
+  input: ResolveReportInput,
+): AdminReportEntry | null {
+  const entry = adminReportsStore.get(reportId);
+  if (!entry) return null;
+  entry.status = "RESOLVED";
+  entry.action = input.action;
+  entry.actionReason = input.actionReason;
+  entry.falseReport = input.falseReport ?? false;
+  entry.handledByAccountId = adminId;
+  entry.handledAt = new Date().toISOString();
+  if (input.action === "DELETE_CONTENT") entry.targetDeleted = true;
+  return entry;
+}
+
+export interface RejectReportInput {
+  actionReason: string;
+  falseReport?: boolean;
+}
+
+export function rejectReportInStore(
+  reportId: number,
+  adminId: number,
+  input: RejectReportInput,
+): AdminReportEntry | null {
+  const entry = adminReportsStore.get(reportId);
+  if (!entry) return null;
+  entry.status = "REJECTED";
+  entry.action = null;
+  entry.actionReason = input.actionReason;
+  entry.falseReport = input.falseReport ?? false;
+  entry.handledByAccountId = adminId;
+  entry.handledAt = new Date().toISOString();
+  return entry;
 }
