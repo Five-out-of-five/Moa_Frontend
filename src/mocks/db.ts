@@ -2,6 +2,7 @@ import { faker } from "@faker-js/faker";
 
 import { shiftMoodDate, todayMoodDate } from "@/features/mood/date";
 import { computeDDay, computeOverdue } from "@/features/task/lib/d-day";
+import { DEFAULT_WIDGET_LAYOUT } from "@/features/widget/default-layout";
 import type {
   Account,
   AccountRole,
@@ -196,12 +197,7 @@ export const roomWidgets: RoomWidget[] = shareSettingsMock("roomWidgets", fixtur
 
 export function addDefaultRoomWidgets(roomId: number) {
   let id = Math.max(0, ...roomWidgets.map(({ id }) => id));
-  roomWidgets.push(
-    { id: ++id, roomId, widgetType: "MOOD", x: 0, y: 0, width: 3, height: 4 },
-    { id: ++id, roomId, widgetType: "IDEA_BOARD", x: 3, y: 0, width: 6, height: 7 },
-    { id: ++id, roomId, widgetType: "CATCHUP_BRIEFING", x: 9, y: 0, width: 3, height: 7 },
-    { id: ++id, roomId, widgetType: "TASK_BOARD", x: 3, y: 7, width: 6, height: 4 },
-  );
+  roomWidgets.push(...DEFAULT_WIDGET_LAYOUT.map((preset) => ({ ...preset, id: ++id, roomId })));
 }
 
 // ===== 상태값 (MOOD) =====
