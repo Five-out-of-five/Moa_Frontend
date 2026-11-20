@@ -13,8 +13,9 @@ const SOCIAL_LOGIN_OPTIONS = [
   { provider: "NAVER", initial: "N", badgeClassName: "bg-login-naver text-login-badge-light" },
 ] as const;
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
-  const next = getInviteReturnPath((await searchParams).next);
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string }> }) {
+  const query = await searchParams;
+  const next = getInviteReturnPath(query.next);
   return (
     <main className="bg-login-surface grid min-h-dvh place-items-center px-5 py-10 sm:py-14">
       <section aria-labelledby="login-title" className="w-full max-w-md text-center">
@@ -27,6 +28,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           MOA에서 아이디어와 업무, 팀의 대화를 한 흐름으로 연결하세요.
         </p>
 
+        {query.error && <p role="alert" className="text-destructive mt-4 text-sm">로그인을 완료하지 못했어요. 다시 시도해 주세요.</p>}
         <ul className="mt-7 grid gap-2.5">
           {SOCIAL_LOGIN_OPTIONS.map(({ provider, initial, badgeClassName }) => {
             const signup = getSignupPreviewHref(provider);

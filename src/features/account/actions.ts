@@ -5,7 +5,9 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import { isAuthMock } from "@/features/auth/config";
 import { MOCK_ACCOUNT_COOKIE } from "@/features/auth/mock-session";
+import { authCookieHeaders, clearAuthTokens } from "@/features/auth/session";
 import { api } from "@/lib/api";
 import { isMock } from "@/mocks/config";
 
@@ -43,13 +45,14 @@ export async function updateAccountNameAction(
  *    `POST /auth/logout` 을 거친다.
  */
 export async function logoutAction() {
-  if (isMock) (await cookies()).delete(MOCK_ACCOUNT_COOKIE);
-  if (!isMock) {
+  (await cookies()).delete(MOCK_ACCOUNT_COOKIE);
+  if (!isAuthMock) {
     try {
-      await api("/api/v1/auth/logout", { method: "POST" });
+      await api("/api/v1/auth/logout", { method: "POST", headers: await authCookieHeaders() });
     } catch {
       // 실패해도 클라이언트 세션은 비워 로그인 화면으로 보낸다.
     }
   }
+  await clearAuthTokens();
   redirect("/login");
 }

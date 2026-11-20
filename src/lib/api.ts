@@ -57,6 +57,7 @@ export interface ApiInit extends Omit<RequestInit, "body"> {
   timeoutMs?: number;
   /** Access Token — 로그인 전 화면이면 넘기지 않는다 */
   accessToken?: string;
+  onResponse?: (data: unknown, headers: Headers) => Promise<void>;
 }
 
 /**
@@ -66,7 +67,7 @@ export interface ApiInit extends Omit<RequestInit, "body"> {
  * - 실패: `ApiError` throw (상위에서 toast·redirect 등으로 처리)
  */
 export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
-  const { json, timeoutMs, accessToken, headers, ...rest } = init;
+  const { json, timeoutMs, accessToken, headers, onResponse, ...rest } = init;
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
@@ -88,6 +89,7 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
 
     const envelope = (await res.json()) as ApiEnvelope<T>;
     if (envelope.success) {
+      await onResponse?.(envelope.data, res.headers);
       return envelope.data;
     }
     throw new ApiError(
