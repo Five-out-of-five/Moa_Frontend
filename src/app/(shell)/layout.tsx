@@ -1,5 +1,8 @@
+import { Suspense } from "react";
+
 import { Header } from "@/components/common/Header";
 import { Sidebar } from "@/components/common/Sidebar";
+import { NoticeBannerLoader } from "@/features/notice/NoticeBannerLoader";
 
 /**
  * (shell) 라우트 그룹 — 로그인 뒤 전역 공용 레이아웃.
@@ -24,12 +27,17 @@ export default function ShellLayout({
       <Header />
       <div className="flex pt-[var(--header-height)]">
         <Sidebar />
-        <main
-          id="main"
-          className="min-w-0 flex-1 overflow-x-hidden px-6 py-6"
-        >
-          {children}
-        </main>
+        <div data-shell-body className="min-w-0 flex-1 [--shell-header-height:var(--header-height)]">
+          <Suspense fallback={null}>
+            <NoticeBannerLoader />
+          </Suspense>
+          <main
+            id="main"
+            className="min-w-0 overflow-x-hidden px-6 py-6 [--header-height:calc(var(--shell-header-height)_+_var(--notice-banner-height,0px))]"
+          >
+            {children}
+          </main>
+        </div>
       </div>
     </div>
   );

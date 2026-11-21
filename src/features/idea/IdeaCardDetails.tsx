@@ -2,16 +2,14 @@ import { GitCompareArrows, MessageCircle, SmilePlus } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { ReportMenu } from "@/features/report/ReportMenu";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { ReportMenu } from "@/features/report/ReportMenu";
 import type { IdeaCard } from "@/types/db";
 
 import { DeleteIdeaDialog, IdeaCardDialog } from "./IdeaDialogs";
 import { IDEA_COLUMNS, ideaDateTime, type IdeaDiscussion, type IdeaSourceLink } from "./model";
 
-export function IdeaCardDetails({ card, canEdit, canReport = false, discussion, conflictId }: { card: IdeaCard; canEdit: boolean; canReport?: boolean; discussion?: IdeaDiscussion; conflictId?: number }) {
-export function IdeaCardDetails({ card, canEdit, discussion, conflictId, sources = [] }: { card: IdeaCard; canEdit: boolean; discussion?: IdeaDiscussion; conflictId?: number; sources?: IdeaSourceLink[] }) {
+export function IdeaCardDetails({ card, canEdit, canReport = false, discussion, conflictId, sources = [] }: { card: IdeaCard; canEdit: boolean; canReport?: boolean; discussion?: IdeaDiscussion; conflictId?: number; sources?: IdeaSourceLink[] }) {
   const label = IDEA_COLUMNS.find(({ type }) => type === card.cardType)?.title;
   return (
     <div className="relative">

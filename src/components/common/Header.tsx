@@ -1,7 +1,9 @@
+import { Megaphone } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { Button } from "@/components/ui/button";
 import {
   ProfileMenuFallback,
 } from "@/features/account/components/ProfileMenu";
@@ -58,6 +60,11 @@ export function Header() {
         </Suspense>
 
         <div className="ml-auto flex items-center gap-2">
+          <Button asChild variant="ghost" size="icon-sm">
+            <Link href="/notices" aria-label="공지사항" title="공지사항">
+              <Megaphone aria-hidden="true" />
+            </Link>
+          </Button>
           <Suspense fallback={<NotificationBellFallback />}>
             <NotificationBellLoader />
           </Suspense>
