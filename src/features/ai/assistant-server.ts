@@ -10,9 +10,10 @@ import { getAiContext } from "./server";
 export async function openAssistantStream(roomId: number, question: string, signal: AbortSignal) {
   const { key } = await getAiContext(roomId);
   if (typeof question !== "string" || !question.trim() || question.length > 200) throw new Error("질문을 1~200자로 입력해 주세요.");
-  takeAiCall(roomId, "assistant-layout");
   const history = aiMock.messages.get(key) ?? [];
   if (history.some((message) => message.state === "streaming")) throw new Error("이 방에서 진행 중인 응답을 먼저 중단해 주세요.");
+  if (signal.aborted) throw new Error("요청이 취소됐어요.");
+  takeAiCall(roomId, "assistant-chat");
   const cards = ideaCards.filter((card) => card.roomId === roomId);
   const work = tasks.filter((task) => task.roomId === roomId);
   const polls = votes.filter((vote) => vote.roomId === roomId && vote.status === "OPEN");
@@ -38,9 +39,18 @@ export async function openAssistantStream(roomId: number, question: string, sign
         signal.removeEventListener("abort", stop);
         const stored = history.find(({ id }) => id === message.id);
         if (stored?.state === "streaming") stored.state = "stopped";
-        controller.close();
+        aiMock.streams.delete(key);
+        try { controller.close(); } catch { /* 스트림 소비자가 먼저 취소했을 수 있다. */ }
       };
       close = stop;
+      aiMock.streams.set(key, { id: message.id, stop: () => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(JSON.stringify({ type: "stopped" }) + "\n"));
+        } catch {
+          // 취소된 연결에는 종료 메시지를 보낼 수 없다.
+        } finally { stop(); }
+      } });
       const send = async () => {
         try {
           await getAiContext(roomId);
@@ -57,10 +67,14 @@ export async function openAssistantStream(roomId: number, question: string, sign
             stop();
           } else timer = setTimeout(() => void send(), 45);
         } catch {
+          if (closed) return;
           const stored = history.find(({ id }) => id === message.id);
           if (stored) stored.state = "failed";
-          if (!closed) controller.enqueue(encoder.encode(JSON.stringify({ type: "error", message: "응답이 중단됐어요. 다시 시도해 주세요." }) + "\n"));
-          stop();
+          try {
+            controller.enqueue(encoder.encode(JSON.stringify({ type: "error", message: "응답이 중단됐어요. 다시 시도해 주세요." }) + "\n"));
+          } catch {
+            // 연결 종료와 타이머 실행이 겹칠 수 있다.
+          } finally { stop(); }
         }
       };
       signal.addEventListener("abort", stop, { once: true });
@@ -70,4 +84,10 @@ export async function openAssistantStream(roomId: number, question: string, sign
     cancel() { close?.(); },
   });
   return new Response(stream, { headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" } });
+}
+
+export async function stopAssistantStream(roomId: number, messageId: string | null) {
+  const { key } = await getAiContext(roomId);
+  const stream = aiMock.streams.get(key);
+  if (stream && stream.id === messageId) stream.stop();
 }

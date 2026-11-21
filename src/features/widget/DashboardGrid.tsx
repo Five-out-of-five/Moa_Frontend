@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type CSSProperties, type ReactNode, useEffect } from "react";
 
+import { LayoutRecommendation } from "@/features/ai/LayoutRecommendation";
 import type { RoomWidget } from "@/types/db";
 
 import { AddWidgetDialog } from "./AddWidgetDialog";
@@ -48,15 +49,15 @@ export function DashboardGrid({
     "aria-disabled": pending !== null,
   };
 
-  if (widgets.length === 0 && !canAdd) {
-    return <p className="text-muted-foreground text-sm">배치된 위젯이 없습니다.</p>;
-  }
-
   return (
     <>
-    {editable && <div className="mb-3 flex justify-end">
-      <WidgetRemovalControls roomId={roomId} disabled={Boolean(projected)} onChanged={applySnapshot} />
-    </div>}
+    <div className="mb-3 overflow-x-auto p-1">
+      <div role="group" aria-label="대시보드 레이아웃" className="ml-auto flex w-max items-center gap-2">
+        <LayoutRecommendation roomId={roomId} />
+        {editable && <WidgetRemovalControls roomId={roomId} disabled={Boolean(projected)} onChanged={applySnapshot} />}
+      </div>
+    </div>
+    {widgets.length === 0 && !canAdd && <p className="text-muted-foreground text-sm">배치된 위젯이 없습니다.</p>}
     <div
       ref={grid}
       className="grid grid-cols-1 gap-[var(--widget-gap)] sm:auto-rows-[var(--widget-row)] sm:grid-cols-[var(--widget-columns)]"

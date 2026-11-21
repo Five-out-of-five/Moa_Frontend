@@ -31,7 +31,7 @@ export async function recommendLayout(roomId: number, purpose: string): Promise<
       const placement = findOpenPlacement(widgets, Math.max(minW, widget.width), Math.max(minH, widget.height));
       widgets.push({ ...widget, ...placement });
     }
-    const proposal = { id: randomUUID(), widgets, reason: /회고|아이디어/.test(purpose)
+    const proposal = { id: randomUUID(), widgets, revision: getMockLayout(roomId).revision, reason: /회고|아이디어/.test(purpose)
       ? "아이디어와 팀 상태를 먼저 확인할 수 있도록 배치했어요."
       : "업무와 진행 상황을 먼저 확인할 수 있도록 배치했어요." };
     aiMock.proposals.set(context.key, proposal);
@@ -44,6 +44,11 @@ export async function applyAiLayout(roomId: number, proposalId: string): Promise
     const { key } = await getAiContext(roomId);
     const proposal = aiMock.proposals.get(key);
     if (!proposal || proposal.id !== proposalId) throw new Error("추천이 만료됐어요. 다시 추천받아 주세요.");
+    const layout = getMockLayout(roomId);
+    if (proposal.revision !== layout.revision) {
+      aiMock.proposals.delete(key);
+      throw new Error("대시보드 배치가 변경됐어요. 다시 추천받아 주세요.");
+    }
     const current = roomWidgets.filter((widget) => widget.roomId === roomId);
     if (current.length !== proposal.widgets.length || current.some((widget) => !proposal.widgets.some((item) => item.id === widget.id && item.widgetType === widget.widgetType))) {
       throw new Error("위젯 구성이 변경됐어요. 다시 추천받아 주세요.");
@@ -55,7 +60,6 @@ export async function applyAiLayout(roomId: number, proposalId: string): Promise
     }
     const previous = current.map((widget) => ({ ...widget }));
     for (const widget of current) Object.assign(widget, proposal.widgets.find(({ id }) => id === widget.id));
-    const layout = getMockLayout(roomId);
     layout.revision += 1;
     aiMock.undos.set(key, { widgets: previous, revision: layout.revision });
     aiMock.proposals.delete(key);

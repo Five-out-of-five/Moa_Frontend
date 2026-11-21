@@ -11,6 +11,15 @@ import { aiMock, takeAiCall } from "./mock-state";
 import { getAiContext } from "./server";
 import type { AiResult, MeetingSummary } from "./types";
 
+const SUMMARY_TTL_MS = 24 * 60 * 60 * 1000;
+
+function pruneExpiredSummaries(now: number) {
+  for (const [key, drafts] of aiMock.summaryDrafts) {
+    for (const [id, expiresAt] of drafts) if (expiresAt <= now) drafts.delete(id);
+    if (!drafts.size) aiMock.summaryDrafts.delete(key);
+  }
+}
+
 export async function summarizeMeeting(roomId: number, sessionIds: number[]): Promise<AiResult<MeetingSummary>> {
   try {
     const { key } = await getAiContext(roomId);
@@ -24,7 +33,11 @@ export async function summarizeMeeting(roomId: number, sessionIds: number[]): Pr
     takeAiCall(roomId, "summary");
     const text = `핵심 내용\n${cards.length}개의 카드에서 팀의 개선 방향을 정리했어요.\n\n주요 논의\n${cards.slice(0, 4).map((card) => `• ${card.title}`).join("\n")}\n\n추천하는 다음 행동\n• 우선순위를 함께 정하고 다음 회차에서 결과를 확인해요.`.slice(0, 1000);
     const summary = { id: randomUUID(), text, sources: cards.map(({ id, title }) => ({ id, title })) };
-    aiMock.summaries.set(key, summary);
+    const now = Date.now();
+    pruneExpiredSummaries(now);
+    const drafts = aiMock.summaryDrafts.get(key) ?? new Map();
+    drafts.set(summary.id, now + SUMMARY_TTL_MS);
+    aiMock.summaryDrafts.set(key, drafts);
     return { ok: true, data: summary };
   } catch (error) { return { ok: false, error: error instanceof Error ? error.message : "요약을 만들지 못했어요." }; }
 }
@@ -32,8 +45,9 @@ export async function summarizeMeeting(roomId: number, sessionIds: number[]): Pr
 export async function saveMeetingSummary(roomId: number, summaryId: string, text: string): Promise<AiResult<number>> {
   try {
     const { key, account, membership } = await getAiContext(roomId);
-    const summary = aiMock.summaries.get(key);
-    if (!summary || summary.id !== summaryId) throw new Error("저장할 요약을 다시 생성해 주세요.");
+    pruneExpiredSummaries(Date.now());
+    const drafts = aiMock.summaryDrafts.get(key);
+    if (!drafts?.has(summaryId)) throw new Error("저장할 요약을 다시 생성해 주세요.");
     if (typeof text !== "string" || !text.trim() || text.length > 1000) throw new Error("요약을 1~1,000자로 입력해 주세요.");
     closeExpiredIdeaSession(roomId);
     const session = boardSessions.find((item) => item.roomId === roomId && item.state === "ACTIVE");
@@ -45,7 +59,8 @@ export async function saveMeetingSummary(roomId: number, summaryId: string, text
       sortOrder: ideaCards.filter((card) => card.sessionId === session.id).length,
       commentCount: 0, reactionCount: 0, convertedTaskId: null, createdAt: new Date().toISOString(), aiSuggested: true,
     });
-    aiMock.summaries.delete(key);
+    drafts.delete(summaryId);
+    if (!drafts.size) aiMock.summaryDrafts.delete(key);
     markIdeaChanged(roomId);
     revalidatePath(`/rooms/${roomId}/boards/idea`);
     return { ok: true, data: id };

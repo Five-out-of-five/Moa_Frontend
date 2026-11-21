@@ -1,4 +1,4 @@
-import { ArrowLeft, Scale } from "lucide-react";
+import { ArrowLeft, ArrowRight, Scale } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -84,8 +84,11 @@ function OriginalCard({ card, href }: { card: IdeaCard; href: string }) {
   return <article className="border-border rounded-control flex min-w-0 flex-col gap-3 border p-4">
     <p className="text-muted-foreground text-xs">원본 의견</p><h2 className="text-sm font-semibold break-words">{card.title}</h2>
     <p className="text-muted-foreground flex-1 text-sm break-words whitespace-pre-wrap">{card.content}</p>
-    <div className="border-border flex flex-wrap justify-between gap-2 border-t pt-3 text-xs">
-      <span>{card.author.displayName}</span><Link className="text-primary underline" href={href}>원본 카드 보기</Link>
+    <div className="border-border flex items-center justify-between gap-2 border-t pt-3">
+      <span className="text-muted-foreground min-w-0 truncate text-xs">{card.author.displayName}</span>
+      <Button asChild size="sm" variant="secondary">
+        <Link href={href} aria-label={`${card.title} 원본 카드 보기`}>원본 카드 보기<ArrowRight aria-hidden="true" className="size-3.5" /></Link>
+      </Button>
     </div>
   </article>;
 }

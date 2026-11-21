@@ -2,13 +2,13 @@ import { GitCompareArrows, MessageCircle, SmilePlus } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import type { IdeaCard } from "@/types/db";
 
 import { DeleteIdeaDialog, IdeaCardDialog } from "./IdeaDialogs";
-import { IDEA_COLUMNS, ideaDateTime,type IdeaDiscussion } from "./model";
+import { IDEA_COLUMNS, ideaDateTime, type IdeaDiscussion, type IdeaSourceLink } from "./model";
 
-export function IdeaCardDetails({ card, canEdit, discussion, conflictId }: { card: IdeaCard; canEdit: boolean; discussion?: IdeaDiscussion; conflictId?: number }) {
+export function IdeaCardDetails({ card, canEdit, discussion, conflictId, sources = [] }: { card: IdeaCard; canEdit: boolean; discussion?: IdeaDiscussion; conflictId?: number; sources?: IdeaSourceLink[] }) {
   const label = IDEA_COLUMNS.find(({ type }) => type === card.cardType)?.title;
   return (
     <div className="relative">
@@ -34,6 +34,18 @@ export function IdeaCardDetails({ card, canEdit, discussion, conflictId }: { car
         </SheetHeader>
         <div className="space-y-5 px-4 pb-5">
           <p className="text-sm break-words whitespace-pre-wrap">{card.content || "등록된 내용이 없어요."}</p>
+          {sources.length > 0 && (
+            <section className="border-border space-y-2 border-t pt-4">
+              <h3 className="text-sm font-semibold">절충안 원본 카드</h3>
+              <ul className="space-y-1 text-sm">
+                {sources.map((source) => (
+                  <li key={source.id}>
+                    <SheetClose asChild><Link href={source.href} className="text-primary underline underline-offset-2">{source.title}</Link></SheetClose>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {canEdit && (
             <div className="flex flex-wrap gap-2">
               <IdeaCardDialog roomId={card.roomId} sessionId={card.sessionId} card={card} trigger={<Button variant="outline">카드 수정</Button>} />

@@ -25,3 +25,4 @@ export interface IdeaDiscussion {
   comments: { authorId: number; author: string; text: string }[];
   reactions: { emoji: string; count: number }[];
 }
+export type IdeaSourceLink = { id: number; href: string; title: string };

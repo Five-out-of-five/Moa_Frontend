@@ -1,18 +1,21 @@
 import "server-only";
 
-import type { AiMessage, LayoutProposal, MeetingSummary } from "./types";
+import type { AiMessage, LayoutProposal } from "./types";
 
 type State = {
   messages: Map<string, AiMessage[]>;
+  streams: Map<string, { id: string; stop: () => void }>;
   proposals: Map<string, LayoutProposal>;
-  summaries: Map<string, MeetingSummary>;
+  summaryDrafts: Map<string, Map<string, number>>;
   undos: Map<string, { revision: number; widgets: LayoutProposal["widgets"] }>;
   calls: Map<string, number>;
 };
 const runtime = globalThis as typeof globalThis & { moaAi?: State };
 export const aiMock: State = (runtime.moaAi ??= {
-  messages: new Map(), proposals: new Map(), summaries: new Map(), undos: new Map(), calls: new Map(),
+  messages: new Map(), streams: new Map(), proposals: new Map(), summaryDrafts: new Map(), undos: new Map(), calls: new Map(),
 });
+aiMock.streams ??= new Map();
+aiMock.summaryDrafts ??= new Map();
 
 export function takeAiCall(roomId: number, feature: string) {
   const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date());
