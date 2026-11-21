@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import { IdeaBoardLive } from "@/features/idea/IdeaBoardLive";
 import { getIdeaBoard } from "@/features/idea/server";
 import { CompromiseEditor, DismissConflict } from "@/features/mediation/MediationControls";
 import { MEDIATION_FILTERS } from "@/features/mediation/model";
@@ -40,6 +41,7 @@ export default async function MediationPage({ params, searchParams }: {
   ));
   return (
     <section className="mx-auto max-w-7xl space-y-4">
+      {board && <IdeaBoardLive roomId={id} revision={board.revision} />}
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div><p className="text-primary text-xs">워크스페이스</p><h1 className="mt-1 text-2xl font-bold">인공지능 중재</h1>
           <p className="text-muted-foreground mt-1 text-sm">충돌하는 의견을 살펴보고 팀이 결정할 절충안을 준비하세요.</p></div>

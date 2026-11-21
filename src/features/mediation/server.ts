@@ -1,5 +1,6 @@
 import "server-only";
 
+import { getIdeaRevision } from "@/features/idea/mock-board";
 import { getManagedRoom } from "@/features/room/management/server";
 import { api } from "@/lib/api";
 import { isMock } from "@/mocks/config";
@@ -25,7 +26,7 @@ export async function getMediationBoard(roomId: number) {
   const items = await listConflicts(roomId);
   const ids = new Set(items.map(({ id }) => id));
   return {
-    enabled, items,
+    enabled, items, revision: getIdeaRevision(roomId),
     cards: ideaCards.filter((card) => card.roomId === roomId && items.some((item) => item.leftCardId === card.id || item.rightCardId === card.id)),
     drafts: compromiseDrafts.filter((draft) => ids.has(draft.conflictId) && draft.requestedBy.accountId === context.account.id),
   };
