@@ -103,6 +103,7 @@ export function ChannelPageClient({ channel, initialMessages, me }: Props) {
 
       <div className="border-border-soft bg-background border-t px-6 py-3">
         <MessageComposer
+          toneTarget={{ kind: "CHAT", roomId: channel.roomId, channelId: channel.id }}
           placeholder={`${channel.name} 채널에 메시지 보내기`}
           disabledReason={me ? undefined : "로그인 후 메시지를 보낼 수 있어요."}
           onSend={handleSend}
