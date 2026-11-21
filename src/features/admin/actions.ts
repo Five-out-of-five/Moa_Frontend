@@ -10,8 +10,11 @@ import {
   adminAccountsOverlay,
   adminNoticesStore,
   adminReportsStore,
+  adminRoomsOverlay,
   createNoticeInStore,
   deleteNoticeInStore,
+  inactivateRoomInStore,
+  reactivateRoomInStore,
   rejectReportInStore,
   resolveReportInStore,
   reviewReportInStore,
@@ -19,6 +22,7 @@ import {
   toAdminDetail,
   toAdminNoticeDetail,
   toAdminReportDetail,
+  toAdminRoomDetail,
   unsuspendInOverlay,
   updateNoticeInStore,
 } from "@/mocks/admin";
@@ -32,6 +36,7 @@ import type {
   AdminNoticeRequest,
   AdminReportAction,
   AdminReportDetail,
+  AdminRoomDetail,
   AdminSuspensionPeriod,
 } from "./types";
 
@@ -535,6 +540,80 @@ export async function deleteNoticeAction(
     );
     revalidatePath("/admin/notices");
     return { kind: "ok-void" };
+  } catch (e) {
+    return wrapError(e);
+  }
+}
+
+// ===== 방 관리 Server Actions =====
+
+type RoomResult = Ok<AdminRoomDetail> | Guard | Conflict | Err;
+
+export async function inactivateRoomAction(
+  roomId: number,
+  reason: string,
+): Promise<RoomResult> {
+  try {
+    const guard = await ensureAdmin();
+    if (!guard.ok) return guard.guard;
+
+    const trimmed = reason.trim();
+    if (trimmed.length === 0) {
+      return { kind: "guard", message: "비활성 사유를 입력해 주세요." };
+    }
+
+    if (isMock) {
+      const entry = adminRoomsOverlay.get(roomId);
+      if (!entry) return { kind: "error", message: "방을 찾지 못했습니다." };
+      if (entry.status === "INACTIVE") {
+        return { kind: "conflict", message: "이미 비활성 상태인 방입니다." };
+      }
+      inactivateRoomInStore(roomId, guard.adminId, trimmed);
+      const detail = toAdminRoomDetail(roomId);
+      revalidatePath("/admin/rooms");
+      if (!detail) return { kind: "error", message: "상세를 다시 불러오지 못했습니다." };
+      return { kind: "ok", detail };
+    }
+
+    const accessToken = await readAccessToken();
+    const detail = await api<AdminRoomDetail>(
+      `/api/v1/admin/rooms/${roomId}/inactivation?adminId=${guard.adminId}`,
+      { method: "POST", json: { reason: trimmed }, accessToken },
+    );
+    revalidatePath("/admin/rooms");
+    return { kind: "ok", detail };
+  } catch (e) {
+    return wrapError(e);
+  }
+}
+
+export async function reactivateRoomAction(
+  roomId: number,
+): Promise<RoomResult> {
+  try {
+    const guard = await ensureAdmin();
+    if (!guard.ok) return guard.guard;
+
+    if (isMock) {
+      const entry = adminRoomsOverlay.get(roomId);
+      if (!entry) return { kind: "error", message: "방을 찾지 못했습니다." };
+      if (entry.status === "ACTIVE") {
+        return { kind: "conflict", message: "이미 활성 상태인 방입니다." };
+      }
+      reactivateRoomInStore(roomId);
+      const detail = toAdminRoomDetail(roomId);
+      revalidatePath("/admin/rooms");
+      if (!detail) return { kind: "error", message: "상세를 다시 불러오지 못했습니다." };
+      return { kind: "ok", detail };
+    }
+
+    const accessToken = await readAccessToken();
+    const detail = await api<AdminRoomDetail>(
+      `/api/v1/admin/rooms/${roomId}/inactivation?adminId=${guard.adminId}`,
+      { method: "DELETE", accessToken },
+    );
+    revalidatePath("/admin/rooms");
+    return { kind: "ok", detail };
   } catch (e) {
     return wrapError(e);
   }

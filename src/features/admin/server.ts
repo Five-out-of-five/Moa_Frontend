@@ -12,11 +12,14 @@ import {
   getAdminAiUsageMock,
   getAdminAuditLogsMock,
   getAdminStatsOverviewMock,
+  listMockRoomsForAdmin,
   toAdminDetail,
   toAdminNoticeDetail,
   toAdminNoticeRow,
   toAdminReport,
   toAdminReportDetail,
+  toAdminRoomDetail,
+  toAdminRoomRow,
 } from "@/mocks/admin";
 import { isMock } from "@/mocks/config";
 import { accounts } from "@/mocks/db";
@@ -36,6 +39,10 @@ import type {
   AdminReportDetail,
   AdminReportListQuery,
   AdminReportPage,
+  AdminRoom,
+  AdminRoomDetail,
+  AdminRoomListQuery,
+  AdminRoomPage,
   AiUsageStats,
   StatsOverview,
   StatsRangeQuery,
@@ -331,6 +338,98 @@ export async function getAdminNoticeDetail(
   const accessToken = await readAccessToken();
   return api<AdminNoticeDetail>(
     `/api/v1/admin/notices/${noticeId}`,
+    { accessToken },
+  );
+}
+
+// ===== 방 관리 =====
+
+function roomListQuery(q: AdminRoomListQuery): string {
+  const params = new URLSearchParams();
+  if (q.keyword) params.set("keyword", q.keyword);
+  if (q.status) params.set("status", q.status);
+  if (q.inactiveDays !== undefined) params.set("inactiveDays", String(q.inactiveDays));
+  if (q.sort) params.set("sort", q.sort);
+  if (q.page !== undefined) params.set("page", String(q.page));
+  if (q.size !== undefined) params.set("size", String(q.size));
+  return params.toString();
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export const listAdminRooms = cache(
+  async (q: AdminRoomListQuery = {}): Promise<AdminRoomPage> => {
+    if (isMock) {
+      const size = q.size ?? 20;
+      const page = q.page ?? 0;
+      const keyword = (q.keyword ?? "").trim().toLowerCase();
+
+      const now = Date.now();
+      const inactiveMs =
+        q.inactiveDays !== undefined ? q.inactiveDays * DAY_MS : null;
+
+      const filtered: AdminRoom[] = listMockRoomsForAdmin()
+        .filter(({ entry }) => (q.status ? entry.status === q.status : true))
+        .filter(({ room }) => {
+          if (!keyword) return true;
+          return (room.name ?? "").toLowerCase().includes(keyword);
+        })
+        .filter(({ entry }) => {
+          if (inactiveMs === null) return true;
+          const last = Date.parse(entry.lastActivityAt ?? "");
+          if (!Number.isFinite(last)) return true;
+          return now - last >= inactiveMs;
+        })
+        .map(({ room, entry }) => toAdminRoomRow(room, entry))
+        .sort((a, b) => {
+          // sort 토큰은 "field,dir" 형태. 기본은 최근 활동 내림차순.
+          const token = q.sort || "lastActivityAt,desc";
+          const [field, dir] = token.split(",") as [string, string];
+          const mul = dir === "asc" ? 1 : -1;
+          const read = (v: AdminRoom): number => {
+            switch (field) {
+              case "createdAt":
+                return Date.parse(v.createdAt ?? "") || 0;
+              case "memberCount":
+                return v.memberCount ?? 0;
+              case "reportCount":
+                return v.reportCount ?? 0;
+              case "lastActivityAt":
+              default:
+                return Date.parse(v.lastActivityAt ?? "") || 0;
+            }
+          };
+          return (read(a) - read(b)) * mul;
+        });
+
+      const total = filtered.length;
+      const totalPages = Math.max(1, Math.ceil(total / size));
+      const safePage = Math.min(Math.max(0, page), totalPages - 1);
+      const content = filtered.slice(safePage * size, safePage * size + size);
+      return {
+        content,
+        page: safePage,
+        size,
+        totalElements: total,
+        totalPages,
+        hasNext: safePage < totalPages - 1,
+      };
+    }
+    const accessToken = await readAccessToken();
+    return api<AdminRoomPage>(
+      `/api/v1/admin/rooms?${roomListQuery(q)}`,
+      { accessToken },
+    );
+  },
+);
+
+export async function getAdminRoomDetail(
+  roomId: number,
+): Promise<AdminRoomDetail | null> {
+  if (isMock) return toAdminRoomDetail(roomId);
+  const accessToken = await readAccessToken();
+  return api<AdminRoomDetail>(
+    `/api/v1/admin/rooms/${roomId}`,
     { accessToken },
   );
 }

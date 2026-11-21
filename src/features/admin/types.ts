@@ -144,3 +144,29 @@ export interface AdminNoticeRequest {
   /** ISO date-time, MAINTENANCE 선택 입력 */
   maintenanceStartsAt?: string;
 }
+
+// ===== 방 관리 =====
+
+export type AdminRoom = components["schemas"]["AdminRoomResponse"];
+export type AdminRoomDetail = components["schemas"]["AdminRoomDetailResponse"];
+export type AdminRoomStatus = "ACTIVE" | "INACTIVE";
+
+export interface AdminRoomListQuery {
+  keyword?: string;
+  status?: AdminRoomStatus;
+  /** N일 이상 활동이 없는 방만 */
+  inactiveDays?: number;
+  /** BE 가 받는 정렬 토큰 (createdAt/lastActivityAt/memberCount/reportCount 등). */
+  sort?: string;
+  page?: number;
+  size?: number;
+}
+
+export interface AdminRoomPage {
+  content: AdminRoom[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  hasNext: boolean;
+}

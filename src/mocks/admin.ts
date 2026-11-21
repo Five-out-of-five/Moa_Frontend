@@ -27,6 +27,9 @@ import type {
   AdminReportReason,
   AdminReportStatus,
   AdminReportTargetType,
+  AdminRoom,
+  AdminRoomDetail,
+  AdminRoomStatus,
   AdminSuspension,
   AdminSuspensionPeriod,
   AiUsageByFeature,
@@ -34,7 +37,7 @@ import type {
   StatsOverview,
   StatsSeriesPoint,
 } from "@/features/admin/types";
-import { accounts, shareSettingsMock } from "@/mocks/db";
+import { accounts, rooms as mockRooms, shareSettingsMock } from "@/mocks/db";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TZ = "Asia/Seoul";
@@ -778,4 +781,130 @@ export function updateNoticeInStore(
 
 export function deleteNoticeInStore(noticeId: number): boolean {
   return adminNoticesStore.delete(noticeId);
+}
+
+// ===== 방 관리 =====
+//
+// `rooms` 는 기본 방 데이터(이름·설명·멤버수·생성일), `adminRoomsOverlay` 는 관리자 전용 메타
+// (status/lastActivityAt/reportCount/비활성 사유 등). 회원 overlay 와 같은 패턴.
+
+export interface AdminRoomOverlayEntry {
+  status: AdminRoomStatus;
+  lastActivityAt: string;
+  reportCount: number;
+  inactiveReason: string | null;
+  inactivatedAt: string | null;
+  inactivatedByAccountId: number | null;
+  creatorAccountId: number;
+}
+
+function seedRoomOverlay(): Map<number, AdminRoomOverlayEntry> {
+  const m = new Map<number, AdminRoomOverlayEntry>();
+  mockRooms.forEach((room, i) => {
+    // 최근 활동은 방마다 다른 시각 (0~45일 전).
+    const daysAgo = (i * 4) % 46;
+    m.set(room.id, {
+      status: "ACTIVE",
+      lastActivityAt: new Date(Date.now() - daysAgo * DAY_MS).toISOString(),
+      reportCount: (i * 2) % 7,
+      inactiveReason: null,
+      inactivatedAt: null,
+      inactivatedByAccountId: null,
+      // 각 방 첫 번째 ADMIN 또는 첫 계정을 방장으로.
+      creatorAccountId: accounts[i % accounts.length]?.id ?? 1,
+    });
+  });
+  return m;
+}
+
+export const adminRoomsOverlay = shareSettingsMock(
+  "adminRoomsOverlay",
+  seedRoomOverlay(),
+);
+
+function personRef(
+  accountId: number | null,
+): { accountId?: number; name?: string } | undefined {
+  if (accountId === null) return undefined;
+  const acc = accounts.find((a) => a.id === accountId);
+  return acc ? { accountId: acc.id, name: acc.name } : { accountId };
+}
+
+export function toAdminRoomRow(
+  room: (typeof mockRooms)[number],
+  entry: AdminRoomOverlayEntry,
+): AdminRoom {
+  return {
+    roomId: room.id,
+    name: room.name,
+    creator: personRef(entry.creatorAccountId),
+    memberCount: room.memberCount,
+    status: entry.status,
+    lastActivityAt: entry.lastActivityAt,
+    reportCount: entry.reportCount,
+    createdAt: room.createdAt,
+  };
+}
+
+export function toAdminRoomDetail(roomId: number): AdminRoomDetail | null {
+  const room = mockRooms.find((r) => r.id === roomId);
+  const entry = adminRoomsOverlay.get(roomId);
+  if (!room || !entry) return null;
+  return {
+    roomId: room.id,
+    name: room.name,
+    creator: personRef(entry.creatorAccountId),
+    memberCount: room.memberCount,
+    status: entry.status,
+    lastActivityAt: entry.lastActivityAt,
+    reportCount: entry.reportCount,
+    createdAt: room.createdAt,
+    description: room.description ?? undefined,
+    inactiveReason: entry.inactiveReason ?? undefined,
+    inactivatedAt: entry.inactivatedAt ?? undefined,
+    inactivatedBy: entry.inactivatedByAccountId !== null
+      ? personRef(entry.inactivatedByAccountId)
+      : undefined,
+  };
+}
+
+export function inactivateRoomInStore(
+  roomId: number,
+  adminId: number,
+  reason: string,
+): AdminRoomOverlayEntry | null {
+  const entry = adminRoomsOverlay.get(roomId);
+  if (!entry) return null;
+  entry.status = "INACTIVE";
+  entry.inactiveReason = reason;
+  entry.inactivatedAt = new Date().toISOString();
+  entry.inactivatedByAccountId = adminId;
+  return entry;
+}
+
+export function reactivateRoomInStore(
+  roomId: number,
+): AdminRoomOverlayEntry | null {
+  const entry = adminRoomsOverlay.get(roomId);
+  if (!entry) return null;
+  entry.status = "ACTIVE";
+  entry.inactiveReason = null;
+  entry.inactivatedAt = null;
+  entry.inactivatedByAccountId = null;
+  return entry;
+}
+
+export function listMockRoomsForAdmin(): Array<{
+  room: (typeof mockRooms)[number];
+  entry: AdminRoomOverlayEntry;
+}> {
+  const out: Array<{
+    room: (typeof mockRooms)[number];
+    entry: AdminRoomOverlayEntry;
+  }> = [];
+  for (const room of mockRooms) {
+    const entry = adminRoomsOverlay.get(room.id);
+    if (entry) out.push({ room, entry });
+  }
+  return out;
 }
