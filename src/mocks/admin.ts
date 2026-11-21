@@ -17,6 +17,10 @@ import type {
   AdminAccountStatus,
   AdminAuditLogListQuery,
   AdminAuditLogPage,
+  AdminNotice,
+  AdminNoticeDetail,
+  AdminNoticeRequest,
+  AdminNoticeType,
   AdminReport,
   AdminReportAction,
   AdminReportDetail,
@@ -606,4 +610,172 @@ export function rejectReportInStore(
   entry.handledByAccountId = adminId;
   entry.handledAt = new Date().toISOString();
   return entry;
+}
+
+// ===== 공지 관리 =====
+
+export interface AdminNoticeEntry {
+  noticeId: number;
+  noticeType: AdminNoticeType;
+  title: string;
+  content: string;
+  displayStartsAt: string;
+  displayEndsAt: string;
+  maintenanceStartsAt: string | null;
+  authorAccountId: number;
+}
+
+function initialNoticeSeed(): Map<number, AdminNoticeEntry> {
+  const m = new Map<number, AdminNoticeEntry>();
+  const now = Date.now();
+  const seed: Omit<AdminNoticeEntry, "authorAccountId">[] = [
+    {
+      noticeId: 51,
+      noticeType: "URGENT",
+      title: "AI 응답 지연 안내",
+      content: "현재 AI 요약·추천 응답이 평소보다 느립니다. 원인 파악 중입니다.",
+      displayStartsAt: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
+      displayEndsAt: new Date(now + 6 * 60 * 60 * 1000).toISOString(),
+      maintenanceStartsAt: null,
+    },
+    {
+      noticeId: 50,
+      noticeType: "MAINTENANCE",
+      title: "11월 정기 점검 (01:00 ~ 03:00)",
+      content: "서비스 안정화를 위해 새벽 점검을 수행합니다. 짧은 끊김이 있을 수 있습니다.",
+      displayStartsAt: new Date(now + 24 * 60 * 60 * 1000).toISOString(),
+      displayEndsAt: new Date(now + 48 * 60 * 60 * 1000).toISOString(),
+      maintenanceStartsAt: new Date(now + 36 * 60 * 60 * 1000).toISOString(),
+    },
+    {
+      noticeId: 49,
+      noticeType: "GENERAL",
+      title: "신고 처리 기준 안내",
+      content: "커뮤니티 가이드라인을 요약한 페이지를 공개했습니다. 하단 링크에서 확인하세요.",
+      displayStartsAt: new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      displayEndsAt: new Date(now + 14 * 24 * 60 * 60 * 1000).toISOString(),
+      maintenanceStartsAt: null,
+    },
+    {
+      noticeId: 48,
+      noticeType: "GENERAL",
+      title: "채팅 전송 지연 공지",
+      content: "WebSocket 이슈로 1시간가량 채팅 전송이 지연되었습니다. 현재는 정상입니다.",
+      displayStartsAt: new Date(now - 10 * 24 * 60 * 60 * 1000).toISOString(),
+      displayEndsAt: new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      maintenanceStartsAt: null,
+    },
+  ];
+  // 작성자는 첫 ADMIN 계정 (이홍근 = id 1).
+  const adminId = accounts.find((a) => a.role === "ADMIN")?.id ?? 1;
+  for (const s of seed) m.set(s.noticeId, { ...s, authorAccountId: adminId });
+  return m;
+}
+
+export const adminNoticesStore = shareSettingsMock(
+  "adminNoticesStore",
+  initialNoticeSeed(),
+);
+
+/**
+ * 공지 ID 단조 증가 카운터. shareSettingsMock 에 별도로 올려 **삭제와 무관하게** 다음 ID 를
+ * 발급한다. 삭제된 ID 를 재사용하면 기존 `?selected=<id>` 공유 URL 이 새 공지를 가리키게 되는
+ * 사고 방지.
+ */
+const adminNoticeNextIdBox = shareSettingsMock("adminNoticeNextId", {
+  value: Math.max(100, ...Array.from(adminNoticesStore.keys())) + 1,
+});
+
+function computeNoticeState(entry: AdminNoticeEntry): string {
+  const now = Date.now();
+  const starts = Date.parse(entry.displayStartsAt);
+  const ends = Date.parse(entry.displayEndsAt);
+  if (!Number.isFinite(starts) || !Number.isFinite(ends)) return "SCHEDULED";
+  if (now < starts) return "SCHEDULED";
+  if (now > ends) return "EXPIRED";
+  return "ACTIVE";
+}
+
+function authorByAccountId(
+  accountId: number,
+): { accountId?: number; name?: string } {
+  const acc = accounts.find((a) => a.id === accountId);
+  return acc ? { accountId: acc.id, name: acc.name } : { accountId };
+}
+
+export function toAdminNoticeRow(entry: AdminNoticeEntry): AdminNotice {
+  return {
+    noticeId: entry.noticeId,
+    noticeType: entry.noticeType,
+    title: entry.title,
+    displayStartsAt: entry.displayStartsAt,
+    displayEndsAt: entry.displayEndsAt,
+    state: computeNoticeState(entry),
+    author: authorByAccountId(entry.authorAccountId),
+  };
+}
+
+export function toAdminNoticeDetail(noticeId: number): AdminNoticeDetail | null {
+  const entry = adminNoticesStore.get(noticeId);
+  if (!entry) return null;
+  return {
+    noticeId: entry.noticeId,
+    noticeType: entry.noticeType,
+    title: entry.title,
+    content: entry.content,
+    displayStartsAt: entry.displayStartsAt,
+    displayEndsAt: entry.displayEndsAt,
+    maintenanceStartsAt: entry.maintenanceStartsAt ?? undefined,
+  };
+}
+
+function nextNoticeId(): number {
+  // 삭제된 ID 재사용 금지. 카운터를 사용한 뒤 바로 증가.
+  const id = adminNoticeNextIdBox.value;
+  adminNoticeNextIdBox.value = id + 1;
+  return id;
+}
+
+export function createNoticeInStore(
+  adminId: number,
+  input: AdminNoticeRequest,
+): AdminNoticeEntry {
+  const noticeId = nextNoticeId();
+  const entry: AdminNoticeEntry = {
+    noticeId,
+    noticeType: input.noticeType,
+    title: input.title,
+    content: input.content,
+    displayStartsAt: input.displayStartsAt,
+    displayEndsAt: input.displayEndsAt,
+    maintenanceStartsAt:
+      input.noticeType === "MAINTENANCE"
+        ? input.maintenanceStartsAt ?? null
+        : null,
+    authorAccountId: adminId,
+  };
+  adminNoticesStore.set(noticeId, entry);
+  return entry;
+}
+
+export function updateNoticeInStore(
+  noticeId: number,
+  input: AdminNoticeRequest,
+): AdminNoticeEntry | null {
+  const entry = adminNoticesStore.get(noticeId);
+  if (!entry) return null;
+  entry.noticeType = input.noticeType;
+  entry.title = input.title;
+  entry.content = input.content;
+  entry.displayStartsAt = input.displayStartsAt;
+  entry.displayEndsAt = input.displayEndsAt;
+  entry.maintenanceStartsAt =
+    input.noticeType === "MAINTENANCE"
+      ? input.maintenanceStartsAt ?? null
+      : null;
+  return entry;
+}
+
+export function deleteNoticeInStore(noticeId: number): boolean {
+  return adminNoticesStore.delete(noticeId);
 }
