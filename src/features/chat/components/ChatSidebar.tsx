@@ -1,6 +1,6 @@
 "use client";
 
-import { Hash, Lock, PanelLeftClose, Plus, Search } from "lucide-react";
+import { FolderOpen, Hash, Lock, PanelLeftClose, Plus, Search } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -35,6 +35,7 @@ export function ChatSidebar({ channels, dms, profiles }: Props) {
   }, [pathname]);
 
   const profile = profiles.find(({ roomId }) => roomId === currentRoomId);
+  const filesHref = currentRoomId ? `/rooms/${currentRoomId}/files` : null;
 
   const visibleChannels = useMemo(() => {
     const base = currentRoomId
@@ -66,7 +67,7 @@ export function ChatSidebar({ channels, dms, profiles }: Props) {
 
   return (
     <nav
-      aria-label="채팅 채널"
+      aria-label="워크스페이스 사이드바"
       className="bg-surface flex h-[calc(100dvh-var(--header-height))] w-[var(--sidebar-width)] shrink-0 flex-col border-r border-border"
     >
       <div className="border-border-soft flex items-center justify-between border-b px-4 py-3">
@@ -81,6 +82,17 @@ export function ChatSidebar({ channels, dms, profiles }: Props) {
         </div>
       </div>
 
+      {filesHref && (
+        <div className="border-border-soft border-b px-2 py-2">
+          <Link
+            href={filesHref}
+            aria-current={pathname === filesHref ? "page" : undefined}
+            className="text-muted-foreground hover:bg-muted hover:text-foreground aria-[current=page]:bg-secondary aria-[current=page]:text-secondary-foreground flex h-8 items-center gap-2 rounded-control px-2 text-sm aria-[current=page]:font-semibold"
+          >
+            <FolderOpen aria-hidden="true" className="size-3.5" />파일
+          </Link>
+        </div>
+      )}
       <div className="border-border-soft border-b px-3 py-2">
         <label className="relative block">
           <Search
