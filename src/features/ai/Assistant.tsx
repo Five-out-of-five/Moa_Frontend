@@ -23,7 +23,7 @@ export function Assistant({ roomId }: { roomId: number }) {
 }
 
 function AssistantPanel({ roomId, expanded, onExpand }: { roomId: number; expanded: boolean; onExpand: () => void }) {
-  const { messages, pending, error, loading, send, stop, reload } = useAssistant(roomId);
+  const { messages, pending, sending, error, loading, send, stop, reload } = useAssistant(roomId);
   const [question, setQuestion] = useState("");
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { end.current?.scrollIntoView({ block: "nearest" }); }, [messages]);
@@ -46,11 +46,15 @@ function AssistantPanel({ roomId, expanded, onExpand }: { roomId: number; expand
           {message.state === "failed" && <p className="text-muted-foreground mt-2 text-xs">응답을 완료하지 못했어요.</p>}
         </div>
       </div>)}
-      {error && <div role="alert" className="text-destructive space-y-2 text-sm"><p>{error}</p>
-        <Button variant="outline" size="sm" disabled={pending} onClick={() => messages.length ? void send(messages[messages.length - 1].question) : void reload()}>다시 시도</Button></div>}
+      {error && <div role="alert" className="text-destructive space-y-2 text-sm"><p>{error.message}</p>
+        <Button variant="outline" size="sm" disabled={loading || sending || (error.kind === "response" && pending)} onClick={() => {
+          if (error.kind === "response") void send(error.question);
+          else if (error.kind === "stop") void stop();
+          else void reload();
+        }}>다시 시도</Button></div>}
       <div ref={end} />
     </div>
-    <form className="border-border space-y-2 border-t p-3" onSubmit={(event) => { event.preventDefault(); if (!question.trim()) return; void send(question); setQuestion(""); }}>
+    <form className="border-border space-y-2 border-t p-3" onSubmit={(event) => { event.preventDefault(); if (pending || loading || !question.trim()) return; void send(question); setQuestion(""); }}>
       <div className="flex gap-2">
         <Textarea aria-label="AI에게 질문" maxLength={200} rows={2} value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="팀 활동에 대해 질문하세요." className="min-h-12 resize-none" />
         {pending ? <Button type="button" aria-label="응답 중단" onClick={stop}><Square aria-hidden="true" /></Button>

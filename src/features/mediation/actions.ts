@@ -64,6 +64,9 @@ export async function discardCompromise(roomId: number, conflictId: number, draf
 export async function adoptCompromise(roomId: number, conflictId: number, draftId: number, _: MediationResult, form: FormData): Promise<MediationResult> {
   const context = await getContext(roomId, conflictId);
   if (!context || context.conflict.state !== "OPEN") return { error: "이미 처리됐거나 접근할 수 없는 충돌이에요." };
+  if (!conflicts.includes(context.conflict) || !ideaCards.includes(context.left) || !ideaCards.includes(context.right)) {
+    return { error: "원본 카드나 충돌이 삭제되어 절충안을 채택할 수 없어요." };
+  }
   const parsed = z.object({ title: z.string().trim().min(1).max(100), content: z.string().trim().min(1).max(1000) })
     .safeParse({ title: form.get("title"), content: form.get("content") });
   if (!parsed.success) return { error: "제목은 1~100자, 내용은 1~1,000자로 입력해 주세요." };
