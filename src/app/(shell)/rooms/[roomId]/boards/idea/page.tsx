@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
-import { getMyAccount } from "@/features/account/server";
 import { MeetingSummaryDialog } from "@/features/ai/MeetingSummaryDialog";
 import { BriefingFocus } from "@/features/briefing/BriefingFocus";
 import { readBriefingFocus } from "@/features/briefing/model";
@@ -13,6 +12,7 @@ import { CloseIdeaDialog, IdeaCardDialog, StartIdeaDialog } from "@/features/ide
 import { ideaDateTime } from "@/features/idea/model";
 import { getIdeaBoard, getIdeaDiscussions } from "@/features/idea/server";
 import { listConflicts } from "@/features/mediation/server";
+import { getReportViewerAccountId } from "@/features/report/server";
 import { getFirstRoomProfile } from "@/features/room/first-profile/server";
 import { listRoomMembers } from "@/features/room/server";
 
@@ -27,7 +27,7 @@ export default async function IdeaBoardPage({ params, searchParams }: {
   const sessionId = query.session === undefined ? undefined : Number(query.session);
   if (sessionId !== undefined && (!Number.isSafeInteger(sessionId) || sessionId < 1)) notFound();
   const board = await getIdeaBoard(id, sessionId);
-  const accountId = board.editable ? (await getMyAccount()).id : 0;
+  const accountId = await getReportViewerAccountId();
   const selected = query.session ? board.history.find((item) => String(item.id) === query.session) : board.active;
   if (query.session && !selected) notFound();
   const cards = selected ? board.cards.filter(({ sessionId }) => sessionId === selected.id) : [];

@@ -3,12 +3,13 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { ReportMenu } from "@/features/report/ReportMenu";
 import type { IdeaCard } from "@/types/db";
 
 import { DeleteIdeaDialog, IdeaCardDialog } from "./IdeaDialogs";
 import { IDEA_COLUMNS, ideaDateTime,type IdeaDiscussion } from "./model";
 
-export function IdeaCardDetails({ card, canEdit, discussion, conflictId }: { card: IdeaCard; canEdit: boolean; discussion?: IdeaDiscussion; conflictId?: number }) {
+export function IdeaCardDetails({ card, canEdit, canReport = false, discussion, conflictId }: { card: IdeaCard; canEdit: boolean; canReport?: boolean; discussion?: IdeaDiscussion; conflictId?: number }) {
   const label = IDEA_COLUMNS.find(({ type }) => type === card.cardType)?.title;
   return (
     <div className="relative">
@@ -60,11 +61,12 @@ export function IdeaCardDetails({ card, canEdit, discussion, conflictId }: { car
         </div>
       </SheetContent>
     </Sheet>
+    {canReport && <div className="absolute top-3 right-3"><ReportMenu target={{ roomId: card.roomId, id: card.id, type: "CARD", author: card.author.displayName, content: `${card.title}\n${card.content}` }} /></div>}
     {conflictId && (
       <Link
         href={`/rooms/${card.roomId}/mediation?conflict=${conflictId}`}
         aria-label={`${card.title} 충돌 의견 비교`}
-        className="bg-warning/15 hover:bg-warning/25 border-warning/30 focus-visible:ring-ring absolute top-[13px] right-[13px] inline-flex h-6 items-center gap-1 rounded-full border px-2 text-xs font-medium focus-visible:ring-2"
+        className={`bg-warning/15 hover:bg-warning/25 border-warning/30 focus-visible:ring-ring absolute top-[13px] ${canReport ? "right-12" : "right-[13px]"} inline-flex h-6 items-center gap-1 rounded-full border px-2 text-xs font-medium focus-visible:ring-2`}
       >
         <GitCompareArrows aria-hidden="true" className="text-warning size-3.5" />충돌 비교
       </Link>
