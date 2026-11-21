@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 const SETTINGS_LINKS = [
   { href: "/account", label: "계정 및 프로필", icon: UserRound },
-  { href: "/account/settings", label: "알림 설정", icon: Bell },
+  { href: "/account/settings", label: "알림 · AI 설정", icon: Bell },
 ] as const;
 
 export function AccountSettingsNav() {
@@ -22,8 +22,10 @@ export function AccountSettingsNav() {
           href={href}
           aria-current={pathname === href ? "page" : undefined}
           className={cn(
-            "hover:bg-accent flex items-center gap-2 rounded-md px-3 py-2 text-sm",
-            pathname === href && "bg-accent font-medium",
+            "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
+            pathname === href
+              ? "bg-primary/10 text-primary hover:bg-primary/15 font-medium"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground",
           )}
         >
           <Icon aria-hidden="true" className="size-4" />
