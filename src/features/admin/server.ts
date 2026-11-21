@@ -6,12 +6,15 @@ import { cache } from "react";
 import { api } from "@/lib/api";
 import {
   adminAccountsOverlay,
+  adminNoticesStore,
   adminReportsStore,
   expireSuspensionIfDue,
   getAdminAiUsageMock,
   getAdminAuditLogsMock,
   getAdminStatsOverviewMock,
   toAdminDetail,
+  toAdminNoticeDetail,
+  toAdminNoticeRow,
   toAdminReport,
   toAdminReportDetail,
 } from "@/mocks/admin";
@@ -26,6 +29,9 @@ import type {
   AdminAccountPage,
   AdminAuditLogListQuery,
   AdminAuditLogPage,
+  AdminNoticeDetail,
+  AdminNoticeListQuery,
+  AdminNoticePage,
   AdminReport,
   AdminReportDetail,
   AdminReportListQuery,
@@ -267,3 +273,61 @@ export const listAdminAuditLogs = cache(
     );
   },
 );
+
+// ===== 공지 관리 =====
+
+function noticeListQuery(q: AdminNoticeListQuery): string {
+  const params = new URLSearchParams();
+  if (q.noticeType) params.set("noticeType", q.noticeType);
+  if (q.state) params.set("state", q.state);
+  if (q.page !== undefined) params.set("page", String(q.page));
+  if (q.size !== undefined) params.set("size", String(q.size));
+  return params.toString();
+}
+
+export const listAdminNotices = cache(
+  async (q: AdminNoticeListQuery = {}): Promise<AdminNoticePage> => {
+    if (isMock) {
+      const size = q.size ?? 20;
+      const page = q.page ?? 0;
+      const all = Array.from(adminNoticesStore.values()).map((v) =>
+        toAdminNoticeRow(v),
+      );
+      const filtered = all
+        .filter((v) => (q.noticeType ? v.noticeType === q.noticeType : true))
+        .filter((v) => (q.state ? v.state === q.state : true))
+        // 표시 시작 최신 순 — "방금 올린 공지가 맨 위".
+        .sort((a, b) =>
+          (b.displayStartsAt ?? "").localeCompare(a.displayStartsAt ?? ""),
+        );
+      const total = filtered.length;
+      const totalPages = Math.max(1, Math.ceil(total / size));
+      const safePage = Math.min(Math.max(0, page), totalPages - 1);
+      const content = filtered.slice(safePage * size, safePage * size + size);
+      return {
+        content,
+        page: safePage,
+        size,
+        totalElements: total,
+        totalPages,
+        hasNext: safePage < totalPages - 1,
+      };
+    }
+    const accessToken = await readAccessToken();
+    return api<AdminNoticePage>(
+      `/api/v1/admin/notices?${noticeListQuery(q)}`,
+      { accessToken },
+    );
+  },
+);
+
+export async function getAdminNoticeDetail(
+  noticeId: number,
+): Promise<AdminNoticeDetail | null> {
+  if (isMock) return toAdminNoticeDetail(noticeId);
+  const accessToken = await readAccessToken();
+  return api<AdminNoticeDetail>(
+    `/api/v1/admin/notices/${noticeId}`,
+    { accessToken },
+  );
+}

@@ -8,14 +8,19 @@ import { api, ApiError } from "@/lib/api";
 import { isServiceAdmin } from "@/lib/permission";
 import {
   adminAccountsOverlay,
+  adminNoticesStore,
   adminReportsStore,
+  createNoticeInStore,
+  deleteNoticeInStore,
   rejectReportInStore,
   resolveReportInStore,
   reviewReportInStore,
   suspendInOverlay,
   toAdminDetail,
+  toAdminNoticeDetail,
   toAdminReportDetail,
   unsuspendInOverlay,
+  updateNoticeInStore,
 } from "@/mocks/admin";
 import { isMock } from "@/mocks/config";
 import { accounts } from "@/mocks/db";
@@ -23,6 +28,8 @@ import { accounts } from "@/mocks/db";
 import type {
   AdminAccountDetail,
   AdminAccountRole,
+  AdminNoticeDetail,
+  AdminNoticeRequest,
   AdminReportAction,
   AdminReportDetail,
   AdminSuspensionPeriod,
@@ -384,3 +391,152 @@ export async function rejectReportAction(
     return wrapError(e);
   }
 }
+
+// ===== 공지 관리 Server Actions =====
+//
+// Create/Update 는 `AdminNoticeDetail` 응답을, Delete 는 void 성공을 돌려준다. Delete 는 void
+// 성공을 "kind: ok" 로 통일하되 detail 은 비워 둔다 (다른 액션 결과 재사용 금지, UI 쪽에서 한번
+// 더 분기).
+
+type NoticeOkDetail = Ok<AdminNoticeDetail>;
+type NoticeOkVoid = { kind: "ok-void" };
+type NoticeDetailResult = NoticeOkDetail | Guard | Conflict | Err;
+type NoticeVoidResult = NoticeOkVoid | Guard | Conflict | Err;
+
+/** 공통 입력 검증 — Create / Update 가 공유. */
+function validateNoticeInput(
+  input: AdminNoticeRequest,
+): Guard | null {
+  const title = input.title.trim();
+  const content = input.content.trim();
+  if (title.length === 0) return { kind: "guard", message: "제목을 입력해 주세요." };
+  if (content.length === 0) return { kind: "guard", message: "내용을 입력해 주세요." };
+
+  const starts = Date.parse(input.displayStartsAt);
+  const ends = Date.parse(input.displayEndsAt);
+  if (!Number.isFinite(starts) || !Number.isFinite(ends)) {
+    return { kind: "guard", message: "표시 기간이 올바르지 않습니다." };
+  }
+  if (ends <= starts) {
+    return { kind: "guard", message: "표시 종료일이 시작일보다 뒤여야 합니다." };
+  }
+  if (input.noticeType === "MAINTENANCE" && input.maintenanceStartsAt) {
+    const m = Date.parse(input.maintenanceStartsAt);
+    if (!Number.isFinite(m)) {
+      return { kind: "guard", message: "점검 시작일 형식이 올바르지 않습니다." };
+    }
+    if (m < starts || m > ends) {
+      return {
+        kind: "guard",
+        message: "점검 시작일은 표시 기간 안에 있어야 합니다.",
+      };
+    }
+  }
+  return null;
+}
+
+function trimmedInput(input: AdminNoticeRequest): AdminNoticeRequest {
+  return {
+    ...input,
+    title: input.title.trim(),
+    content: input.content.trim(),
+    // GENERAL/URGENT 는 maintenanceStartsAt 전달 금지
+    maintenanceStartsAt:
+      input.noticeType === "MAINTENANCE"
+        ? input.maintenanceStartsAt
+        : undefined,
+  };
+}
+
+export async function createNoticeAction(
+  input: AdminNoticeRequest,
+): Promise<NoticeDetailResult> {
+  try {
+    const guard = await ensureAdmin();
+    if (!guard.ok) return guard.guard;
+
+    const validation = validateNoticeInput(input);
+    if (validation) return validation;
+    const payload = trimmedInput(input);
+
+    if (isMock) {
+      const entry = createNoticeInStore(guard.adminId, payload);
+      const detail = toAdminNoticeDetail(entry.noticeId);
+      revalidatePath("/admin/notices");
+      if (!detail) return { kind: "error", message: "상세를 다시 불러오지 못했습니다." };
+      return { kind: "ok", detail };
+    }
+
+    const accessToken = await readAccessToken();
+    const detail = await api<AdminNoticeDetail>(
+      `/api/v1/admin/notices?adminId=${guard.adminId}`,
+      { method: "POST", json: payload, accessToken },
+    );
+    revalidatePath("/admin/notices");
+    return { kind: "ok", detail };
+  } catch (e) {
+    return wrapError(e);
+  }
+}
+
+export async function updateNoticeAction(
+  noticeId: number,
+  input: AdminNoticeRequest,
+): Promise<NoticeDetailResult> {
+  try {
+    const guard = await ensureAdmin();
+    if (!guard.ok) return guard.guard;
+
+    const validation = validateNoticeInput(input);
+    if (validation) return validation;
+    const payload = trimmedInput(input);
+
+    if (isMock) {
+      const entry = updateNoticeInStore(noticeId, payload);
+      if (!entry) return { kind: "error", message: "공지를 찾지 못했습니다." };
+      const detail = toAdminNoticeDetail(noticeId);
+      revalidatePath("/admin/notices");
+      if (!detail) return { kind: "error", message: "상세를 다시 불러오지 못했습니다." };
+      return { kind: "ok", detail };
+    }
+
+    const accessToken = await readAccessToken();
+    const detail = await api<AdminNoticeDetail>(
+      `/api/v1/admin/notices/${noticeId}?adminId=${guard.adminId}`,
+      { method: "PUT", json: payload, accessToken },
+    );
+    revalidatePath("/admin/notices");
+    return { kind: "ok", detail };
+  } catch (e) {
+    return wrapError(e);
+  }
+}
+
+export async function deleteNoticeAction(
+  noticeId: number,
+): Promise<NoticeVoidResult> {
+  try {
+    const guard = await ensureAdmin();
+    if (!guard.ok) return guard.guard;
+
+    if (isMock) {
+      if (!adminNoticesStore.has(noticeId)) {
+        return { kind: "error", message: "이미 삭제되었거나 존재하지 않는 공지입니다." };
+      }
+      deleteNoticeInStore(noticeId);
+      revalidatePath("/admin/notices");
+      return { kind: "ok-void" };
+    }
+
+    const accessToken = await readAccessToken();
+    await api<void>(
+      `/api/v1/admin/notices/${noticeId}?adminId=${guard.adminId}`,
+      { method: "DELETE", accessToken },
+    );
+    revalidatePath("/admin/notices");
+    return { kind: "ok-void" };
+  } catch (e) {
+    return wrapError(e);
+  }
+}
+

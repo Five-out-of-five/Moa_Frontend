@@ -106,3 +106,41 @@ export interface AdminAuditLogListQuery {
   page?: number;
   size?: number;
 }
+
+// ===== 공지 관리 =====
+
+export type AdminNotice = components["schemas"]["AdminNoticeResponse"];
+export type AdminNoticeDetail = components["schemas"]["NoticeResponse"];
+export type AdminNoticeType = "GENERAL" | "MAINTENANCE" | "URGENT";
+
+/** BE 가 string 으로 돌려주지만 운영 중 쓰이는 값만 열거해 UI 셀렉트에 노출. */
+export type AdminNoticeState = "SCHEDULED" | "ACTIVE" | "EXPIRED";
+
+export interface AdminNoticeListQuery {
+  noticeType?: AdminNoticeType;
+  state?: string;
+  page?: number;
+  size?: number;
+}
+
+export interface AdminNoticePage {
+  content: AdminNotice[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  hasNext: boolean;
+}
+
+/** `NoticeRequest` payload (POST/PUT 공용). `maintenanceStartsAt` 은 MAINTENANCE 에만 사용. */
+export interface AdminNoticeRequest {
+  noticeType: AdminNoticeType;
+  title: string;
+  content: string;
+  /** ISO date-time */
+  displayStartsAt: string;
+  /** ISO date-time */
+  displayEndsAt: string;
+  /** ISO date-time, MAINTENANCE 선택 입력 */
+  maintenanceStartsAt?: string;
+}
