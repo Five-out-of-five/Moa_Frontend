@@ -201,8 +201,10 @@ export function getAdminAuditLogsMock(q: AdminAuditLogListQuery = {}): AdminAudi
     .filter((v) => (q.actionType ? v.actionType === q.actionType : true))
     .filter((v) => (q.targetType ? v.targetType === q.targetType : true))
     .filter((v) => {
-      const createdDate = (v.createdAt ?? "").slice(0, 10);
-      if (!createdDate) return true;
+      // 테이블 표시가 KST 라서 날짜 필터도 KST 기준으로 자른다. `slice(0,10)` 로 UTC 날짜를
+      // 그대로 쓰면 자정 전후 로그가 하루 어긋나 "오늘로 조회해도 어제로 밀려 나오는" 사고.
+      if (!v.createdAt) return true;
+      const createdDate = toKstIsoDate(new Date(v.createdAt));
       if (q.from && createdDate < q.from) return false;
       if (q.to && createdDate > q.to) return false;
       return true;

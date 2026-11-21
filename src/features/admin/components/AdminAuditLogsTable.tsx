@@ -19,16 +19,24 @@ interface Props {
   page: AdminAuditLogPage;
 }
 
+// yyyy-MM-dd HH:mm (Asia/Seoul) — 서버(UTC) 와 브라우저(KST) 포맷 결과를 일치시켜 hydration
+// 불일치를 막는다. 날짜 필터도 KST 기준이라 테이블 표시와 비교 기준이 같아진다.
+const KST_FORMATTER = new Intl.DateTimeFormat("sv-SE", {
+  timeZone: "Asia/Seoul",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
 function formatDateTime(iso: string | undefined): string {
   if (!iso) return "-";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "-";
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+  // sv-SE 로케일은 "yyyy-MM-dd HH:mm" 모양을 돌려준다.
+  return KST_FORMATTER.format(d);
 }
 
 export function AdminAuditLogsTable({ page }: Props) {
