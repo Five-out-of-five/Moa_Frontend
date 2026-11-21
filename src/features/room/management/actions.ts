@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { getMyAccount } from "@/features/account/server";
 import { isActiveMember, isRoomOwner } from "@/lib/permission";
+import { adminRoomsOverlay } from "@/mocks/admin";
 import { isMock } from "@/mocks/config";
 import { addDefaultRoomWidgets, roomMembers, rooms } from "@/mocks/db";
 
@@ -74,6 +75,17 @@ export async function saveManagedRoomAction(
     memberCount: 1,
     maxMemberCount: ROOM_MEMBER_LIMIT,
     createdAt: new Date().toISOString(),
+  });
+  // 관리자 overlay 에도 신규 방 항목을 등록 — 등록하지 않으면 `listMockRoomsForAdmin` 와
+  // `toAdminRoomDetail` 가 방을 무시해 세션 중 만든 방이 /admin/rooms 에서 보이지 않는다.
+  adminRoomsOverlay.set(id, {
+    status: "ACTIVE",
+    lastActivityAt: new Date().toISOString(),
+    reportCount: 0,
+    inactiveReason: null,
+    inactivatedAt: null,
+    inactivatedByAccountId: null,
+    creatorAccountId: account.id,
   });
   roomMembers.push(addMockRoomMember(id, account.id, "OWNER"));
   roomManagementMock.creatorIds.set(id, account.id);

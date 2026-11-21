@@ -1,5 +1,6 @@
 "use client";
 
+import { AlertTriangle } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -51,6 +52,7 @@ export function AdminRoomDetailSheet({
   const [detail, setDetail] = useState<AdminRoomDetail | null>(initialDetail);
   const [inactivateOpen, setInactivateOpen] = useState(false);
   const [reactivating, startReactivateTransition] = useTransition();
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     if (initialDetail) setDetail(initialDetail);
@@ -60,9 +62,10 @@ export function AdminRoomDetailSheet({
     if (loadFailed) setDetail(null);
   }, [loadFailed]);
 
-  // 선택이 바뀌면 열린 Dialog 는 닫는다.
+  // 선택이 바뀌면 열린 Dialog 는 닫고 이전 액션 오류도 치운다.
   useEffect(() => {
     setInactivateOpen(false);
+    setActionError(null);
   }, [selectedId]);
 
   const open = selectedId !== null;
@@ -80,18 +83,26 @@ export function AdminRoomDetailSheet({
   function handleReactivate() {
     const requestedId = detail?.roomId;
     if (!requestedId) return;
+    setActionError(null);
     startReactivateTransition(async () => {
-      const result = await reactivateRoomAction(requestedId);
-      if (result.kind === "ok") {
-        setDetail((current) =>
-          current && result.detail.roomId === current.roomId
-            ? result.detail
-            : current,
+      try {
+        const result = await reactivateRoomAction(requestedId);
+        if (result.kind === "ok") {
+          setDetail((current) =>
+            current && result.detail.roomId === current.roomId
+              ? result.detail
+              : current,
+          );
+          toast.success("방을 다시 활성화했습니다.");
+          return;
+        }
+        setActionError(result.message);
+      } catch {
+        // 전송 오류 — 서버 반영 여부 확신 못 하므로 "실패" 로 단정 금지.
+        setActionError(
+          "요청을 전송하지 못했습니다. 다시 시도해 주세요. 서버에 반영되었을 수도 있으니 목록을 다시 조회해 주세요.",
         );
-        toast.success("방을 다시 활성화했습니다.");
-        return;
       }
-      toast.error(result.message);
     });
   }
 
@@ -205,6 +216,15 @@ export function AdminRoomDetailSheet({
                       </button>
                     )}
                   </div>
+                  {actionError && (
+                    <p
+                      role="alert"
+                      className="mt-2 inline-flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                    >
+                      <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      {actionError}
+                    </p>
+                  )}
                 </section>
               </div>
             </>

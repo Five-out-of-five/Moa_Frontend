@@ -36,7 +36,9 @@ export default async function AdminRoomsPage({ searchParams }: PageProps) {
   const inactiveDaysRaw = single(params.inactiveDays);
   const sort = single(params.sort);
   const pageRaw = Number(single(params.page));
-  const pageNum = Number.isFinite(pageRaw) && pageRaw >= 0 ? pageRaw : 0;
+  // `?page=0.5` 같은 소수·음수 값이 그대로 넘어가 mock 중간 구간을 조회하는 사고를 막기 위해
+  // 정수·음수 아님을 모두 확인.
+  const pageNum = Number.isInteger(pageRaw) && pageRaw >= 0 ? pageRaw : 0;
   const selectedRaw = Number(single(params.selected));
   const selectedId =
     Number.isFinite(selectedRaw) && selectedRaw > 0 ? selectedRaw : null;
