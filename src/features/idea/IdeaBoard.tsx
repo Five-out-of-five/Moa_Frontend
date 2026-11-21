@@ -6,12 +6,13 @@ import type { BoardSession, IdeaCard } from "@/types/db";
 
 import { IdeaCardDetails } from "./IdeaCardDetails";
 import { IdeaCardDialog } from "./IdeaDialogs";
-import { IDEA_COLUMNS, type IdeaDiscussion } from "./model";
+import { IDEA_COLUMNS, type IdeaDiscussion, type IdeaSourceLink } from "./model";
 
-export function IdeaBoard({ session, cards, accountId, editable, discussion, conflictByCard = {} }: {
+export function IdeaBoard({ session, cards, accountId, editable, discussion, conflictByCard = {}, sources = new Map() }: {
   session: BoardSession; cards: IdeaCard[]; accountId: number; editable: boolean;
   discussion: Record<number, IdeaDiscussion>;
   conflictByCard?: Record<number, number>;
+  sources?: ReadonlyMap<number, IdeaSourceLink>;
 }) {
   const canCreate = editable && session.state === "ACTIVE";
   return (

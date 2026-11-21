@@ -34,7 +34,7 @@ export default async function IdeaBoardPage({ params, searchParams }: {
   const roster = board.editable && cards.some(({ commentCount }) => commentCount > 0)
     ? await listRoomMembers(id) : [];
   const discussion = getIdeaDiscussions(cards, roster);
-  const conflicts = board.editable ? await listConflicts(id) : await listConflicts(id).catch(() => []);
+  const conflicts = await listConflicts(id).catch(() => []);
   const conflictByCard = Object.fromEntries(conflicts.filter(({ state }) => state === "OPEN")
     .flatMap((conflict) => [[conflict.leftCardId, conflict.id], [conflict.rightCardId, conflict.id]]));
   const participants = new Set([
@@ -43,6 +43,12 @@ export default async function IdeaBoardPage({ params, searchParams }: {
   ]).size;
   const isClosed = selected?.state === "CLOSED";
   const href = `/rooms/${id}/boards/idea`;
+  const archivedSessions = new Set(board.history.map(({ id }) => id));
+  const sources = new Map(board.cards.map((card) => [card.id, {
+    id: card.id,
+    title: card.title,
+    href: `${href}?${archivedSessions.has(card.sessionId) ? `session=${card.sessionId}&` : ""}briefingFocus=${card.id}`,
+  }]));
 
   return (
     <section className="mx-auto max-w-7xl space-y-4">
@@ -62,7 +68,7 @@ export default async function IdeaBoardPage({ params, searchParams }: {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          <MeetingSummaryDialog roomId={id} history={board.history} hasActive={Boolean(board.active)} cards={board.cards} />
+          {board.editable && <MeetingSummaryDialog roomId={id} history={board.history} hasActive={Boolean(board.active)} cards={board.cards} />}
           <Button variant="outline" size="sm" asChild><Link href={`/rooms/${id}`}><ArrowLeft aria-hidden="true" />대시보드로 돌아가기</Link></Button>
           <details className="group relative">
             <summary className="rounded-control bg-card border-border flex h-8 cursor-pointer list-none items-center gap-1.5 border px-3 text-xs font-medium [&::-webkit-details-marker]:hidden">
@@ -90,7 +96,7 @@ export default async function IdeaBoardPage({ params, searchParams }: {
           {board.editable && !selected && <StartIdeaDialog roomId={id} trigger={<Button size="sm"><Plus aria-hidden="true" />회차 시작</Button>} />}
         </div>
       </header>
-      {selected ? <IdeaBoard session={selected} cards={cards} accountId={accountId} editable={board.editable} discussion={discussion} conflictByCard={conflictByCard} />
+      {selected ? <IdeaBoard session={selected} cards={cards} accountId={accountId} editable={board.editable} discussion={discussion} conflictByCard={conflictByCard} sources={sources} />
         : <p className="bg-card border-border rounded-card text-muted-foreground border p-5 text-sm">진행 중인 회차가 없어요.</p>}
     </section>
   );

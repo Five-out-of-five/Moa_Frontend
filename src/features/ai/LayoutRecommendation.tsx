@@ -18,15 +18,16 @@ export function LayoutRecommendation({ roomId }: { roomId: number }) {
   const [open, setOpen] = useState(false);
   const [purpose, setPurpose] = useState("");
   const [proposal, setProposal] = useState<LayoutProposal | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState("");
   const [undo, setUndo] = useState(false);
   const [pending, start] = useTransition();
   const perform = (action: () => Promise<void>) => start(async () => {
-    try { await action(); } catch { setError("요청을 처리하지 못했어요. 다시 시도해 주세요."); }
+    try { await action(); } catch { toast.error("요청을 처리하지 못했어요. 다시 시도해 주세요."); }
   });
-  return <div className="flex flex-wrap items-center gap-2">
+  return <>
     <Dialog open={open} onOpenChange={(value) => { if (!pending) { setOpen(value); setProposal(null); setError(""); } }}>
-      <DialogTrigger asChild><Button><Sparkles aria-hidden="true" />인공지능 레이아웃 추천</Button></DialogTrigger>
+      <DialogTrigger asChild><Button size="sm"><Sparkles aria-hidden="true" />인공지능 레이아웃 추천</Button></DialogTrigger>
       <DialogContent className="max-h-[90dvh] overflow-auto sm:max-w-2xl">
         <DialogHeader><DialogTitle>인공지능 레이아웃 추천</DialogTitle><DialogDescription>팀 상황이나 대시보드 사용 목적을 알려주세요.</DialogDescription></DialogHeader>
         {!proposal && <form className="space-y-3" onSubmit={(event) => {
@@ -43,13 +44,13 @@ export function LayoutRecommendation({ roomId }: { roomId: number }) {
               style={{ gridColumn: `${widget.x + 1} / span ${widget.width}`, gridRow: `${widget.y + 1} / span ${widget.height}` }}>{WIDGET_TITLES[widget.widgetType]}</div>)}
           </div>
           <p className="text-sm">{proposal.reason}</p>
-          <AlertDialog>
+          <AlertDialog open={confirmOpen} onOpenChange={(value) => { if (!pending) setConfirmOpen(value); }}>
             <AlertDialogTrigger asChild><Button disabled={pending}>이 레이아웃 적용</Button></AlertDialogTrigger>
             <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>방 전체에 적용할까요?</AlertDialogTitle><AlertDialogDescription>모든 멤버의 대시보드 배치가 변경됩니다.</AlertDialogDescription></AlertDialogHeader>
               <AlertDialogFooter><AlertDialogCancel disabled={pending}>취소</AlertDialogCancel>
                 <Button disabled={pending} onClick={() => perform(async () => {
-                  const result = await applyAiLayout(roomId, proposal.id);
-                  if (!result.ok) setError(result.error);
+                  const result = await applyAiLayout(roomId, proposal.id).finally(() => setConfirmOpen(false));
+                  if (!result.ok) { setProposal(null); toast.error(result.error); }
                   else { setOpen(false); setUndo(true); toast.success(result.data); }
                 })}>적용하기</Button></AlertDialogFooter>
             </AlertDialogContent>
@@ -58,9 +59,9 @@ export function LayoutRecommendation({ roomId }: { roomId: number }) {
         {error && <p role="alert" className="text-destructive text-sm">{error}</p>}
       </DialogContent>
     </Dialog>
-    {undo && <Button variant="outline" disabled={pending} onClick={() => perform(async () => {
+    {undo && <Button variant="outline" size="sm" disabled={pending} onClick={() => perform(async () => {
       const result = await undoAiLayout(roomId);
       if (result.ok) { toast.success(result.data); setUndo(false); } else toast.error(result.error);
     })}>배치 되돌리기</Button>}
-  </div>;
+  </>;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useTransition } from "react";
+import { startTransition, useActionState, useEffect, useTransition } from "react";
 import { toast } from "sonner";
 
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -53,7 +53,12 @@ function DraftForm({ roomId, conflictId, draft, title }: { roomId: number; confl
   const [result, action, pending] = useActionState(adoptCompromise.bind(null, roomId, conflictId, draft.id), {});
   useEffect(() => { if (result.saved) toast.success("절충안을 카드로 등록했어요."); }, [result]);
   return (
-    <form action={action} className="bg-secondary/40 rounded-control border-border space-y-3 border p-4">
+    <form onSubmit={(event) => {
+      event.preventDefault();
+      if (pending) return;
+      const data = new FormData(event.currentTarget);
+      startTransition(() => action(data));
+    }} className="bg-secondary/40 rounded-control border-border space-y-3 border p-4">
       <h3 className="text-primary text-sm font-semibold">절충안 초안</h3>
       <label className="block space-y-1 text-sm"><span>제목</span><Input required name="title" maxLength={100} defaultValue={title.slice(0, 100)} /></label>
       <label className="block space-y-1 text-sm"><span>내용</span><Textarea required rows={5} name="content" maxLength={1000} defaultValue={draft.content} /></label>
