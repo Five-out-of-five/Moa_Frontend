@@ -675,6 +675,15 @@ export const adminNoticesStore = shareSettingsMock(
   initialNoticeSeed(),
 );
 
+/**
+ * 공지 ID 단조 증가 카운터. shareSettingsMock 에 별도로 올려 **삭제와 무관하게** 다음 ID 를
+ * 발급한다. 삭제된 ID 를 재사용하면 기존 `?selected=<id>` 공유 URL 이 새 공지를 가리키게 되는
+ * 사고 방지.
+ */
+const adminNoticeNextIdBox = shareSettingsMock("adminNoticeNextId", {
+  value: Math.max(100, ...Array.from(adminNoticesStore.keys())) + 1,
+});
+
 function computeNoticeState(entry: AdminNoticeEntry): string {
   const now = Date.now();
   const starts = Date.parse(entry.displayStartsAt);
@@ -719,8 +728,10 @@ export function toAdminNoticeDetail(noticeId: number): AdminNoticeDetail | null 
 }
 
 function nextNoticeId(): number {
-  const ids = Array.from(adminNoticesStore.keys());
-  return (ids.length === 0 ? 100 : Math.max(...ids)) + 1;
+  // 삭제된 ID 재사용 금지. 카운터를 사용한 뒤 바로 증가.
+  const id = adminNoticeNextIdBox.value;
+  adminNoticeNextIdBox.value = id + 1;
+  return id;
 }
 
 export function createNoticeInStore(

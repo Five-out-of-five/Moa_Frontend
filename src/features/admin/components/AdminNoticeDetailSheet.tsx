@@ -81,6 +81,13 @@ export function AdminNoticeDetailSheet({
     if (loadFailed) setDetail(null);
   }, [loadFailed]);
 
+  // 선택이 바뀌면 열려 있던 수정/삭제 Dialog 를 닫는다 — 이전 공지의 Dialog 가 새 공지를 겨냥한
+  // 채로 남는 사고 방지.
+  useEffect(() => {
+    setEditOpen(false);
+    setDeleteOpen(false);
+  }, [selectedId]);
+
   const open = selectedId !== null;
 
   function closeSheet() {
@@ -199,7 +206,13 @@ export function AdminNoticeDetailSheet({
             open={editOpen}
             onOpenChange={setEditOpen}
             detail={detail}
-            onUpdated={setDetail}
+            onUpdated={(next) => {
+              // 늦게 도착한 수정 응답이 **다른 공지로 전환된 현재 상세** 를 덮지 않도록 가드.
+              // 현재 선택된 noticeId 와 응답 noticeId 가 일치할 때만 반영.
+              setDetail((current) =>
+                current && next.noticeId === current.noticeId ? next : current,
+              );
+            }}
           />
           <AdminNoticeDeleteDialog
             open={deleteOpen}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -37,18 +37,27 @@ export function AdminNoticeDeleteDialog({
   onDeleted,
 }: Props) {
   const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   function handleConfirm(e: React.MouseEvent<HTMLButtonElement>) {
     e.preventDefault();
+    setError(null);
     startTransition(async () => {
-      const result = await deleteNoticeAction(noticeId);
-      if (result.kind === "ok-void") {
-        toast.success("공지를 삭제했습니다.");
-        onDeleted();
-        onOpenChange(false);
-        return;
+      try {
+        const result = await deleteNoticeAction(noticeId);
+        if (result.kind === "ok-void") {
+          toast.success("공지를 삭제했습니다.");
+          onDeleted();
+          onOpenChange(false);
+          return;
+        }
+        setError(result.message);
+      } catch {
+        // 전송 오류 — 서버 반영 여부 확신 못 하므로 "삭제 실패" 로 단정하지 않고 재시도 안내.
+        setError(
+          "요청을 전송하지 못했습니다. 다시 시도해 주세요. 서버에 반영되었을 수도 있으니 목록을 확인해 주세요.",
+        );
       }
-      toast.error(result.message);
     });
   }
 
@@ -67,6 +76,14 @@ export function AdminNoticeDeleteDialog({
             『{title}』 공지를 삭제합니다. 삭제된 공지는 되살릴 수 없습니다.
           </AlertDialogDescription>
         </AlertDialogHeader>
+        {error && (
+          <p
+            role="alert"
+            className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+          >
+            {error}
+          </p>
+        )}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>취소</AlertDialogCancel>
           <AlertDialogAction

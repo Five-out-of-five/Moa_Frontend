@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -86,11 +86,25 @@ export function AdminNoticeFormDialog({
 }: Props) {
   const isEdit = Boolean(detail?.noticeId);
   const [form, setForm] = useState<AdminNoticeRequest>(EMPTY);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  // datetime-local 은 분 단위라 초가 잘린다. 수정 모드에서 **사용자가 해당 필드를 안 건드렸다면**
+  // 원본 ISO 를 그대로 유지하도록 originalRef 에 기록 → 제출 시 분 단위 값이 같으면 원본 사용.
+  const originalRef = useRef<{
+    displayStartsAt?: string;
+    displayEndsAt?: string;
+    maintenanceStartsAt?: string;
+  }>({});
 
   useEffect(() => {
     if (!open) return;
     if (detail) {
+      originalRef.current = {
+        displayStartsAt: detail.displayStartsAt,
+        displayEndsAt: detail.displayEndsAt,
+        maintenanceStartsAt: detail.maintenanceStartsAt,
+      };
       setForm({
         noticeType: (detail.noticeType as AdminNoticeType) ?? "GENERAL",
         title: detail.title ?? "",
@@ -100,9 +114,24 @@ export function AdminNoticeFormDialog({
         maintenanceStartsAt: toLocalInput(detail.maintenanceStartsAt),
       });
     } else {
+      originalRef.current = {};
       setForm(EMPTY);
     }
+    setSubmitError(null);
   }, [open, detail]);
+
+  /**
+   * datetime-local 값(분 단위)과 원본 ISO 의 분 단위 값이 같으면 원본을 그대로 돌려줘 초 단위
+   * 소실을 막는다. 다르면 새 입력을 `+09:00` ISO 로 직렬화.
+   */
+  function resolveIso(
+    localValue: string,
+    original: string | undefined,
+  ): string {
+    if (!localValue) return "";
+    if (original && toLocalInput(original) === localValue) return original;
+    return fromLocalInput(localValue);
+  }
 
   function set<K extends keyof AdminNoticeRequest>(
     key: K,
@@ -116,42 +145,62 @@ export function AdminNoticeFormDialog({
       noticeType: form.noticeType,
       title: form.title.trim(),
       content: form.content.trim(),
-      displayStartsAt: fromLocalInput(form.displayStartsAt),
-      displayEndsAt: fromLocalInput(form.displayEndsAt),
+      displayStartsAt: resolveIso(
+        form.displayStartsAt,
+        originalRef.current.displayStartsAt,
+      ),
+      displayEndsAt: resolveIso(
+        form.displayEndsAt,
+        originalRef.current.displayEndsAt,
+      ),
       maintenanceStartsAt:
         form.noticeType === "MAINTENANCE" && form.maintenanceStartsAt
-          ? fromLocalInput(form.maintenanceStartsAt)
+          ? resolveIso(
+              form.maintenanceStartsAt,
+              originalRef.current.maintenanceStartsAt,
+            )
           : undefined,
     };
     if (payload.title.length === 0) {
-      toast.error("제목을 입력해 주세요.");
+      setSubmitError("제목을 입력해 주세요.");
       return;
     }
     if (payload.content.length === 0) {
-      toast.error("내용을 입력해 주세요.");
+      setSubmitError("내용을 입력해 주세요.");
       return;
     }
     if (!payload.displayStartsAt || !payload.displayEndsAt) {
-      toast.error("표시 기간을 선택해 주세요.");
+      setSubmitError("표시 기간을 선택해 주세요.");
       return;
     }
-    if (payload.displayEndsAt <= payload.displayStartsAt) {
-      toast.error("표시 종료일이 시작일보다 뒤여야 합니다.");
+    if (
+      Date.parse(payload.displayEndsAt) <= Date.parse(payload.displayStartsAt)
+    ) {
+      setSubmitError("표시 종료일이 시작일보다 뒤여야 합니다.");
       return;
     }
+    setSubmitError(null);
 
     startTransition(async () => {
-      const result = isEdit
-        ? await updateNoticeAction(detail!.noticeId!, payload)
-        : await createNoticeAction(payload);
-      if (result.kind === "ok") {
-        if (isEdit) onUpdated?.(result.detail);
-        else onCreated?.(result.detail);
-        toast.success(isEdit ? "공지를 수정했습니다." : "공지를 등록했습니다.");
-        onOpenChange(false);
-        return;
+      try {
+        const result = isEdit
+          ? await updateNoticeAction(detail!.noticeId!, payload)
+          : await createNoticeAction(payload);
+        if (result.kind === "ok") {
+          if (isEdit) onUpdated?.(result.detail);
+          else onCreated?.(result.detail);
+          toast.success(isEdit ? "공지를 수정했습니다." : "공지를 등록했습니다.");
+          onOpenChange(false);
+          return;
+        }
+        setSubmitError(result.message);
+      } catch {
+        // 네트워크 단절 등 **전송 오류** 는 서버 액션의 catch 가 아니라 여기까지 올라온다.
+        // 서버 반영 여부를 확신할 수 없으므로 "반영 안 됨" 으로 단정하지 않고 재시도만 안내.
+        setSubmitError(
+          "요청을 전송하지 못했습니다. 네트워크 상태를 확인하고 다시 시도해 주세요. 서버에 반영되었을 수도 있으니 목록을 확인해 주세요.",
+        );
       }
-      toast.error(result.message);
     });
   }
 
@@ -297,6 +346,15 @@ export function AdminNoticeFormDialog({
             </div>
           )}
         </div>
+
+        {submitError && (
+          <p
+            role="alert"
+            className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+          >
+            {submitError}
+          </p>
+        )}
 
         <DialogFooter>
           <button

@@ -296,10 +296,13 @@ export const listAdminNotices = cache(
       const filtered = all
         .filter((v) => (q.noticeType ? v.noticeType === q.noticeType : true))
         .filter((v) => (q.state ? v.state === q.state : true))
-        // 표시 시작 최신 순 — "방금 올린 공지가 맨 위".
-        .sort((a, b) =>
-          (b.displayStartsAt ?? "").localeCompare(a.displayStartsAt ?? ""),
-        );
+        // 표시 시작 최신 순 — 타임스탬프로 비교 (문자열 정렬은 `Z` 와 `+09:00` 가 섞이면 실제
+        // 시각 순서와 어긋남).
+        .sort((a, b) => {
+          const sa = Date.parse(a.displayStartsAt ?? "") || 0;
+          const sb = Date.parse(b.displayStartsAt ?? "") || 0;
+          return sb - sa;
+        });
       const total = filtered.length;
       const totalPages = Math.max(1, Math.ceil(total / size));
       const safePage = Math.min(Math.max(0, page), totalPages - 1);
