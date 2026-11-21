@@ -2,7 +2,7 @@
 
 import { AlertTriangle } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -54,6 +54,9 @@ export function AdminRoomDetailSheet({
   const [reactivating, startReactivateTransition] = useTransition();
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // 선택 세대 토큰 — 선택이 바뀌면 ++ 해 과거 요청의 응답/오류가 새 방에 반영되지 않도록 가드.
+  const selectionGenRef = useRef(0);
+
   useEffect(() => {
     if (initialDetail) setDetail(initialDetail);
   }, [initialDetail]);
@@ -62,8 +65,9 @@ export function AdminRoomDetailSheet({
     if (loadFailed) setDetail(null);
   }, [loadFailed]);
 
-  // 선택이 바뀌면 열린 Dialog 는 닫고 이전 액션 오류도 치운다.
+  // 선택이 바뀌면 세대 ++ → 열린 Dialog 닫고 이전 액션 오류/상태도 치운다.
   useEffect(() => {
+    selectionGenRef.current += 1;
     setInactivateOpen(false);
     setActionError(null);
   }, [selectedId]);
@@ -83,10 +87,13 @@ export function AdminRoomDetailSheet({
   function handleReactivate() {
     const requestedId = detail?.roomId;
     if (!requestedId) return;
+    const myGen = selectionGenRef.current;
     setActionError(null);
     startReactivateTransition(async () => {
       try {
         const result = await reactivateRoomAction(requestedId);
+        // 요청 중 사용자가 다른 방으로 전환했다면 응답/오류를 적용하지 않는다.
+        if (myGen !== selectionGenRef.current) return;
         if (result.kind === "ok") {
           setDetail((current) =>
             current && result.detail.roomId === current.roomId
@@ -98,6 +105,7 @@ export function AdminRoomDetailSheet({
         }
         setActionError(result.message);
       } catch {
+        if (myGen !== selectionGenRef.current) return;
         // 전송 오류 — 서버 반영 여부 확신 못 하므로 "실패" 로 단정 금지.
         setActionError(
           "요청을 전송하지 못했습니다. 다시 시도해 주세요. 서버에 반영되었을 수도 있으니 목록을 다시 조회해 주세요.",
