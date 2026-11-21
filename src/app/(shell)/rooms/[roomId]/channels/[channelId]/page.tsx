@@ -1,11 +1,14 @@
 import { notFound } from "next/navigation";
 
 import { getMyAccount } from "@/features/account/server";
+import { BriefingFocus } from "@/features/briefing/BriefingFocus";
+import { readBriefingFocus } from "@/features/briefing/model";
 import { ChannelPageClient } from "@/features/chat/components/ChannelPageClient";
 import { getChannel, getChannelMessages } from "@/features/chat/server";
 
 interface Props {
   params: Promise<{ roomId: string; channelId: string }>;
+  searchParams: Promise<{ briefingFocus?: string | string[] }>;
 }
 
 /**
@@ -15,8 +18,8 @@ interface Props {
  *    로컬 state 로만 반영한다. 소켓 전환은 BE 토큰/엔드포인트 확정 뒤 후속 PR.
  * ⚠️ 채널 조회가 null (사이드바에 남아 있지만 서버에서 지워진 등) 이면 404 로 떨어뜨린다.
  */
-export default async function RoomChannelPage({ params }: Props) {
-  const { roomId: roomIdParam, channelId: channelIdParam } = await params;
+export default async function RoomChannelPage({ params, searchParams }: Props) {
+  const [{ roomId: roomIdParam, channelId: channelIdParam }, query] = await Promise.all([params, searchParams]);
   const roomId = Number(roomIdParam);
   const channelId = Number(channelIdParam);
   if (!Number.isFinite(roomId) || !Number.isFinite(channelId)) notFound();
@@ -46,10 +49,9 @@ export default async function RoomChannelPage({ params }: Props) {
   if (!channel) notFound();
 
   return (
-    <ChannelPageClient
-      channel={channel}
-      initialMessages={messages}
-      me={meResult}
-    />
+    <>
+      <ChannelPageClient channel={channel} initialMessages={messages} me={meResult} />
+      <BriefingFocus ids={readBriefingFocus(query.briefingFocus)} />
+    </>
   );
 }

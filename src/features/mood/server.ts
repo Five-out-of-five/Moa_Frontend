@@ -1,8 +1,9 @@
 import "server-only";
 
 import { api } from "@/lib/api";
+import { isActiveMember } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
-import { moodStatuses } from "@/mocks/db";
+import { moodStatuses, roomMembers } from "@/mocks/db";
 import type { MoodStatus } from "@/types/db";
 
 import { shiftMoodDate, todayMoodDate } from "./date";
@@ -22,9 +23,11 @@ export async function listTodayMoods(roomId: number): Promise<MoodStatus[]> {
 export async function listMoodTrend(roomId: number, period: Exclude<MoodPeriod, 1>, today: string) {
   if (!isMock) return null;
   const start = shiftMoodDate(today, 1 - period);
+  const activeIds = new Set(roomMembers.filter((member) => member.roomId === roomId && isActiveMember(member)).map(({ accountId }) => accountId));
   const groups = new Map<string, MoodStatus[]>();
   for (const mood of moodStatuses) {
     if (mood.roomId !== roomId || mood.recordedDate < start || mood.recordedDate > today) continue;
+    if (mood.recordedDate === today && !activeIds.has(mood.accountId)) continue;
     const group = groups.get(mood.recordedDate) ?? [];
     group.push(mood);
     groups.set(mood.recordedDate, group);

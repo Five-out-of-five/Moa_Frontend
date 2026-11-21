@@ -2,6 +2,7 @@ import Image from "next/image";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
+import { Assistant } from "@/features/ai/Assistant";
 import { getFirstRoomProfile } from "@/features/room/first-profile/server";
 import { RoomDashboard } from "@/features/widget/RoomDashboard";
 import { WidgetLoading } from "@/features/widget/WidgetSummary";
@@ -18,6 +19,7 @@ export default async function RoomPage({ params }: { params: Promise<{ roomId: s
     <section className="mx-auto w-full max-w-7xl">
       <h1 className="text-foreground text-2xl font-bold tracking-tight">{room.name}</h1>
       {room.description && <p className="text-muted-foreground mt-2 text-sm">{room.description}</p>}
+      <Assistant key={room.id} roomId={room.id} />
       {profile && setup && (
         <div className="border-border mt-5 flex items-center gap-3 border-t pt-4">
           {profile.imageUrl && (

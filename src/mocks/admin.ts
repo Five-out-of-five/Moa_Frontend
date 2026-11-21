@@ -17,12 +17,19 @@ import type {
   AdminAccountStatus,
   AdminAuditLogListQuery,
   AdminAuditLogPage,
+  AdminNotice,
+  AdminNoticeDetail,
+  AdminNoticeRequest,
+  AdminNoticeType,
   AdminReport,
   AdminReportAction,
   AdminReportDetail,
   AdminReportReason,
   AdminReportStatus,
   AdminReportTargetType,
+  AdminRoom,
+  AdminRoomDetail,
+  AdminRoomStatus,
   AdminSuspension,
   AdminSuspensionPeriod,
   AiUsageByFeature,
@@ -30,7 +37,7 @@ import type {
   StatsOverview,
   StatsSeriesPoint,
 } from "@/features/admin/types";
-import { accounts, shareSettingsMock } from "@/mocks/db";
+import { accounts, rooms as mockRooms, shareSettingsMock } from "@/mocks/db";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TZ = "Asia/Seoul";
@@ -201,8 +208,10 @@ export function getAdminAuditLogsMock(q: AdminAuditLogListQuery = {}): AdminAudi
     .filter((v) => (q.actionType ? v.actionType === q.actionType : true))
     .filter((v) => (q.targetType ? v.targetType === q.targetType : true))
     .filter((v) => {
-      const createdDate = (v.createdAt ?? "").slice(0, 10);
-      if (!createdDate) return true;
+      // 테이블 표시가 KST 라서 날짜 필터도 KST 기준으로 자른다. `slice(0,10)` 로 UTC 날짜를
+      // 그대로 쓰면 자정 전후 로그가 하루 어긋나 "오늘로 조회해도 어제로 밀려 나오는" 사고.
+      if (!v.createdAt) return true;
+      const createdDate = toKstIsoDate(new Date(v.createdAt));
       if (q.from && createdDate < q.from) return false;
       if (q.to && createdDate > q.to) return false;
       return true;
@@ -366,6 +375,7 @@ export function toAdminDetail(
 const REPORT_OVERDUE_MS = 72 * 60 * 60 * 1000;
 
 export interface AdminReportEntry {
+  targetId?: number;
   reportId: number;
   targetType: AdminReportTargetType;
   reason: AdminReportReason;
@@ -604,4 +614,298 @@ export function rejectReportInStore(
   entry.handledByAccountId = adminId;
   entry.handledAt = new Date().toISOString();
   return entry;
+}
+
+// ===== 공지 관리 =====
+
+export interface AdminNoticeEntry {
+  noticeId: number;
+  noticeType: AdminNoticeType;
+  title: string;
+  content: string;
+  displayStartsAt: string;
+  displayEndsAt: string;
+  maintenanceStartsAt: string | null;
+  authorAccountId: number;
+}
+
+function initialNoticeSeed(): Map<number, AdminNoticeEntry> {
+  const m = new Map<number, AdminNoticeEntry>();
+  const now = Date.now();
+  const seed: Omit<AdminNoticeEntry, "authorAccountId">[] = [
+    {
+      noticeId: 51,
+      noticeType: "URGENT",
+      title: "AI 응답 지연 안내",
+      content: "현재 AI 요약·추천 응답이 평소보다 느립니다. 원인 파악 중입니다.",
+      displayStartsAt: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
+      displayEndsAt: new Date(now + 6 * 60 * 60 * 1000).toISOString(),
+      maintenanceStartsAt: null,
+    },
+    {
+      noticeId: 50,
+      noticeType: "MAINTENANCE",
+      title: "11월 정기 점검 (01:00 ~ 03:00)",
+      content: "서비스 안정화를 위해 새벽 점검을 수행합니다. 짧은 끊김이 있을 수 있습니다.",
+      displayStartsAt: new Date(now + 24 * 60 * 60 * 1000).toISOString(),
+      displayEndsAt: new Date(now + 48 * 60 * 60 * 1000).toISOString(),
+      maintenanceStartsAt: new Date(now + 36 * 60 * 60 * 1000).toISOString(),
+    },
+    {
+      noticeId: 49,
+      noticeType: "GENERAL",
+      title: "신고 처리 기준 안내",
+      content: "커뮤니티 가이드라인을 요약한 페이지를 공개했습니다. 하단 링크에서 확인하세요.",
+      displayStartsAt: new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      displayEndsAt: new Date(now + 14 * 24 * 60 * 60 * 1000).toISOString(),
+      maintenanceStartsAt: null,
+    },
+    {
+      noticeId: 48,
+      noticeType: "GENERAL",
+      title: "채팅 전송 지연 공지",
+      content: "WebSocket 이슈로 1시간가량 채팅 전송이 지연되었습니다. 현재는 정상입니다.",
+      displayStartsAt: new Date(now - 10 * 24 * 60 * 60 * 1000).toISOString(),
+      displayEndsAt: new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      maintenanceStartsAt: null,
+    },
+  ];
+  // 작성자는 첫 ADMIN 계정 (이홍근 = id 1).
+  const adminId = accounts.find((a) => a.role === "ADMIN")?.id ?? 1;
+  for (const s of seed) m.set(s.noticeId, { ...s, authorAccountId: adminId });
+  return m;
+}
+
+export const adminNoticesStore = shareSettingsMock(
+  "adminNoticesStore",
+  initialNoticeSeed(),
+);
+
+/**
+ * 공지 ID 단조 증가 카운터. shareSettingsMock 에 별도로 올려 **삭제와 무관하게** 다음 ID 를
+ * 발급한다. 삭제된 ID 를 재사용하면 기존 `?selected=<id>` 공유 URL 이 새 공지를 가리키게 되는
+ * 사고 방지.
+ */
+const adminNoticeNextIdBox = shareSettingsMock("adminNoticeNextId", {
+  value: Math.max(100, ...Array.from(adminNoticesStore.keys())) + 1,
+});
+
+function computeNoticeState(entry: AdminNoticeEntry): string {
+  const now = Date.now();
+  const starts = Date.parse(entry.displayStartsAt);
+  const ends = Date.parse(entry.displayEndsAt);
+  if (!Number.isFinite(starts) || !Number.isFinite(ends)) return "SCHEDULED";
+  if (now < starts) return "SCHEDULED";
+  if (now > ends) return "EXPIRED";
+  return "ACTIVE";
+}
+
+function authorByAccountId(
+  accountId: number,
+): { accountId?: number; name?: string } {
+  const acc = accounts.find((a) => a.id === accountId);
+  return acc ? { accountId: acc.id, name: acc.name } : { accountId };
+}
+
+export function toAdminNoticeRow(entry: AdminNoticeEntry): AdminNotice {
+  return {
+    noticeId: entry.noticeId,
+    noticeType: entry.noticeType,
+    title: entry.title,
+    displayStartsAt: entry.displayStartsAt,
+    displayEndsAt: entry.displayEndsAt,
+    state: computeNoticeState(entry),
+    author: authorByAccountId(entry.authorAccountId),
+  };
+}
+
+export function toAdminNoticeDetail(noticeId: number): AdminNoticeDetail | null {
+  const entry = adminNoticesStore.get(noticeId);
+  if (!entry) return null;
+  return {
+    noticeId: entry.noticeId,
+    noticeType: entry.noticeType,
+    title: entry.title,
+    content: entry.content,
+    displayStartsAt: entry.displayStartsAt,
+    displayEndsAt: entry.displayEndsAt,
+    maintenanceStartsAt: entry.maintenanceStartsAt ?? undefined,
+  };
+}
+
+function nextNoticeId(): number {
+  // 삭제된 ID 재사용 금지. 카운터를 사용한 뒤 바로 증가.
+  const id = adminNoticeNextIdBox.value;
+  adminNoticeNextIdBox.value = id + 1;
+  return id;
+}
+
+export function createNoticeInStore(
+  adminId: number,
+  input: AdminNoticeRequest,
+): AdminNoticeEntry {
+  const noticeId = nextNoticeId();
+  const entry: AdminNoticeEntry = {
+    noticeId,
+    noticeType: input.noticeType,
+    title: input.title,
+    content: input.content,
+    displayStartsAt: input.displayStartsAt,
+    displayEndsAt: input.displayEndsAt,
+    maintenanceStartsAt:
+      input.noticeType === "MAINTENANCE"
+        ? input.maintenanceStartsAt ?? null
+        : null,
+    authorAccountId: adminId,
+  };
+  adminNoticesStore.set(noticeId, entry);
+  return entry;
+}
+
+export function updateNoticeInStore(
+  noticeId: number,
+  input: AdminNoticeRequest,
+): AdminNoticeEntry | null {
+  const entry = adminNoticesStore.get(noticeId);
+  if (!entry) return null;
+  entry.noticeType = input.noticeType;
+  entry.title = input.title;
+  entry.content = input.content;
+  entry.displayStartsAt = input.displayStartsAt;
+  entry.displayEndsAt = input.displayEndsAt;
+  entry.maintenanceStartsAt =
+    input.noticeType === "MAINTENANCE"
+      ? input.maintenanceStartsAt ?? null
+      : null;
+  return entry;
+}
+
+export function deleteNoticeInStore(noticeId: number): boolean {
+  return adminNoticesStore.delete(noticeId);
+}
+
+// ===== 방 관리 =====
+//
+// `rooms` 는 기본 방 데이터(이름·설명·멤버수·생성일), `adminRoomsOverlay` 는 관리자 전용 메타
+// (status/lastActivityAt/reportCount/비활성 사유 등). 회원 overlay 와 같은 패턴.
+
+export interface AdminRoomOverlayEntry {
+  status: AdminRoomStatus;
+  lastActivityAt: string;
+  reportCount: number;
+  inactiveReason: string | null;
+  inactivatedAt: string | null;
+  inactivatedByAccountId: number | null;
+  creatorAccountId: number;
+}
+
+function seedRoomOverlay(): Map<number, AdminRoomOverlayEntry> {
+  const m = new Map<number, AdminRoomOverlayEntry>();
+  mockRooms.forEach((room, i) => {
+    // 최근 활동은 방마다 다른 시각 (0~45일 전).
+    const daysAgo = (i * 4) % 46;
+    m.set(room.id, {
+      status: "ACTIVE",
+      lastActivityAt: new Date(Date.now() - daysAgo * DAY_MS).toISOString(),
+      reportCount: (i * 2) % 7,
+      inactiveReason: null,
+      inactivatedAt: null,
+      inactivatedByAccountId: null,
+      // 각 방 첫 번째 ADMIN 또는 첫 계정을 방장으로.
+      creatorAccountId: accounts[i % accounts.length]?.id ?? 1,
+    });
+  });
+  return m;
+}
+
+export const adminRoomsOverlay = shareSettingsMock(
+  "adminRoomsOverlay",
+  seedRoomOverlay(),
+);
+
+function personRef(
+  accountId: number | null,
+): { accountId?: number; name?: string } | undefined {
+  if (accountId === null) return undefined;
+  const acc = accounts.find((a) => a.id === accountId);
+  return acc ? { accountId: acc.id, name: acc.name } : { accountId };
+}
+
+export function toAdminRoomRow(
+  room: (typeof mockRooms)[number],
+  entry: AdminRoomOverlayEntry,
+): AdminRoom {
+  return {
+    roomId: room.id,
+    name: room.name,
+    creator: personRef(entry.creatorAccountId),
+    memberCount: room.memberCount,
+    status: entry.status,
+    lastActivityAt: entry.lastActivityAt,
+    reportCount: entry.reportCount,
+    createdAt: room.createdAt,
+  };
+}
+
+export function toAdminRoomDetail(roomId: number): AdminRoomDetail | null {
+  const room = mockRooms.find((r) => r.id === roomId);
+  const entry = adminRoomsOverlay.get(roomId);
+  if (!room || !entry) return null;
+  return {
+    roomId: room.id,
+    name: room.name,
+    creator: personRef(entry.creatorAccountId),
+    memberCount: room.memberCount,
+    status: entry.status,
+    lastActivityAt: entry.lastActivityAt,
+    reportCount: entry.reportCount,
+    createdAt: room.createdAt,
+    description: room.description ?? undefined,
+    inactiveReason: entry.inactiveReason ?? undefined,
+    inactivatedAt: entry.inactivatedAt ?? undefined,
+    inactivatedBy: entry.inactivatedByAccountId !== null
+      ? personRef(entry.inactivatedByAccountId)
+      : undefined,
+  };
+}
+
+export function inactivateRoomInStore(
+  roomId: number,
+  adminId: number,
+  reason: string,
+): AdminRoomOverlayEntry | null {
+  const entry = adminRoomsOverlay.get(roomId);
+  if (!entry) return null;
+  entry.status = "INACTIVE";
+  entry.inactiveReason = reason;
+  entry.inactivatedAt = new Date().toISOString();
+  entry.inactivatedByAccountId = adminId;
+  return entry;
+}
+
+export function reactivateRoomInStore(
+  roomId: number,
+): AdminRoomOverlayEntry | null {
+  const entry = adminRoomsOverlay.get(roomId);
+  if (!entry) return null;
+  entry.status = "ACTIVE";
+  entry.inactiveReason = null;
+  entry.inactivatedAt = null;
+  entry.inactivatedByAccountId = null;
+  return entry;
+}
+
+export function listMockRoomsForAdmin(): Array<{
+  room: (typeof mockRooms)[number];
+  entry: AdminRoomOverlayEntry;
+}> {
+  const out: Array<{
+    room: (typeof mockRooms)[number];
+    entry: AdminRoomOverlayEntry;
+  }> = [];
+  for (const room of mockRooms) {
+    const entry = adminRoomsOverlay.get(room.id);
+    if (entry) out.push({ room, entry });
+  }
+  return out;
 }

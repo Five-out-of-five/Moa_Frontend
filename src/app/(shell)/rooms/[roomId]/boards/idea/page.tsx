@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
-import { getMyAccount } from "@/features/account/server";
+import { MeetingSummaryDialog } from "@/features/ai/MeetingSummaryDialog";
 import { BriefingFocus } from "@/features/briefing/BriefingFocus";
 import { readBriefingFocus } from "@/features/briefing/model";
 import { IdeaBoard } from "@/features/idea/IdeaBoard";
@@ -11,6 +11,8 @@ import { IdeaBoardLive } from "@/features/idea/IdeaBoardLive";
 import { CloseIdeaDialog, IdeaCardDialog, StartIdeaDialog } from "@/features/idea/IdeaDialogs";
 import { ideaDateTime } from "@/features/idea/model";
 import { getIdeaBoard, getIdeaDiscussions } from "@/features/idea/server";
+import { listConflicts } from "@/features/mediation/server";
+import { getReportViewerAccountId } from "@/features/report/server";
 import { getFirstRoomProfile } from "@/features/room/first-profile/server";
 import { listRoomMembers } from "@/features/room/server";
 
@@ -22,19 +24,31 @@ export default async function IdeaBoardPage({ params, searchParams }: {
   const entry = await getFirstRoomProfile(roomId);
   if (!entry) notFound();
   const id = entry.room.id;
-  const [board, account] = await Promise.all([getIdeaBoard(id), getMyAccount()]);
+  const sessionId = query.session === undefined ? undefined : Number(query.session);
+  if (sessionId !== undefined && (!Number.isSafeInteger(sessionId) || sessionId < 1)) notFound();
+  const board = await getIdeaBoard(id, sessionId);
+  const accountId = await getReportViewerAccountId();
   const selected = query.session ? board.history.find((item) => String(item.id) === query.session) : board.active;
   if (query.session && !selected) notFound();
   const cards = selected ? board.cards.filter(({ sessionId }) => sessionId === selected.id) : [];
   const roster = board.editable && cards.some(({ commentCount }) => commentCount > 0)
     ? await listRoomMembers(id) : [];
   const discussion = getIdeaDiscussions(cards, roster);
+  const conflicts = await listConflicts(id).catch(() => []);
+  const conflictByCard = Object.fromEntries(conflicts.filter(({ state }) => state === "OPEN")
+    .flatMap((conflict) => [[conflict.leftCardId, conflict.id], [conflict.rightCardId, conflict.id]]));
   const participants = new Set([
     ...cards.map(({ author }) => author.accountId),
     ...Object.values(discussion).flatMap(({ comments }) => comments.map(({ authorId }) => authorId)),
   ]).size;
   const isClosed = selected?.state === "CLOSED";
   const href = `/rooms/${id}/boards/idea`;
+  const archivedSessions = new Set(board.history.map(({ id }) => id));
+  const sources = new Map(board.cards.map((card) => [card.id, {
+    id: card.id,
+    title: card.title,
+    href: `${href}?${archivedSessions.has(card.sessionId) ? `session=${card.sessionId}&` : ""}briefingFocus=${card.id}`,
+  }]));
 
   return (
     <section className="mx-auto max-w-7xl space-y-4">
@@ -54,6 +68,7 @@ export default async function IdeaBoardPage({ params, searchParams }: {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
+          {board.editable && <MeetingSummaryDialog roomId={id} history={board.history} hasActive={Boolean(board.active)} cards={board.cards} />}
           <Button variant="outline" size="sm" asChild><Link href={`/rooms/${id}`}><ArrowLeft aria-hidden="true" />대시보드로 돌아가기</Link></Button>
           <details className="group relative">
             <summary className="rounded-control bg-card border-border flex h-8 cursor-pointer list-none items-center gap-1.5 border px-3 text-xs font-medium [&::-webkit-details-marker]:hidden">
@@ -81,7 +96,7 @@ export default async function IdeaBoardPage({ params, searchParams }: {
           {board.editable && !selected && <StartIdeaDialog roomId={id} trigger={<Button size="sm"><Plus aria-hidden="true" />회차 시작</Button>} />}
         </div>
       </header>
-      {selected ? <IdeaBoard session={selected} cards={cards} accountId={account.id} editable={board.editable} discussion={discussion} />
+      {selected ? <IdeaBoard session={selected} cards={cards} accountId={accountId} editable={board.editable} discussion={discussion} conflictByCard={conflictByCard} sources={sources} />
         : <p className="bg-card border-border rounded-card text-muted-foreground border p-5 text-sm">진행 중인 회차가 없어요.</p>}
     </section>
   );

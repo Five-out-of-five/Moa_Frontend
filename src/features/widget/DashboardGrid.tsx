@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type CSSProperties, type ReactNode, useEffect } from "react";
 
+import { LayoutRecommendation } from "@/features/ai/LayoutRecommendation";
 import type { RoomWidget } from "@/types/db";
 
 import { AddWidgetDialog } from "./AddWidgetDialog";
@@ -13,6 +14,7 @@ import { findOpenPlacement, GRID_COLUMNS, GRID_GAP, GRID_ROW_HEIGHT } from "./gr
 import { useDashboardLayout } from "./useDashboardLayout";
 import { useWidgetGesture } from "./useWidgetGesture";
 import { getWidgetDetailHref, WIDGET_ICONS, WIDGET_TITLES } from "./widget-info";
+import { WidgetRemovalControls } from "./WidgetRemovalControls";
 
 export function DashboardGrid({
   roomId,
@@ -47,11 +49,15 @@ export function DashboardGrid({
     "aria-disabled": pending !== null,
   };
 
-  if (widgets.length === 0 && !canAdd) {
-    return <p className="text-muted-foreground text-sm">배치된 위젯이 없습니다.</p>;
-  }
-
   return (
+    <>
+    <div className="mb-3 overflow-x-auto p-1">
+      <div role="group" aria-label="대시보드 레이아웃" className="ml-auto flex w-max items-center gap-2">
+        <LayoutRecommendation roomId={roomId} />
+        {editable && <WidgetRemovalControls roomId={roomId} disabled={Boolean(projected)} onChanged={applySnapshot} />}
+      </div>
+    </div>
+    {widgets.length === 0 && !canAdd && <p className="text-muted-foreground text-sm">배치된 위젯이 없습니다.</p>}
     <div
       ref={grid}
       className="grid grid-cols-1 gap-[var(--widget-gap)] sm:auto-rows-[var(--widget-row)] sm:grid-cols-[var(--widget-columns)]"
@@ -108,6 +114,8 @@ export function DashboardGrid({
                 </span>
               )}
               {href && <Link href={href} className="text-primary text-xs hover:underline">전체 보기</Link>}
+              {editable && <WidgetRemovalControls roomId={roomId} widgetId={widget.id} title={title}
+                isLast={widgets.length <= 1} disabled={Boolean(projected)} onChanged={applySnapshot} />}
             </header>
             <div className={`${styles.preview} min-h-0 flex-1 px-3 pt-2 pb-3 sm:overflow-clip`}>
               {bodies[widget.id] ?? (
@@ -145,5 +153,6 @@ export function DashboardGrid({
         />
       )}
     </div>
+    </>
   );
 }

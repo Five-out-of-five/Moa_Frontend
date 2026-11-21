@@ -6,11 +6,13 @@ import type { BoardSession, IdeaCard } from "@/types/db";
 
 import { IdeaCardDetails } from "./IdeaCardDetails";
 import { IdeaCardDialog } from "./IdeaDialogs";
-import { IDEA_COLUMNS, type IdeaDiscussion } from "./model";
+import { IDEA_COLUMNS, type IdeaDiscussion, type IdeaSourceLink } from "./model";
 
-export function IdeaBoard({ session, cards, accountId, editable, discussion }: {
+export function IdeaBoard({ session, cards, accountId, editable, discussion, conflictByCard = {}, sources = new Map() }: {
   session: BoardSession; cards: IdeaCard[]; accountId: number; editable: boolean;
   discussion: Record<number, IdeaDiscussion>;
+  conflictByCard?: Record<number, number>;
+  sources?: ReadonlyMap<number, IdeaSourceLink>;
 }) {
   const canCreate = editable && session.state === "ACTIVE";
   return (
@@ -43,7 +45,10 @@ export function IdeaBoard({ session, cards, accountId, editable, discussion }: {
               {column.length ? (
                 <ul className="space-y-2">
                   {column.map((card) => (
-                    <li key={card.id} data-briefing-id={card.id} className="rounded-control data-briefing-highlight:ring-primary data-briefing-highlight:ring-2"><IdeaCardDetails card={card} canEdit={canCreate && isAuthor({ id: accountId }, card.author)} discussion={discussion[card.id]} /></li>
+                    <li key={card.id} data-briefing-id={card.id} className="rounded-control data-briefing-highlight:ring-primary data-briefing-highlight:ring-2"><IdeaCardDetails card={card} canReport={accountId > 0 && !isAuthor({ id: accountId }, card.author)} canEdit={canCreate && isAuthor({ id: accountId }, card.author)} discussion={discussion[card.id]} conflictId={conflictByCard[card.id]} sources={(card.sourceCardIds ?? []).flatMap((id) => {
+                      const source = sources.get(id);
+                      return source ? [source] : [];
+                    })} /></li>
                   ))}
                 </ul>
               ) : (

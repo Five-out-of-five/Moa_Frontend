@@ -7,7 +7,7 @@ import { getManagedRoom } from "@/features/room/management/server";
 import { listRoomMembers } from "@/features/room/server";
 import { isAuthor } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
-import { boardSessions, ideaCards } from "@/mocks/db";
+import { boardSessions, conflicts, ideaCards } from "@/mocks/db";
 
 import { closeExpiredIdeaSession, markIdeaChanged, scheduleIdeaClose } from "./mock-board";
 import { type IdeaFormResult, parseIdeaDeadline } from "./model";
@@ -103,5 +103,13 @@ export async function deleteIdeaCard(roomId: number, cardId: number): Promise<Id
     return { error: "마감된 회차의 카드는 삭제할 수 없어요." };
   }
   ideaCards.splice(index, 1);
+  for (const other of ideaCards) {
+    if (other.roomId === roomId && other.sourceCardIds?.includes(cardId)) {
+      other.sourceCardIds = other.sourceCardIds.filter((id) => id !== cardId);
+    }
+  }
+  for (let i = conflicts.length - 1; i >= 0; i--) {
+    if (conflicts[i].roomId === roomId && (conflicts[i].leftCardId === cardId || conflicts[i].rightCardId === cardId)) conflicts.splice(i, 1);
+  }
   return refreshBoard(roomId);
 }

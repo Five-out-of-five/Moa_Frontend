@@ -173,8 +173,10 @@ function MessageRow({
 }) {
   return (
     <div
+      data-briefing-id={message.id}
       className={cn(
         "flex gap-2.5 px-2 py-0.5 rounded-[var(--radius-control)]",
+        "data-briefing-highlight:ring-primary data-briefing-highlight:ring-2",
         "hover:bg-muted/40",
         message.pending && "opacity-60",
       )}

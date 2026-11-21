@@ -7,7 +7,7 @@ export const BRIEFING_FILTERS = [
 
 export const BRIEFING_NEWS = {
   IDEA_CARD_CREATED: { category: "idea", label: "새 아이디어", action: "아이디어 보기" },
-  IDEA_CARD_COMMENTED: { category: "idea", label: "카드 댓글", action: "댓글 보기" },
+  IDEA_CARD_COMMENTED: { category: "idea", label: "내 카드에 달린 댓글", action: "카드로 이동" },
   IDEA_CARD_CONVERTED: { category: "task", label: "업무 전환", action: "업무 보기" },
   TASK_CREATED: { category: "task", label: "새 업무", action: "업무 보기" },
   TASK_COMPLETED: { category: "task", label: "업무 완료", action: "완료 업무 보기" },
