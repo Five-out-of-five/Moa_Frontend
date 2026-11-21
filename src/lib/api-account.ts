@@ -17,5 +17,5 @@ export const getApiAccountContext = cache(async () => {
     init,
   );
   if (!accountId) throw new Error("계정 정보를 확인할 수 없어요.");
-  return { init, query: `accountId=${accountId}` };
+  return { init, query: `accountId=${accountId}`, accountId };
 });

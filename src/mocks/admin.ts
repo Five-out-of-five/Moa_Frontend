@@ -375,6 +375,7 @@ export function toAdminDetail(
 const REPORT_OVERDUE_MS = 72 * 60 * 60 * 1000;
 
 export interface AdminReportEntry {
+  targetId?: number;
   reportId: number;
   targetType: AdminReportTargetType;
   reason: AdminReportReason;
