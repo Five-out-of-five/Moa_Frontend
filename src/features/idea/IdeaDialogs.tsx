@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactElement, type ReactNode, useActionState, useEffect, useState } from "react";
+import { type ReactElement, type ReactNode, startTransition, useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -45,7 +45,12 @@ function IdeaDialogForm({
     onSaved();
   }, [onSaved, result.saved]);
   return (
-    <form action={submitAction} className="space-y-4">
+    <form onSubmit={(event) => {
+      event.preventDefault();
+      if (pending) return;
+      const data = new FormData(event.currentTarget);
+      startTransition(() => submitAction(data));
+    }} className="space-y-4">
       {children}
       {result.error && <p role="alert" className="text-destructive text-sm">{result.error}</p>}
       <DialogFooter>

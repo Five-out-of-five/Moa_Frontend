@@ -54,14 +54,15 @@ function adjustPlacement(widget: RoomWidget, kind: Gesture["kind"], dx: number, 
 export function useWidgetGesture(
   widgets: RoomWidget[],
   onEdit: (widgetId: number | null) => void,
-  onSave: (id: number, next: WidgetPlacement) => void,
+  onSave: (id: number, next: WidgetPlacement) => Promise<void>,
 ) {
   const grid = useRef<HTMLDivElement>(null);
   const active = useRef<Gesture | null>(null);
+  const saving = useRef(false);
   const [preview, setPreview] = useState<{ id: number; placement: WidgetPlacement } | null>(null);
 
   function start(event: PointerEvent<HTMLButtonElement>, widget: RoomWidget, kind: Gesture["kind"]) {
-    if (!grid.current || active.current || event.button !== 0 || !event.isPrimary) return;
+    if (!grid.current || active.current || saving.current || event.button !== 0 || !event.isPrimary) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     active.current = {
       widget,
@@ -93,27 +94,34 @@ export function useWidgetGesture(
     if (!gesture || gesture.pointer !== event.pointerId) return;
     active.current = null;
     setPreview(null);
-    onEdit(null);
     const { widget, placement } = gesture;
-    if (shouldSave) savePlacement(widget, placement);
+    if (shouldSave) void savePlacement(widget, placement, true);
+    else onEdit(null);
   }
 
-  function savePlacement(widget: RoomWidget, placement: WidgetPlacement) {
-    if (
-      (placement.x !== widget.x || placement.y !== widget.y ||
-        placement.width !== widget.width || placement.height !== widget.height) &&
-      canPlaceWidget(widget, placement, widgets)
-    ) {
-      onSave(widget.id, placement);
+  async function savePlacement(widget: RoomWidget, placement: WidgetPlacement, editing = false) {
+    const changed = placement.x !== widget.x || placement.y !== widget.y ||
+      placement.width !== widget.width || placement.height !== widget.height;
+    if (!changed || !canPlaceWidget(widget, placement, widgets)) {
+      if (editing) onEdit(null);
+      return;
+    }
+    saving.current = true;
+    try {
+      if (!editing) onEdit(widget.id);
+      await onSave(widget.id, placement);
+    } finally {
+      saving.current = false;
+      onEdit(null);
     }
   }
 
   function keyDown(event: KeyboardEvent<HTMLButtonElement>, widget: RoomWidget, kind: Gesture["kind"]) {
     if (!Object.hasOwn(ARROW_OFFSETS, event.key) || event.altKey || event.ctrlKey || event.metaKey) return;
     event.preventDefault();
-    if (active.current || event.repeat) return;
+    if (active.current || saving.current || event.repeat) return;
     const [dx, dy] = ARROW_OFFSETS[event.key as keyof typeof ARROW_OFFSETS];
-    savePlacement(widget, adjustPlacement(widget, kind, dx, dy));
+    void savePlacement(widget, adjustPlacement(widget, kind, dx, dy));
   }
 
   return { grid, preview, start, move, end, keyDown };
