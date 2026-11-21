@@ -24,14 +24,17 @@ export default async function IdeaBoardPage({ params, searchParams }: {
   const entry = await getFirstRoomProfile(roomId);
   if (!entry) notFound();
   const id = entry.room.id;
-  const [board, account] = await Promise.all([getIdeaBoard(id), getMyAccount()]);
+  const sessionId = query.session === undefined ? undefined : Number(query.session);
+  if (sessionId !== undefined && (!Number.isSafeInteger(sessionId) || sessionId < 1)) notFound();
+  const board = await getIdeaBoard(id, sessionId);
+  const accountId = board.editable ? (await getMyAccount()).id : 0;
   const selected = query.session ? board.history.find((item) => String(item.id) === query.session) : board.active;
   if (query.session && !selected) notFound();
   const cards = selected ? board.cards.filter(({ sessionId }) => sessionId === selected.id) : [];
   const roster = board.editable && cards.some(({ commentCount }) => commentCount > 0)
     ? await listRoomMembers(id) : [];
   const discussion = getIdeaDiscussions(cards, roster);
-  const conflicts = await listConflicts(id);
+  const conflicts = board.editable ? await listConflicts(id) : await listConflicts(id).catch(() => []);
   const conflictByCard = Object.fromEntries(conflicts.filter(({ state }) => state === "OPEN")
     .flatMap((conflict) => [[conflict.leftCardId, conflict.id], [conflict.rightCardId, conflict.id]]));
   const participants = new Set([
@@ -87,7 +90,7 @@ export default async function IdeaBoardPage({ params, searchParams }: {
           {board.editable && !selected && <StartIdeaDialog roomId={id} trigger={<Button size="sm"><Plus aria-hidden="true" />회차 시작</Button>} />}
         </div>
       </header>
-      {selected ? <IdeaBoard session={selected} cards={cards} accountId={account.id} editable={board.editable} discussion={discussion} conflictByCard={conflictByCard} />
+      {selected ? <IdeaBoard session={selected} cards={cards} accountId={accountId} editable={board.editable} discussion={discussion} conflictByCard={conflictByCard} />
         : <p className="bg-card border-border rounded-card text-muted-foreground border p-5 text-sm">진행 중인 회차가 없어요.</p>}
     </section>
   );

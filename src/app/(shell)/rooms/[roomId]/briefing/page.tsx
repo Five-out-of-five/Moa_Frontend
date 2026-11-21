@@ -68,6 +68,7 @@ export default async function BriefingPage({ params, searchParams }: {
             const [event] = group.items;
             const Icon = ICONS[meta.category];
             const first = group.items.find(({ target }) => target)?.target;
+            const focus = group.items.flatMap(({ target }) => target?.focus === undefined ? [] : [target.focus]);
             return <li key={group.key} className="flex gap-3 py-3">
               <span className="bg-secondary text-primary rounded-control grid size-8 shrink-0 place-items-center"><Icon aria-hidden="true" className="size-4" /></span>
               <div className="min-w-0 flex-1 space-y-0.5">
@@ -77,7 +78,7 @@ export default async function BriefingPage({ params, searchParams }: {
                 </div>
                 <p className="text-muted-foreground text-xs break-words">{event.summary}</p>
                 {briefing.canConfirm ? <BriefingConfirm roomId={id} keys={group.items.map(({ key }) => key)} label={first ? meta.action : "확인"} />
-                  : first && <Link className="text-primary text-xs underline" href={briefingTargetHref(first)}>{meta.action}</Link>}
+                  : first && <Link className="text-primary text-xs underline" href={briefingTargetHref(first, focus)}>{meta.action}</Link>}
               </div>
             </li>;
           })}</ul> : <p className="text-muted-foreground rounded-control bg-muted p-3 text-sm">{briefing.news.length ? "이 유형의 팀 소식이 없어요." : "새로운 변화 없음"}</p>}

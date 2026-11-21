@@ -1,4 +1,4 @@
-import { MessageCircle, SmilePlus } from "lucide-react";
+import { GitCompareArrows, MessageCircle, SmilePlus } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -11,12 +11,11 @@ import { IDEA_COLUMNS, ideaDateTime,type IdeaDiscussion } from "./model";
 export function IdeaCardDetails({ card, canEdit, discussion, conflictId }: { card: IdeaCard; canEdit: boolean; discussion?: IdeaDiscussion; conflictId?: number }) {
   const label = IDEA_COLUMNS.find(({ type }) => type === card.cardType)?.title;
   return (
-    <>
-    {conflictId && <Link className="text-warning mb-1 block text-xs font-semibold underline" href={`/rooms/${card.roomId}/mediation?conflict=${conflictId}`}>충돌 감지 · 비교하기</Link>}
+    <div className="relative">
     <Sheet>
       <SheetTrigger asChild>
         <button type="button" className="bg-card border-border rounded-control hover:border-primary/40 focus-visible:ring-ring block w-full space-y-2 border p-3 text-left focus-visible:ring-2">
-          <span className="bg-secondary text-primary rounded px-1.5 py-0.5 text-xs">{label}</span>
+          <span className="flex h-6 items-center"><span className="bg-secondary text-primary rounded px-1.5 py-0.5 text-xs">{label}</span></span>
           <span className="line-clamp-2 block text-sm font-semibold">{card.title}</span>
           {card.aiSuggested && <span className="text-primary block text-xs">인공지능 제안</span>}
           {card.content && <span className="text-muted-foreground line-clamp-2 block text-xs">{card.content}</span>}
@@ -61,6 +60,15 @@ export function IdeaCardDetails({ card, canEdit, discussion, conflictId }: { car
         </div>
       </SheetContent>
     </Sheet>
-    </>
+    {conflictId && (
+      <Link
+        href={`/rooms/${card.roomId}/mediation?conflict=${conflictId}`}
+        aria-label={`${card.title} 충돌 의견 비교`}
+        className="bg-warning/15 hover:bg-warning/25 border-warning/30 focus-visible:ring-ring absolute top-[13px] right-[13px] inline-flex h-6 items-center gap-1 rounded-full border px-2 text-xs font-medium focus-visible:ring-2"
+      >
+        <GitCompareArrows aria-hidden="true" className="text-warning size-3.5" />충돌 비교
+      </Link>
+    )}
+    </div>
   );
 }

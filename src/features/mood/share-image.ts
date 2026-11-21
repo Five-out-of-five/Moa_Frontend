@@ -13,7 +13,7 @@ function wrapText(context: CanvasRenderingContext2D, text: string, width: number
   return lines;
 }
 
-export async function createMoodImage({
+export function drawMoodImage({
   roomName, date, members, includeNotes, background, foreground,
 }: {
   roomName: string;
@@ -31,9 +31,11 @@ export async function createMoodImage({
   context.font = "14px sans-serif";
   const rows = members.map((member) => ({
     member,
-    lines: includeNotes && member.note ? wrapText(context, member.note, width - padding * 2 - 38) : [],
+    lines: member.note ? wrapText(context, member.note, width - padding * 2 - 38) : [],
   }));
-  const height = 116 + rows.reduce((sum, row) => sum + 36 + row.lines.length * 20, 0);
+  const baseHeight = 116 + rows.length * 36;
+  const heightWithNotes = baseHeight + rows.reduce((sum, row) => sum + row.lines.length * 20, 0);
+  const height = includeNotes ? heightWithNotes : baseHeight;
   canvas.width = width * 2;
   canvas.height = height * 2;
   context.scale(2, 2);
@@ -54,12 +56,18 @@ export async function createMoodImage({
     context.font = "bold 15px sans-serif";
     context.fillText(`${member.name} · ${mood?.label ?? "미입력"}`, padding + 36, y, width - padding * 2 - 36);
     context.font = "14px sans-serif";
-    for (const line of lines) {
-      y += 20;
-      context.fillText(line, padding + 36, y);
+    if (includeNotes) {
+      for (const line of lines) {
+        y += 20;
+        context.fillText(line, padding + 36, y);
+      }
     }
     y += 36;
   }
+  return { canvas, previewAspectRatio: `${width} / ${heightWithNotes}` };
+}
+
+export function exportMoodImage(canvas: HTMLCanvasElement) {
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("이미지를 만들 수 없습니다.")), "image/png");
   });
