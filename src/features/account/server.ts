@@ -54,11 +54,13 @@ async function readAccessToken(): Promise<string | undefined> {
  *    누락이 발견되면 BE 담당자에게 공유 — 이 함수가 런타임 가드 역할도 겸한다.
  */
 function toAccount(res: MyAccountResponse): Account {
+  // ⚠️ email 은 스키마가 빈 문자열을 허용하므로 `!res.email` 대신 nullish 검사를 쓴다.
+  //    빈 문자열까지 누락으로 잡으면 BE 가 (드물게) 빈 이메일을 돌려줄 때 전역 가드가 터진다.
   if (
     res.accountId == null ||
     !res.provider ||
     !res.name ||
-    !res.email ||
+    res.email == null ||
     !res.role ||
     !res.toneMode ||
     !res.createdAt
