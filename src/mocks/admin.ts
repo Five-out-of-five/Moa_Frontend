@@ -175,16 +175,16 @@ const AUDIT_SEED_INPUT: {
   detail: string;
   ipAddress: string;
 }[] = [
-  { auditLogId: 1_024, minutesAgo: 5, adminId: 1, adminName: "이홍근", actionType: "ACCOUNT_ROLE_CHANGE", targetType: "ACCOUNT", targetId: 4, detail: "역할 USER → ADMIN", ipAddress: "10.0.0.14" },
+  { auditLogId: 1_024, minutesAgo: 5, adminId: 1, adminName: "이홍근", actionType: "ROLE_CHANGE", targetType: "ACCOUNT", targetId: 4, detail: "역할 USER → ADMIN", ipAddress: "10.0.0.14" },
   { auditLogId: 1_023, minutesAgo: 45, adminId: 1, adminName: "이홍근", actionType: "ACCOUNT_SUSPEND", targetType: "ACCOUNT", targetId: 5, detail: "7일 정지 · 사유: 반복 신고", ipAddress: "10.0.0.14" },
   { auditLogId: 1_022, minutesAgo: 180, adminId: 1, adminName: "이홍근", actionType: "REPORT_RESOLVE", targetType: "REPORT", targetId: 103, detail: "개인정보 포함 댓글 삭제", ipAddress: "10.0.0.14" },
-  { auditLogId: 1_021, minutesAgo: 360, adminId: 1, adminName: "이홍근", actionType: "ROOM_ARCHIVE", targetType: "ROOM", targetId: 31, detail: "비활성 방 아카이빙", ipAddress: "10.0.0.14" },
+  { auditLogId: 1_021, minutesAgo: 360, adminId: 1, adminName: "이홍근", actionType: "ROOM_INACTIVATE", targetType: "ROOM", targetId: 31, detail: "비활성 방 전환", ipAddress: "10.0.0.14" },
   { auditLogId: 1_020, minutesAgo: 1_440, adminId: 1, adminName: "이홍근", actionType: "REPORT_REJECT", targetType: "REPORT", targetId: 104, detail: "커뮤니티 공지 범위 내 판단", ipAddress: "10.0.0.14" },
   { auditLogId: 1_019, minutesAgo: 1_680, adminId: 1, adminName: "이홍근", actionType: "NOTICE_CREATE", targetType: "NOTICE", targetId: 51, detail: "정기 점검 공지", ipAddress: "10.0.0.14" },
-  { auditLogId: 1_018, minutesAgo: 2_880, adminId: 1, adminName: "이홍근", actionType: "ACCOUNT_UNSUSPEND", targetType: "ACCOUNT", targetId: 6, detail: "3일 정지 종료 자동 해제", ipAddress: "10.0.0.14" },
+  { auditLogId: 1_018, minutesAgo: 2_880, adminId: 1, adminName: "이홍근", actionType: "ACCOUNT_RELEASE", targetType: "ACCOUNT", targetId: 6, detail: "3일 정지 종료 해제", ipAddress: "10.0.0.14" },
   { auditLogId: 1_017, minutesAgo: 4_320, adminId: 1, adminName: "이홍근", actionType: "REPORT_REVIEW", targetType: "REPORT", targetId: 102, detail: "담당자 지정", ipAddress: "10.0.0.14" },
   { auditLogId: 1_016, minutesAgo: 5_760, adminId: 1, adminName: "이홍근", actionType: "NOTICE_UPDATE", targetType: "NOTICE", targetId: 48, detail: "채팅 전송 지연 공지 수정", ipAddress: "10.0.0.14" },
-  { auditLogId: 1_015, minutesAgo: 10_080, adminId: 1, adminName: "이홍근", actionType: "ROOM_DELETE", targetType: "ROOM", targetId: 22, detail: "오너 요청으로 영구 삭제", ipAddress: "10.0.0.14" },
+  { auditLogId: 1_015, minutesAgo: 10_080, adminId: 1, adminName: "이홍근", actionType: "ROOM_REACTIVATE", targetType: "ROOM", targetId: 22, detail: "비활성 방 복구", ipAddress: "10.0.0.14" },
 ];
 
 export function getAdminAuditLogsMock(q: AdminAuditLogListQuery = {}): AdminAuditLogPage {
@@ -696,7 +696,7 @@ function computeNoticeState(entry: AdminNoticeEntry): string {
   const ends = Date.parse(entry.displayEndsAt);
   if (!Number.isFinite(starts) || !Number.isFinite(ends)) return "SCHEDULED";
   if (now < starts) return "SCHEDULED";
-  if (now > ends) return "EXPIRED";
+  if (now > ends) return "ENDED";
   return "ACTIVE";
 }
 

@@ -113,8 +113,9 @@ export type AdminNotice = components["schemas"]["AdminNoticeResponse"];
 export type AdminNoticeDetail = components["schemas"]["NoticeResponse"];
 export type AdminNoticeType = "GENERAL" | "MAINTENANCE" | "URGENT";
 
-/** BE 가 string 으로 돌려주지만 운영 중 쓰이는 값만 열거해 UI 셀렉트에 노출. */
-export type AdminNoticeState = "SCHEDULED" | "ACTIVE" | "EXPIRED";
+/** BE 가 string 으로 돌려주지만 운영 중 쓰이는 값만 열거해 UI 셀렉트에 노출.
+ *  BE `AdminNoticeService::stateOf` 가 돌려주는 리터럴과 정확히 맞춘다. */
+export type AdminNoticeState = "SCHEDULED" | "ACTIVE" | "ENDED";
 
 export interface AdminNoticeListQuery {
   noticeType?: AdminNoticeType;

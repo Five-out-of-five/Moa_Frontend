@@ -21,12 +21,11 @@ export const ROOM_STATUS_OPTIONS: { value: AdminRoomStatus; label: string }[] = 
   { value: "INACTIVE", label: STATUS_LABELS.INACTIVE },
 ];
 
-/** 정렬 토큰 — BE 명세는 string 자유라, 운영에서 쓸 값만 모아둠. */
+/** 정렬 토큰 — BE `AdminRoomController` 가 받는 enum 문자열. 기본 `CREATED`. */
 export const ROOM_SORT_OPTIONS: { value: string; label: string }[] = [
-  { value: "lastActivityAt,desc", label: "최근 활동 순" },
-  { value: "createdAt,desc", label: "최신 생성 순" },
-  { value: "memberCount,desc", label: "멤버 많은 순" },
-  { value: "reportCount,desc", label: "신고 많은 순" },
+  { value: "LAST_ACTIVITY", label: "최근 활동 순" },
+  { value: "CREATED", label: "최신 생성 순" },
+  { value: "REPORT_COUNT", label: "신고 많은 순" },
 ];
 
 /** 비활성 일수 — "N일 이상 활동이 없는 방" 셀렉트. */

@@ -8,7 +8,7 @@ import type { AdminNoticeType } from "../types";
  *   - 일반(GENERAL): 연한 slate
  *   - 점검(MAINTENANCE): slate ring (정보성)
  *   - 긴급(URGENT): amber (주의)
- *   - 상태 ACTIVE: slate-900/white, SCHEDULED: slate-100, EXPIRED: slate-50/400
+ *   - 상태 ACTIVE: slate-900/white, SCHEDULED: slate-100, ENDED: slate-50/400
  */
 
 interface TypeProps {
@@ -40,7 +40,7 @@ export function AdminNoticeStateBadge({ state }: StateProps) {
   const map: Record<string, string> = {
     ACTIVE: "bg-slate-900 text-white",
     SCHEDULED: "bg-slate-100 text-slate-700",
-    EXPIRED: "bg-slate-50 text-slate-400 ring-1 ring-slate-200",
+    ENDED: "bg-slate-50 text-slate-400 ring-1 ring-slate-200",
   };
   return (
     <span className={cn(base, map[state ?? ""] ?? "bg-slate-100 text-slate-500")}>
