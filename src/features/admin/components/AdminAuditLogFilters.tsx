@@ -124,7 +124,7 @@ export function AdminAuditLogFilters({
           list="audit-action-types"
           value={actionType}
           onChange={(e) => setActionType(e.target.value)}
-          placeholder="예: ACCOUNT_ROLE_CHANGE"
+          placeholder="예: ROLE_CHANGE"
           className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none"
         />
         <datalist id="audit-action-types">
