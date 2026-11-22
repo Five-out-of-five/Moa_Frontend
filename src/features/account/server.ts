@@ -6,12 +6,19 @@ import { MOCK_ACCOUNT_COOKIE, MOCK_ACCOUNT_IDS } from "@/features/auth/mock-sess
 import { api } from "@/lib/api";
 import { isMock } from "@/mocks/config";
 import { accounts } from "@/mocks/db";
+import type { components } from "@/types/api";
 import type { Account } from "@/types/db";
+
+type MyAccountResponse = components["schemas"]["MyAccountResponse"];
 
 /**
  * 로그인된 내 계정 — 헤더 프로필 드롭다운, 계정 페이지 등이 부른다.
  *
  * 목 로그인 후에는 선택한 데모 계정을 사용한다. 기존 로컬 화면은 기본 계정으로 열린다.
+ *
+ * ⚠️ BE 명세는 `GET /api/v1/accounts/me` 이고 Bearer 토큰이 있어야 `@LoginAccount` 가
+ *    accountId 를 뽑는다. 토큰을 넘기지 않으면 401 로 떨어져 사용자 정보에 의존하는 모든
+ *    화면이 전역으로 깨진다.
  */
 export async function getMyAccount(): Promise<Account> {
   if (isMock) {
@@ -19,7 +26,9 @@ export async function getMyAccount(): Promise<Account> {
     if (!me) throw new Error("mock accounts[0] 가 비어 있다 — 시드를 확인하세요.");
     return me;
   }
-  return api<Account>("/api/v1/me");
+  const accessToken = await readAccessToken();
+  const res = await api<MyAccountResponse>("/api/v1/accounts/me", { accessToken });
+  return toAccount(res);
 }
 
 export async function getExplicitMockAccount() {
@@ -31,4 +40,39 @@ export async function getExplicitMockAccount() {
 
 export function canUpdateAccountName() {
   return isMock;
+}
+
+async function readAccessToken(): Promise<string | undefined> {
+  const name = process.env.AUTH_ACCESS_TOKEN_COOKIE_NAME || "accessToken";
+  return (await cookies()).get(name)?.value;
+}
+
+/**
+ * BE `MyAccountResponse`(accountId) → FE `Account`(id) 매핑.
+ *
+ * ⚠️ OpenAPI 로 생성된 타입은 전 필드가 optional 이지만, BE 는 로그인 사용자에게 모두 돌려준다.
+ *    누락이 발견되면 BE 담당자에게 공유 — 이 함수가 런타임 가드 역할도 겸한다.
+ */
+function toAccount(res: MyAccountResponse): Account {
+  if (
+    res.accountId == null ||
+    !res.provider ||
+    !res.name ||
+    !res.email ||
+    !res.role ||
+    !res.toneMode ||
+    !res.createdAt
+  ) {
+    throw new Error("GET /api/v1/accounts/me 응답에 필수 필드가 비어 있습니다.");
+  }
+  return {
+    id: res.accountId,
+    provider: res.provider,
+    name: res.name,
+    email: res.email,
+    role: res.role,
+    toneMode: res.toneMode,
+    lastRoomId: res.lastRoomId ?? null,
+    createdAt: res.createdAt,
+  };
 }
