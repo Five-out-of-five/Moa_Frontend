@@ -1,8 +1,4 @@
-import { Suspense } from "react";
-
-import { Header } from "@/components/common/Header";
-import { Sidebar } from "@/components/common/Sidebar";
-import { NoticeBannerLoader } from "@/features/notice/NoticeBannerLoader";
+import { AppShell } from "@/components/common/AppShell";
 
 /**
  * (shell) 라우트 그룹 — 로그인 뒤 전역 공용 레이아웃.
@@ -22,23 +18,5 @@ export const dynamic = "force-dynamic";
 export default function ShellLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  return (
-    <div className="bg-background min-h-dvh">
-      <Header />
-      <div className="flex pt-[var(--header-height)]">
-        <Sidebar />
-        <div data-shell-body className="min-w-0 flex-1 [--shell-header-height:var(--header-height)]">
-          <Suspense fallback={null}>
-            <NoticeBannerLoader />
-          </Suspense>
-          <main
-            id="main"
-            className="min-w-0 overflow-x-hidden px-6 py-6 [--header-height:calc(var(--shell-header-height)_+_var(--notice-banner-height,0px))]"
-          >
-            {children}
-          </main>
-        </div>
-      </div>
-    </div>
-  );
+  return <AppShell>{children}</AppShell>;
 }

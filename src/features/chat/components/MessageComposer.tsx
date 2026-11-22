@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { ToneReview } from "@/features/tone/ToneReview";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -14,6 +15,7 @@ interface Props {
   disabledReason?: string;
   /** 전송 핸들러. 로컬 낙관적 추가는 상위가 책임진다. */
   onSend(content: string): void;
+  toneTarget?: { kind: "CHAT"; roomId: number; channelId: number };
 }
 
 const MAX_LENGTH = 2000;
@@ -27,7 +29,7 @@ const MAX_LENGTH = 2000;
  *   - 공백만 있는 메시지는 전송 금지
  * ⚠️ 첨부·이모지·멘션 아이콘은 **자리만** — 파일 업로드와 리치 입력은 BE 명세 뒤 후속 PR.
  */
-export function MessageComposer({ placeholder, disabledReason, onSend }: Props) {
+export function MessageComposer({ placeholder, disabledReason, onSend, toneTarget }: Props) {
   const [value, setValue] = useState("");
   const [isComposing, setIsComposing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -87,9 +89,10 @@ export function MessageComposer({ placeholder, disabledReason, onSend }: Props) 
           <IconButton label="이모지" disabled>
             <Smile className="size-4" />
           </IconButton>
+          {toneTarget && <ToneReview target={toneTarget} value={value} onApply={setValue} maxLength={MAX_LENGTH} disabled={disabled} />}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-muted-foreground text-[11px]">
+          <span className="text-muted-foreground hidden text-[11px] sm:inline">
             {disabled
               ? disabledReason
               : "Enter 로 전송 · Shift+Enter 로 줄바꿈"}
