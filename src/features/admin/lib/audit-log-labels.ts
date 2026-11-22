@@ -6,15 +6,16 @@
  * ⚠️ 라벨 수정은 **이 한 곳만**. 테이블·필터가 참조한다.
  */
 
+// 키는 BE `AdminAuditRecorder` 호출부가 쓰는 actionType 문자열과 정확히 일치시킨다.
 const ACTION_TYPE_LABELS: Record<string, string> = {
-  ACCOUNT_ROLE_CHANGE: "역할 변경",
+  ROLE_CHANGE: "역할 변경",
   ACCOUNT_SUSPEND: "계정 정지",
-  ACCOUNT_UNSUSPEND: "정지 해제",
+  ACCOUNT_RELEASE: "정지 해제",
   REPORT_REVIEW: "신고 담당자 지정",
   REPORT_RESOLVE: "신고 조치 완료",
   REPORT_REJECT: "신고 반려",
-  ROOM_ARCHIVE: "방 아카이빙",
-  ROOM_DELETE: "방 삭제",
+  ROOM_INACTIVATE: "방 비활성화",
+  ROOM_REACTIVATE: "방 비활성 해제",
   NOTICE_CREATE: "공지 생성",
   NOTICE_UPDATE: "공지 수정",
   NOTICE_DELETE: "공지 삭제",

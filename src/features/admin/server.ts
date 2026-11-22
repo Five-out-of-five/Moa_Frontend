@@ -382,24 +382,22 @@ export const listAdminRooms = cache(
         })
         .map(({ room, entry }) => toAdminRoomRow(room, entry))
         .sort((a, b) => {
-          // sort 토큰은 "field,dir" 형태. 기본은 최근 활동 내림차순.
-          const token = q.sort || "lastActivityAt,desc";
-          const [field, dir] = token.split(",") as [string, string];
-          const mul = dir === "asc" ? 1 : -1;
+          // sort 토큰은 BE `AdminRoomController` 가 받는 enum (LAST_ACTIVITY / CREATED / REPORT_COUNT).
+          // BE 기본값과 같게 전달 없으면 CREATED(최신 생성 순).
+          const token = q.sort || "CREATED";
           const read = (v: AdminRoom): number => {
-            switch (field) {
-              case "createdAt":
-                return Date.parse(v.createdAt ?? "") || 0;
-              case "memberCount":
-                return v.memberCount ?? 0;
-              case "reportCount":
-                return v.reportCount ?? 0;
-              case "lastActivityAt":
-              default:
+            switch (token) {
+              case "LAST_ACTIVITY":
                 return Date.parse(v.lastActivityAt ?? "") || 0;
+              case "REPORT_COUNT":
+                return v.reportCount ?? 0;
+              case "CREATED":
+              default:
+                return Date.parse(v.createdAt ?? "") || 0;
             }
           };
-          return (read(a) - read(b)) * mul;
+          // BE 는 세 토큰 모두 내림차순(DESC)으로 돌려준다.
+          return read(b) - read(a);
         });
 
       const total = filtered.length;
