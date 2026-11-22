@@ -344,12 +344,18 @@ export async function getAdminNoticeDetail(
 
 // ===== 방 관리 =====
 
+// BE AdminRoomController 가 받는 sort enum 화이트리스트. 북마크된 URL 에 옛 토큰
+// (`memberCount,desc` 등) 이 섞여 와도 요청에서 걸러내 BE 기본값 `CREATED` 를 쓰게
+// 한다. 안 그러면 셀렉트는 fallback 표시 `CREATED` 를 보여주면서 요청은 모르는
+// 토큰을 보내 조회가 실패할 수 있다.
+const SUPPORTED_ROOM_SORT = new Set(["LAST_ACTIVITY", "CREATED", "REPORT_COUNT"]);
+
 function roomListQuery(q: AdminRoomListQuery): string {
   const params = new URLSearchParams();
   if (q.keyword) params.set("keyword", q.keyword);
   if (q.status) params.set("status", q.status);
   if (q.inactiveDays !== undefined) params.set("inactiveDays", String(q.inactiveDays));
-  if (q.sort) params.set("sort", q.sort);
+  if (q.sort && SUPPORTED_ROOM_SORT.has(q.sort)) params.set("sort", q.sort);
   if (q.page !== undefined) params.set("page", String(q.page));
   if (q.size !== undefined) params.set("size", String(q.size));
   return params.toString();
