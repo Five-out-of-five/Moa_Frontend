@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -15,9 +16,12 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { leaveRoomAction } from "@/features/room/actions";
 
-import { INITIAL_SETTINGS_RESULT } from "../settings-types";
+import { checkWithdrawalAction, withdrawAccountAction } from "../actions";
+import { INITIAL_SETTINGS_RESULT, type WithdrawalResult } from "../settings-types";
 import { SettingsSubmit } from "./SettingsForms";
 
 export function LeaveWorkspaceDialog({ id, name }: { id: number; name: string }) {
@@ -68,29 +72,87 @@ export function RetryRoomRoleButton() {
   );
 }
 
-export function WithdrawalDialog({ hasOwnedRooms }: { hasOwnedRooms: boolean | null }) {
+export function WithdrawalDialog() {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   return (
-    <AlertDialog>
+    <AlertDialog open={isOpen} onOpenChange={(open) => !isSubmitting && setIsOpen(open)}>
       <AlertDialogTrigger asChild>
-        <Button variant="outline" className="text-destructive">
-          계정 탈퇴
-        </Button>
+        <Button variant="outline" className="text-destructive">계정 탈퇴</Button>
       </AlertDialogTrigger>
-      <AlertDialogContent>
+      {isOpen && <WithdrawalContent onSubmitting={setIsSubmitting} />}
+    </AlertDialog>
+  );
+}
+
+function WithdrawalContent({ onSubmitting }: { onSubmitting: (pending: boolean) => void }) {
+  const [result, setResult] = useState<WithdrawalResult>();
+  const [isChecking, startChecking] = useTransition();
+  const [confirmation, setConfirmation] = useState("");
+  const [submission, submit, isSubmitting] = useActionState(async (previous: WithdrawalResult, data: FormData) => {
+    onSubmitting(true);
+    try {
+      const next = await withdrawAccountAction(previous, data);
+      if (next.check || next.message) setResult(next);
+      return next;
+    } finally {
+      onSubmitting(false);
+    }
+  }, {});
+  const status = result?.check;
+  const message = result?.message;
+  return (
+      <AlertDialogContent onOpenAutoFocus={() => {
+        if (result || isChecking) return;
+        startChecking(async () => setResult(await checkWithdrawalAction()));
+      }}>
         <AlertDialogHeader>
           <AlertDialogTitle>계정 탈퇴</AlertDialogTitle>
           <AlertDialogDescription>
-            {hasOwnedRooms === null
-              ? "워크스페이스 소유 여부를 확인하지 못했습니다. 참여 중인 워크스페이스에서 역할을 다시 확인해 주세요."
-              : hasOwnedRooms
-              ? "방장인 워크스페이스가 있습니다. 방장 권한을 위임하거나 해당 방을 삭제한 후 탈퇴할 수 있습니다."
-              : "탈퇴하면 작성한 카드와 메시지는 협업 이력으로 남습니다. 같은 소셜 계정으로는 탈퇴 30일 후부터 다시 가입할 수 있습니다. 계정 탈퇴 처리는 아직 제공되지 않습니다."}
+            탈퇴하면 작성한 카드와 메시지는 남습니다. 같은 소셜 계정으로는 다시 가입할 수 없습니다.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>닫기</AlertDialogCancel>
-        </AlertDialogFooter>
+        {isChecking && <p role="status" className="text-sm">탈퇴 가능 여부 확인 중…</p>}
+        {message && <p role="alert" className="text-destructive text-sm">{message}</p>}
+        {status && !status.withdrawable && (
+          <div className="space-y-2 text-sm">
+            <p>방장 권한을 위임하거나 해당 방을 삭제한 후 탈퇴할 수 있습니다.</p>
+            <ul className="space-y-1">
+              {status.ownedRooms.map(({ roomId, name, memberCount }) => (
+                <li key={roomId}>
+                  <Link href={`/workspaces/manage?room=${roomId}`} className="underline">{name}</Link>
+                  {memberCount != null && ` · 멤버 ${memberCount}명`}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {status?.withdrawable && status.canWithdraw ? (
+          <form action={submit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="withdraw-confirmation">탈퇴합니다를 입력해 주세요.</Label>
+              <Input id="withdraw-confirmation" name="confirmText" value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)} disabled={isSubmitting}
+                aria-invalid={Boolean(submission.confirmError)} />
+              {submission.confirmError && <p role="alert" className="text-destructive text-sm">{submission.confirmError}</p>}
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isSubmitting}>취소</AlertDialogCancel>
+              <Button variant="destructive" disabled={isSubmitting || confirmation !== "탈퇴합니다"}>
+                {isSubmitting ? "처리 중…" : "탈퇴 확정"}
+              </Button>
+            </AlertDialogFooter>
+          </form>
+        ) : (
+          <AlertDialogFooter>
+            <AlertDialogCancel>닫기</AlertDialogCancel>
+            {message && !isChecking && (
+              <Button type="button" onClick={() => startChecking(async () => setResult(await checkWithdrawalAction()))}>
+                다시 확인
+              </Button>
+            )}
+          </AlertDialogFooter>
+        )}
       </AlertDialogContent>
-    </AlertDialog>
   );
 }

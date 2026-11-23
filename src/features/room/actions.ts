@@ -5,9 +5,20 @@ import { z } from "zod";
 
 import { getMyAccount } from "@/features/account/server";
 import type { SettingsResult } from "@/features/account/settings-types";
+import { api } from "@/lib/api";
 import { isActiveMember, isRoomOwner } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
 import { roomMembers, rooms, tasks } from "@/mocks/db";
+
+import { getFirstRoomProfile } from "./first-profile/server";
+
+export async function recordLastRoomAction(roomId: number) {
+  if (!Number.isSafeInteger(roomId) || roomId < 1) return;
+  const entry = await getFirstRoomProfile(String(roomId));
+  if (!entry?.setup || entry.setup.needsSetup) return;
+  if (isMock) entry.setup.account.lastRoomId = roomId;
+  else await api("/api/v1/accounts/me/last-room", { method: "PUT", json: { roomId }, cache: "no-store" });
+}
 
 export async function leaveRoomAction(
   roomId: number,

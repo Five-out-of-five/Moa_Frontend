@@ -1,31 +1,42 @@
 import "server-only";
 
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 import { getMyAccount } from "@/features/account/server";
 import { api } from "@/lib/api";
 import { isActiveMember, isRoomOwner } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
 import { accounts, getRoomSnapshot, roomMembers, rooms } from "@/mocks/db";
+import type { components } from "@/types/api";
 import type { MemberRef, Room } from "@/types/db";
+
+type RoomSummary = Pick<Room, "id" | "name" | "description" | "imageUrl" | "memberCount"> & {
+  myRole?: "OWNER" | "MEMBER";
+};
 
 export async function listMyRoomsForSettings() {
   const myRooms = await listMyRooms();
-  const account = isMock ? await getMyAccount() : null;
+  if (!isMock) {
+    return myRooms.map((room) => ({
+      ...room,
+      isOwner: room.myRole ? room.myRole === "OWNER" : null,
+      canLeave: false,
+    }));
+  }
+  const account = await getMyAccount();
   return myRooms.map((room) => {
-    const member = isMock
-      ? roomMembers.find((member) =>
-          member.roomId === room.id && member.accountId === account?.id && isActiveMember(member),
-        )
-      : undefined;
-    return { ...room, isOwner: member ? isRoomOwner(member) : null };
+    const member = roomMembers.find((member) =>
+      member.roomId === room.id && member.accountId === account.id && isActiveMember(member),
+    );
+    return { ...room, isOwner: member ? isRoomOwner(member) : null, canLeave: member?.role === "MEMBER" };
   });
 }
 
 /**
  * 로그인 사용자가 참여 중인 워크스페이스를 조회한다.
  */
-export async function listMyRooms(): Promise<Room[]> {
+export const listMyRooms = cache(async (): Promise<RoomSummary[]> => {
   if (isMock) {
     const account = await getMyAccount();
     const memberRoomIds = new Set(
@@ -37,12 +48,23 @@ export async function listMyRooms(): Promise<Room[]> {
   }
   const cookieName = process.env.AUTH_ACCESS_TOKEN_COOKIE_NAME || "accessToken";
   const accessToken = (await cookies()).get(cookieName)?.value;
-  return api<Room[]>("/api/v1/rooms", { cache: "no-store", accessToken });
-}
+  const summaries = await api<components["schemas"]["RoomSummaryResponse"][]>("/api/v1/rooms", { cache: "no-store", accessToken });
+  return summaries.map((room) => {
+    if (room.roomId == null || room.name == null) throw new Error("워크스페이스 목록 응답이 올바르지 않습니다.");
+    return {
+      id: room.roomId,
+      name: room.name,
+      description: null,
+      imageUrl: room.imageUrl ?? null,
+      memberCount: room.memberCount ?? 0,
+      myRole: room.myRole,
+    };
+  });
+});
 
 export async function getWorkspaceSelection() {
   const workspaces = await listMyRooms();
-  const recentRoomId = isMock ? (await getMyAccount()).lastRoomId : null;
+  const recentRoomId = (await getMyAccount()).lastRoomId;
   const recentWorkspace = workspaces.find((room) => room.id === recentRoomId);
 
   return { workspaces, recentWorkspace };

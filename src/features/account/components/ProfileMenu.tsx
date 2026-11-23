@@ -83,6 +83,9 @@ export function ProfileMenu({ account }: Props) {
             <span>알림 설정</span>
           </Link>
         </DropdownMenuItem>
+        {account.role === "ADMIN" && (
+          <DropdownMenuItem asChild><Link href="/admin">관리자 페이지</Link></DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={handleLogout}

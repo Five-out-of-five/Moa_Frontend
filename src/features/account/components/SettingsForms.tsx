@@ -33,7 +33,11 @@ export function SettingsSubmit({ children }: { children: string }) {
 export function AccountNameForm({ name }: { name: string }) {
   const [draftName, setDraftName] = useState(name);
   const [result, action, pending] = useActionState(
-    updateAccountNameAction,
+    async (previous: SettingsResult, data: FormData) => {
+      const next = await updateAccountNameAction(previous, data);
+      if (next.name) setDraftName(next.name);
+      return next;
+    },
     INITIAL_SETTINGS_RESULT,
   );
   useSettingsFeedback(result);

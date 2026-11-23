@@ -1,9 +1,12 @@
 import "server-only";
 
 import { cookies } from "next/headers";
+import { cache } from "react";
 
+import { isAuthMock } from "@/features/auth/config";
 import { requireAuthSession } from "@/features/auth/guard";
 import { MOCK_ACCOUNT_COOKIE, MOCK_ACCOUNT_IDS } from "@/features/auth/mock-session";
+import { listMyRoomsForSettings } from "@/features/room/server";
 import { api } from "@/lib/api";
 import { isMock } from "@/mocks/config";
 import { accounts } from "@/mocks/db";
@@ -21,7 +24,7 @@ type MyAccountResponse = components["schemas"]["MyAccountResponse"];
  *    accountId 를 뽑는다. 토큰을 넘기지 않으면 401 로 떨어져 사용자 정보에 의존하는 모든
  *    화면이 전역으로 깨진다.
  */
-export async function getMyAccount(): Promise<Account> {
+export const getMyAccount = cache(async (): Promise<Account> => {
   await requireAuthSession();
   if (isMock) {
     const me = (await getExplicitMockAccount()) ?? accounts[0];
@@ -29,9 +32,9 @@ export async function getMyAccount(): Promise<Account> {
     return me;
   }
   const accessToken = await readAccessToken();
-  const res = await api<MyAccountResponse>("/api/v1/accounts/me", { accessToken });
+  const res = await api<MyAccountResponse>("/api/v1/accounts/me", { accessToken, cache: "no-store" });
   return toAccount(res);
-}
+});
 
 export async function getExplicitMockAccount() {
   if (!isMock) return null;
@@ -40,8 +43,25 @@ export async function getExplicitMockAccount() {
   return accounts.find((account) => account.id === id) ?? null;
 }
 
-export function canUpdateAccountName() {
-  return isMock;
+export async function getWithdrawalCheck() {
+  if (isMock) {
+    const ownedRooms = (await listMyRoomsForSettings()).filter(({ isOwner }) => isOwner)
+      .map(({ id, name, memberCount }) => ({ roomId: id, name, memberCount }));
+    return { withdrawable: ownedRooms.length === 0, ownedRooms, canWithdraw: false };
+  }
+  await requireAuthSession();
+  const result = await api<components["schemas"]["WithdrawalCheckResponse"]>(
+    "/api/v1/accounts/me/withdrawal-check", { cache: "no-store" },
+  );
+  return { withdrawable: result.withdrawable === true, ownedRooms: result.ownedRooms ?? [], canWithdraw: true };
+}
+
+export async function getLoginDestination(accessToken: string) {
+  if (isMock || isAuthMock) return "/workspaces";
+  const result = await api<MyAccountResponse>("/api/v1/accounts/me", { cache: "no-store", accessToken });
+  return Number.isSafeInteger(result.lastRoomId) && Number(result.lastRoomId) > 0
+    ? `/rooms/${result.lastRoomId}`
+    : "/workspaces";
 }
 
 async function readAccessToken(): Promise<string | undefined> {

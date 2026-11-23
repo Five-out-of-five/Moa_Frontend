@@ -10,11 +10,11 @@ export const nicknameSchema = z
   .refine(
     (nickname) =>
       !nickname ||
-      (nickname.length >= 2 && nickname.length <= 20 && /^[\p{L}\p{M}\p{N} ]+$/u.test(nickname)),
+      (nickname.length >= 2 && nickname.length <= 20 && /^[가-힣ㄱ-ㅎㅏ-ㅣA-Za-z0-9 ]+$/.test(nickname)),
     "닉네임은 특수문자 없이 2~20자로 입력해 주세요.",
   );
 
-export async function readProfileImage(file: FormDataEntryValue | null) {
+export async function readProfileImage(file: FormDataEntryValue | null, includeDataUrl = true) {
   let imageUrl: string | null = null;
   if (file instanceof File && file.size > 0) {
     if (
@@ -32,7 +32,7 @@ export async function readProfileImage(file: FormDataEntryValue | null) {
         bytes.toString("ascii", 0, 4) === "RIFF" &&
         bytes.toString("ascii", 8, 12) === "WEBP");
     if (!matchesType) return { error: "이미지 파일 형식을 확인해 주세요." };
-    imageUrl = `data:${file.type};base64,${bytes.toString("base64")}`;
+    if (includeDataUrl) imageUrl = `data:${file.type};base64,${bytes.toString("base64")}`;
   }
   return { imageUrl };
 }

@@ -4,9 +4,11 @@ import { cache } from "react";
 
 import { getMyAccount } from "@/features/account/server";
 import { listMyRooms } from "@/features/room/server";
+import { api, ApiError } from "@/lib/api";
 import { isActiveMember } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
 import { accounts, roomMembers } from "@/mocks/db";
+import type { components } from "@/types/api";
 
 import { roomManagementMock } from "../management/mock-state";
 import type { FirstRoomProfile } from "./types";
@@ -31,9 +33,35 @@ export function getMockRoomMemberNickname(member: (typeof roomMembers)[number]) 
 }
 
 export const getFirstRoomProfile = cache(async (roomId: string) => {
+  if (!/^[1-9]\d*$/.test(roomId) || !Number.isSafeInteger(Number(roomId))) return null;
+  if (!isMock) {
+    try {
+      const detail = await api<components["schemas"]["RoomDetailResponse"]>(
+        `/api/v1/rooms/${roomId}`, { cache: "no-store" },
+      );
+      if (detail.roomId !== Number(roomId) || !detail.name || !detail.myMembership) return null;
+      const membership = detail.myMembership;
+      return {
+        room: { id: detail.roomId, name: detail.name, description: detail.description ?? null },
+        setup: {
+          account: await getMyAccount(),
+          member: { roomId: detail.roomId, nickname: membership.nickname ?? null },
+          profile: {
+            nickname: membership.nickname ?? null,
+            position: membership.positionLabel ?? null,
+            imageUrl: membership.profileImageUrl ?? null,
+          },
+          needsSetup: detail.needsProfileSetup === true,
+          mockKey: null,
+        },
+      };
+    } catch (error) {
+      if (error instanceof ApiError && (error.code === "ROOM_NOT_FOUND" || error.code === "ROOM_NOT_MEMBER")) return null;
+      throw error;
+    }
+  }
   const room = (await listMyRooms()).find(({ id }) => String(id) === roomId);
   if (!room) return null;
-  if (!isMock) return { room, setup: null };
 
   const account = await getMyAccount();
   const member = roomMembers.find(
@@ -46,7 +74,7 @@ export const getFirstRoomProfile = cache(async (roomId: string) => {
   const profile = profiles.get(key);
   // 두 번째 워크스페이스는 승인 직후 상태를 재현하는 목 시드다.
   const needsSetup = (room.id === 2 || roomManagementMock.newMemberships.has(member.id)) && !profile;
-  return { room, setup: { account, member, key, profile, needsSetup } };
+  return { room, setup: { account, member, mockKey: key, profile, needsSetup } };
 });
 
 export function isNicknameTaken(roomId: number, accountId: number, nickname: string) {

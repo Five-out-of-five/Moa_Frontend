@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { RecordLastRoom } from "@/features/room/components/RecordLastRoom";
 import { getFirstRoomProfile } from "@/features/room/first-profile/server";
 
 export default async function RoomLayout({
@@ -14,5 +15,5 @@ export default async function RoomLayout({
   const entry = await getFirstRoomProfile(roomId);
   if (!entry) notFound();
   if (entry.setup?.needsSetup) redirect(`/rooms/${entry.room.id}/first-profile`);
-  return children;
+  return <><RecordLastRoom roomId={entry.room.id} />{children}</>;
 }

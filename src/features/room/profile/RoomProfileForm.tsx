@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 import { PROFILE_IMAGE_TYPES } from "../first-profile/types";
+import { useProfileImage } from "../first-profile/useProfileImage";
 import { updateRoomProfileAction } from "./actions";
 import type { RoomProfileResult } from "./types";
 
@@ -21,16 +22,19 @@ interface Props {
 }
 
 export function RoomProfileForm({ roomId, accountName, nickname, position, imageUrl }: Props) {
-  const [file, setFile] = useState<File>();
+  const { selection, imageError, isUploading, changeImage, appendImage, resetImage } = useProfileImage(roomId);
   const fileInput = useRef<HTMLInputElement>(null);
   const [shouldRemoveImage, setShouldRemoveImage] = useState(false);
   const [result, action, pending] = useActionState(
     async (previous: RoomProfileResult, data: FormData) => {
-      if (file) data.set("image", file);
+      appendImage(data);
+      if (name === nickname) data.delete("nickname");
+      if (jobTitle === position) data.delete("position");
       if (shouldRemoveImage) data.set("removeImage", "on");
       const next = await updateRoomProfileAction(roomId, previous, data);
       if (next.success) {
-        setFile(undefined);
+        resetImage();
+        if (fileInput.current) fileInput.current.value = "";
         setShouldRemoveImage(false);
       }
       return next;
@@ -48,7 +52,7 @@ export function RoomProfileForm({ roomId, accountName, nickname, position, image
 
   return (
     <form action={action} className="space-y-5">
-      <fieldset disabled={pending} className="space-y-5">
+      <fieldset disabled={pending || isUploading} className="space-y-5">
         <div className="space-y-2">
           <Label htmlFor="room-profile-nickname">닉네임</Label>
           <Input
@@ -90,10 +94,10 @@ export function RoomProfileForm({ roomId, accountName, nickname, position, image
         </div>
         <div className="space-y-2">
           <Label htmlFor="room-profile-image">프로필 이미지</Label>
-          {imageUrl && (
+          {(selection?.previewUrl || (!shouldRemoveImage && imageUrl)) && (
             <Image
-              src={imageUrl}
-              alt="현재 프로필 이미지"
+              src={selection?.previewUrl ?? imageUrl ?? ""}
+              alt="프로필 이미지 미리보기"
               width={48}
               height={48}
               unoptimized
@@ -105,32 +109,37 @@ export function RoomProfileForm({ roomId, accountName, nickname, position, image
             ref={fileInput}
             type="file"
             accept={PROFILE_IMAGE_TYPES.join(",")}
-            onChange={(event) => setFile(event.currentTarget.files?.[0])}
-            aria-invalid={Boolean(result.errors?.image)}
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              if (file) void changeImage(file).then((selected) => {
+                if (selected) setShouldRemoveImage(false);
+                if (fileInput.current) fileInput.current.value = "";
+              });
+            }}
+            aria-invalid={Boolean(imageError || result.errors?.image)}
             aria-describedby="room-profile-image-hint"
           />
           <p
             id="room-profile-image-hint"
             className={
-              result.errors?.image ? "text-destructive text-sm" : "text-muted-foreground text-sm"
+              imageError || result.errors?.image ? "text-destructive text-sm" : "text-muted-foreground text-sm"
             }
           >
-            {result.errors?.image ?? file?.name ?? "JPG, PNG, WebP · 최대 5MB"}
+            {isUploading ? "이미지 처리 중…" : imageError ?? result.errors?.image ?? selection?.file.name ?? "JPG, PNG, WebP · 최대 5MB"}
           </p>
-          {file && (
+          {selection && (
             <Button
               type="button"
               variant="ghost"
               size="sm"
               onClick={() => {
-                setFile(undefined);
-                if (fileInput.current) fileInput.current.value = "";
+                void changeImage();
               }}
             >
               선택한 이미지 취소
             </Button>
           )}
-          {imageUrl && (
+          {imageUrl && !selection && (
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -144,7 +153,7 @@ export function RoomProfileForm({ roomId, accountName, nickname, position, image
         </div>
       </fieldset>
       <div className="flex justify-end">
-        <Button disabled={pending}>{pending ? "저장 중…" : "변경 사항 저장"}</Button>
+        <Button disabled={pending || isUploading}>{pending ? "저장 중…" : "변경 사항 저장"}</Button>
       </div>
     </form>
   );
