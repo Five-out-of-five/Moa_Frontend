@@ -62,6 +62,7 @@ export class ApiError extends Error {
 }
 
 export interface ApiInit extends Omit<RequestInit, "body"> {
+  body?: FormData;
   /** JSON 으로 직렬화해 보낼 본문 */
   json?: unknown;
   /** 호출별 타임아웃 (ms) — 기본 {@link DEFAULT_TIMEOUT_MS} */
@@ -81,7 +82,7 @@ export interface ApiInit extends Omit<RequestInit, "body"> {
  * - 실패: `ApiError` throw (상위에서 toast·redirect 등으로 처리)
  */
 export async function api<T>(path: string, init: ApiInit = {}, attempt = 0): Promise<T> {
-  const { json, timeoutMs, accessToken: suppliedToken, headers, onResponse, onHeaders, allowAuthRefresh, ...rest } = init;
+  const { json, body, timeoutMs, accessToken: suppliedToken, headers, onResponse, onHeaders, allowAuthRefresh, ...rest } = init;
   const authenticated = !isAuthMock && !path.startsWith("/api/v1/auth/");
   const jar = authenticated ? await cookies() : null;
   const accessToken = suppliedToken ?? jar?.get(process.env.AUTH_ACCESS_TOKEN_COOKIE_NAME || "accessToken")?.value;
@@ -100,7 +101,7 @@ export async function api<T>(path: string, init: ApiInit = {}, attempt = 0): Pro
       ...rest,
       signal: controller.signal,
       headers: outgoingHeaders,
-      body: json !== undefined ? JSON.stringify(json) : undefined,
+      body: json !== undefined ? JSON.stringify(json) : body,
     });
 
     await onHeaders?.(res.headers);

@@ -2,7 +2,7 @@
 
 import { ArrowRight, Camera, ShieldCheck } from "lucide-react";
 import Image from "next/image";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -10,34 +10,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 import { completeFirstRoomProfileAction } from "./actions";
-import { type FirstProfileResult, PROFILE_IMAGE_MAX_BYTES, PROFILE_IMAGE_TYPES } from "./types";
+import { type FirstProfileResult, PROFILE_IMAGE_TYPES } from "./types";
+import { useProfileImage } from "./useProfileImage";
 
 export function FirstProfileForm({ roomId, accountName }: { roomId: string; accountName: string }) {
   const [nickname, setNickname] = useState("");
-  const [file, setFile] = useState<File>();
-  const [preview, setPreview] = useState<string>();
-  const [imageNotice, setImageNotice] = useState<string>();
+  const { selection, imageError, isUploading, changeImage, appendImage } = useProfileImage(roomId);
   const [result, action, pending] = useActionState(
     (previous: FirstProfileResult, data: FormData) => {
-      if (file && data.get("intent") !== "skip") data.set("image", file);
+      appendImage(data);
       return completeFirstRoomProfileAction(roomId, previous, data);
     },
     {},
   );
-  const [, skipAction, isSkipping] = useActionState(
-    completeFirstRoomProfileAction.bind(null, roomId),
+  const [skipResult, skipAction, isSkipping] = useActionState(
+    async (previous: FirstProfileResult, data: FormData) => {
+      if (selection && !(await changeImage())) return { message: "선택한 이미지를 취소한 뒤 다시 시도해 주세요." };
+      return completeFirstRoomProfileAction(roomId, previous, data);
+    },
     {},
   );
-  const isPending = pending || isSkipping;
-
-  useEffect(() => {
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    setPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
-
-  const visibleImageError = imageNotice ?? result.errors?.image;
+  const isPending = pending || isSkipping || isUploading;
+  const visibleImageError = imageError ?? result.errors?.image;
   return (
     <>
       <form action={action} className="space-y-4">
@@ -47,9 +41,9 @@ export function FirstProfileForm({ roomId, accountName }: { roomId: string; acco
               aria-hidden="true"
               className="bg-secondary text-secondary-foreground relative grid size-11 shrink-0 place-items-center rounded-full text-sm font-semibold"
             >
-              {file && preview ? (
+              {selection ? (
                 <Image
-                  src={preview}
+                  src={selection.previewUrl}
                   alt=""
                   width={44}
                   height={44}
@@ -67,7 +61,6 @@ export function FirstProfileForm({ roomId, accountName }: { roomId: string; acco
               <span className="block text-sm font-medium">프로필 이미지 (선택)</span>
               <input
                 className="sr-only"
-                name="image"
                 type="file"
                 accept={PROFILE_IMAGE_TYPES.join(",")}
                 aria-invalid={Boolean(visibleImageError)}
@@ -77,38 +70,32 @@ export function FirstProfileForm({ roomId, accountName }: { roomId: string; acco
                     : "first-profile-image-hint"
                 }
                 onChange={(event) => {
-                  const selected = event.currentTarget.files?.[0];
-                  setImageNotice(undefined);
-                  setPreview(undefined);
-                  setFile(undefined);
-                  if (!selected) return;
-                  if (
-                    selected.size > PROFILE_IMAGE_MAX_BYTES ||
-                    !PROFILE_IMAGE_TYPES.some((type) => type === selected.type)
-                  ) {
-                    setImageNotice("이미지를 제외했어요. JPG, PNG, WebP 형식의 5MB 이하 이미지를 선택해 주세요.");
-                    event.currentTarget.value = "";
-                    return;
-                  }
-                  setFile(selected);
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = "";
+                  if (file) void changeImage(file);
                 }}
               />
               <span
                 id="first-profile-image-hint"
                 className="text-muted-foreground mt-1 block text-xs"
               >
-                {file ? "눌러서 이미지 변경" : "선택 사항이며 나중에도 변경할 수 있어요."}
+                {isUploading ? "이미지 처리 중…" : selection ? "눌러서 이미지 변경" : "선택 사항이며 나중에도 변경할 수 있어요."}
               </span>
-              {file ? (
+              {selection ? (
                 <span
                   className="text-muted-foreground mt-1 block truncate text-xs"
-                  title={file.name}
+                  title={selection.file.name}
                 >
-                  {file.name}
+                  {selection.file.name}
                 </span>
               ) : null}
             </span>
           </label>
+          {selection && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => void changeImage()}>
+              선택한 이미지 취소
+            </Button>
+          )}
           {visibleImageError && (
             <p id="first-profile-image-error" role="alert" className="text-destructive text-sm">
               {visibleImageError}
@@ -142,6 +129,9 @@ export function FirstProfileForm({ roomId, accountName }: { roomId: string; acco
           개인 계정 정보와 별도로 관리됩니다.
         </p>
         <SaveButton disabled={isPending} />
+        {(result.message || skipResult.message) && (
+          <p role="alert" className="text-destructive text-sm">{result.message ?? skipResult.message}</p>
+        )}
       </form>
       <form action={skipAction} className="mt-2 text-center">
         <input type="hidden" name="intent" value="skip" />

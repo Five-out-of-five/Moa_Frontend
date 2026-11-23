@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import type { Room } from "@/types/db";
 
 interface Props {
-  rooms: readonly Room[];
+  rooms: readonly Pick<Room, "id" | "name">[];
   fallbackRoomId: number | null;
 }
 

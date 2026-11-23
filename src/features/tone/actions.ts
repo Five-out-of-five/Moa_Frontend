@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 
 import { getMyAccount } from "@/features/account/server";
@@ -30,18 +31,20 @@ export async function saveToneSettingsAction(
   const mode = modeSchema.safeParse(form.get("toneMode"));
   if (!mode.success) return { error: "순화 방식을 선택해 주세요." };
   try {
-    if (isMock) (await getMyAccount()).toneMode = mode.data;
+    let savedMode = mode.data;
+    if (isMock) (await getMyAccount()).toneMode = savedMode;
     else {
-      const { init, query } = await getApiAccountContext();
-      await api(`/api/v1/accounts/me/ai-settings?${query}`, {
-        ...init,
+      const account = await api<components["schemas"]["MyAccountResponse"]>("/api/v1/accounts/me/ai-settings", {
+        cache: "no-store",
         method: "PATCH",
         json: { toneMode: mode.data },
       });
+      savedMode = account.toneMode ?? savedMode;
     }
     revalidatePath("/", "layout");
-    return { saved: true, mode: mode.data };
+    return { saved: true, mode: savedMode };
   } catch (error) {
+    unstable_rethrow(error);
     return {
       error:
         error instanceof ApiError

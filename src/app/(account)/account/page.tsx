@@ -4,16 +4,13 @@ import {
   WithdrawalDialog,
 } from "@/features/account/components/AccountDialogs";
 import { AccountNameForm } from "@/features/account/components/SettingsForms";
-import { canUpdateAccountName, getMyAccount } from "@/features/account/server";
+import { getMyAccount } from "@/features/account/server";
 import { listMyRoomsForSettings } from "@/features/room/server";
 
 const PROVIDER_LABEL = { GOOGLE: "구글", KAKAO: "카카오", NAVER: "네이버" };
 
 export default async function AccountPage() {
   const [account, rooms] = await Promise.all([getMyAccount(), listMyRoomsForSettings()]);
-  const canUpdateName = canUpdateAccountName();
-  const hasOwnedRooms = rooms.some(({ isOwner }) => isOwner === true);
-  const hasUnknownRoles = rooms.some(({ isOwner }) => isOwner === null);
 
   return (
     <div className="min-w-0 space-y-4">
@@ -22,14 +19,7 @@ export default async function AccountPage() {
         <p className="text-muted-foreground mt-1 mb-5 text-sm">
           방별 닉네임을 설정하지 않은 워크스페이스에서 사용하는 이름입니다.
         </p>
-        {canUpdateName ? (
-          <AccountNameForm name={account.name} />
-        ) : (
-          <div className="space-y-1">
-            <p className="text-sm font-medium">{account.name}</p>
-            <p className="text-muted-foreground text-xs">현재 환경에서는 이름 수정이 제공되지 않습니다.</p>
-          </div>
-        )}
+        <AccountNameForm name={account.name} />
         <dl className="mt-4 grid gap-3 sm:grid-cols-2">
           <div className="rounded-md border p-3">
             <dt className="text-muted-foreground text-xs">연결된 소셜 계정</dt>
@@ -60,9 +50,9 @@ export default async function AccountPage() {
                   <p className="text-muted-foreground text-xs">
                     방장 권한을 위임한 후 나갈 수 있습니다.
                   </p>
-                ) : room.isOwner === false ? (
+                ) : room.canLeave ? (
                   <LeaveWorkspaceDialog id={room.id} name={room.name} />
-                ) : <RetryRoomRoleButton />}
+                ) : room.isOwner === null ? <RetryRoomRoleButton /> : null}
               </li>
             ))}
           </ul>
@@ -71,7 +61,7 @@ export default async function AccountPage() {
 
       <section className="border-destructive/30 bg-destructive/5 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-5">
         <h2 className="text-destructive font-semibold">계정 탈퇴</h2>
-        <WithdrawalDialog hasOwnedRooms={hasOwnedRooms ? true : hasUnknownRoles ? null : false} />
+        <WithdrawalDialog />
       </section>
     </div>
   );

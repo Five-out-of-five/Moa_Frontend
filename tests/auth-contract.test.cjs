@@ -21,7 +21,8 @@ function fixture({ env = {}, fetch: backend = async () => { throw Error("예상�
   const overrides = {
     "server-only": {},
     "next/headers": { cookies: async () => jar, headers: async () => headers },
-    "next/navigation": { redirect },
+    "next/navigation": { redirect, unstable_rethrow: (error) => { if (error.location) throw error; } },
+    "next/cache": { revalidatePath: () => {} },
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
     "@/features/auth/server": { getSignupAccount: signupAccount },
   };
@@ -232,4 +233,65 @@ test("API 재시도 중 정지되면 쿠키를 정리하고 종료 시각을 안
   f.jar.set("refreshToken", "fixture-old");
   await assert.rejects(f.load("@/lib/api").api("/api/v1/test-resource", { allowAuthRefresh: true }), (error) => new URL(error.location, "http://localhost:3000").searchParams.get("until") === "2040-01-01T09:00:00+09:00");
   assert.equal(f.jar.has("refreshToken"), false);
+});
+
+test("명시적 복귀 경로가 없으면 실제 계정의 마지막 방으로 이동한다", async () => {
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    const path = new URL(url).pathname;
+    if (path === "/api/v1/auth/refresh") return ok(tokens);
+    assert.equal(path, "/api/v1/accounts/me");
+    assert.equal(new Headers(init.headers).get("Authorization"), "Bearer fixture-access");
+    return ok({ lastRoomId: 12 });
+  } });
+  f.jar.set("refreshToken", "fixture-refresh");
+  const response = await f.load("@/app/api/auth/session/route").POST(sessionRequest());
+  assert.deepEqual(await response.json(), { redirectTo: "/rooms/12" });
+});
+
+test("회원 탈퇴는 확인 문구를 JSON으로 보내고 refresh 삭제 쿠키를 보존한다", async () => {
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    assert.equal(new URL(url).pathname, "/api/v1/accounts/me");
+    assert.equal(init.method, "DELETE");
+    assert.deepEqual(JSON.parse(init.body), { confirmText: "탈퇴합니다" });
+    return ok(null, "refreshToken=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0");
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  f.jar.set("refreshToken", "fixture-refresh");
+  const input = new FormData();
+  input.set("confirmText", "탈퇴합니다");
+  await assert.rejects(f.load("@/features/account/actions").withdrawAccountAction({}, input), (error) => error.location === "/");
+  assert.equal(f.values.has("accessToken"), false);
+  assert.equal(f.options.get("refreshToken").maxAge, 0);
+});
+
+test("최초 프로필 건너뛰기는 빈 객체로 방 프로필을 갱신한다", async () => {
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    const path = new URL(url).pathname;
+    if (path === "/api/v1/accounts/me") return ok({ accountId: 12, name: "테스트", provider: "GOOGLE", email: "", role: "USER", toneMode: "OFF", createdAt: "2026-11-01" });
+    if (path === "/api/v1/rooms/3") return ok({ roomId: 3, name: "테스트 방", myMembership: {}, needsProfileSetup: true });
+    assert.equal(path, "/api/v1/rooms/3/members/me/profile");
+    assert.equal(init.method, "PATCH");
+    assert.deepEqual(JSON.parse(init.body), {});
+    return ok({ accountId: 12 });
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const input = new FormData();
+  input.set("intent", "skip");
+  await assert.rejects(f.load("@/features/room/first-profile/actions").completeFirstRoomProfileAction("3", {}, input), (error) => error.location === "/rooms/3");
+});
+
+test("프로필 이름만 수정할 때 이미지와 역할 표시 키를 보내지 않는다", async () => {
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    const path = new URL(url).pathname;
+    if (path === "/api/v1/accounts/me") return ok({ accountId: 12, name: "테스트", provider: "GOOGLE", email: "", role: "USER", toneMode: "OFF", createdAt: "2026-11-01" });
+    if (path === "/api/v1/rooms/3") return ok({ roomId: 3, name: "테스트 방", myMembership: { nickname: "이전 이름", positionLabel: "디자인", profileImageUrl: "https://fixture.invalid/photo" } });
+    assert.equal(path, "/api/v1/rooms/3/members/me/profile");
+    assert.equal(init.method, "PATCH");
+    assert.deepEqual(JSON.parse(init.body), { nickname: "새 이름" });
+    return ok({ accountId: 12 });
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const input = new FormData();
+  input.set("nickname", "새 이름");
+  assert.equal((await f.load("@/features/room/profile/actions").updateRoomProfileAction("3", {}, input)).success, true);
 });
