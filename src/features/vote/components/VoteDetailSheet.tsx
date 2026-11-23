@@ -510,6 +510,7 @@ export function VoteDetailSheet({
         <VoteEditDialog
           roomId={roomId}
           voteId={local.voteId}
+          initialVersion={local.version}
           initialTitle={local.title}
           initialDeadlineAt={local.deadlineAt}
           initialAnonymous={local.anonymous}

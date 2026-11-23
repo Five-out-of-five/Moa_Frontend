@@ -1,6 +1,7 @@
 "use client";
 
 import { EyeOff } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useId, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { isMock } from "@/mocks/config";
 import type { VoteDetail } from "@/types/db";
 
 import { updateVoteAction } from "../actions";
@@ -22,6 +24,8 @@ import { updateVoteAction } from "../actions";
 interface Props {
   roomId: number;
   voteId: number;
+  /** BE 가 낙관적 잠금을 위해 요구하는 현재 버전. 상세 응답의 `version` 그대로 넘긴다. */
+  initialVersion: number;
   initialTitle: string;
   /** 서버 ISO (UTC). datetime-local 입력 초기값으로 변환해 넣는다. */
   initialDeadlineAt: string;
@@ -45,6 +49,7 @@ const MAX_TITLE_LENGTH = 120;
 export function VoteEditDialog({
   roomId,
   voteId,
+  initialVersion,
   initialTitle,
   initialDeadlineAt,
   initialAnonymous,
@@ -60,6 +65,7 @@ export function VoteEditDialog({
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
   const titleInputId = useId();
   const deadlineInputId = useId();
 
@@ -92,6 +98,7 @@ export function VoteEditDialog({
         result = await updateVoteAction({
           roomId,
           voteId,
+          version: initialVersion,
           title: title.trim(),
           deadlineAt: deadlineIso,
           anonymous,
@@ -106,6 +113,14 @@ export function VoteEditDialog({
       if (result.kind === "ok") {
         onUpdated(result.vote);
         onOpenChange(false);
+        return;
+      }
+      if (result.kind === "conflict") {
+        // ⚠️ BE 가 version 충돌을 알려주면 다이얼로그를 열어둔 채 최신 상세를 재조회해
+        //    initialVersion 이 새 값으로 전달되도록 한다. 사용자는 변경 사항과 최신 투표를
+        //    확인한 뒤 다시 저장할 수 있다.
+        setError(result.message);
+        router.refresh();
         return;
       }
       setError(result.message);
@@ -153,41 +168,45 @@ export function VoteEditDialog({
                 <p className="text-destructive text-xs">{fieldErrors.deadlineAt}</p>
               )}
             </div>
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">익명 투표</span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={anonymous}
-                onClick={() => setAnonymous((v) => !v)}
-                className={cn(
-                  "border-border bg-background hover:border-brand flex items-center justify-between rounded-[var(--radius-control)] border px-3 py-2 text-sm transition-colors",
-                  anonymous && "border-brand bg-secondary",
-                )}
-              >
-                <span className="text-muted-foreground inline-flex items-center gap-1.5">
-                  <EyeOff className="size-3.5" />
-                  {anonymous ? "사용함" : "사용 안함"}
-                </span>
-                <span
-                  aria-hidden="true"
+            {isMock && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium">익명 투표</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={anonymous}
+                  onClick={() => setAnonymous((v) => !v)}
                   className={cn(
-                    "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
-                    anonymous ? "bg-brand" : "bg-muted",
+                    "border-border bg-background hover:border-brand flex items-center justify-between rounded-[var(--radius-control)] border px-3 py-2 text-sm transition-colors",
+                    anonymous && "border-brand bg-secondary",
                   )}
                 >
+                  <span className="text-muted-foreground inline-flex items-center gap-1.5">
+                    <EyeOff className="size-3.5" />
+                    {anonymous ? "사용함" : "사용 안함"}
+                  </span>
                   <span
+                    aria-hidden="true"
                     className={cn(
-                      "absolute top-0.5 size-4 rounded-full bg-white transition-transform",
-                      anonymous ? "translate-x-4" : "translate-x-0.5",
+                      "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
+                      anonymous ? "bg-brand" : "bg-muted",
                     )}
-                  />
-                </span>
-              </button>
-            </div>
+                  >
+                    <span
+                      className={cn(
+                        "absolute top-0.5 size-4 rounded-full bg-white transition-transform",
+                        anonymous ? "translate-x-4" : "translate-x-0.5",
+                      )}
+                    />
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
 
-          {!initialAnonymous && anonymous && (
+          {/* ⚠️ 익명 전환은 BE `VoteUpdateRequest` 에 anonymous 필드가 없어 실 API 에서는 저장되지
+               않는다. mock 환경에서만 UX 를 보여주고, 실 API 전환 시 BE 지원이 추가되면 되돌린다. */}
+          {isMock && !initialAnonymous && anonymous && (
             <p className="text-warning text-xs">
               비공개로 전환하면 기존 참여자 목록이 비노출로 바뀝니다.
             </p>

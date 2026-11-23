@@ -20,9 +20,12 @@ const submitBallotSchema = z.object({
  * ⚠️ 선택지(options) 는 이번 PR 에서 수정하지 않는다 — 참여가 이미 들어온 투표에서
  *    선택지를 바꾸면 집계 공정성 문제가 생기고, 복원도 어렵다. BE 확정 뒤 별도 PR.
  */
+// ⚠️ BE `VoteUpdateRequest` 는 낙관적 잠금용 `version` 을 필수로 요구한다 — 상세 조회로
+//    받아온 현재 버전을 그대로 되돌려줘야 한다. `anonymous` 는 BE 가 받지 않으므로 제거.
 const updateVoteSchema = z.object({
   roomId: z.number().int().positive(),
   voteId: z.number().int().positive(),
+  version: z.number().int().nonnegative(),
   title: z
     .string()
     .trim()
@@ -62,6 +65,9 @@ const createVoteSchema = z
     maxSelectCount: z.number().int().min(1).max(10),
     deadlineAt: z.string().datetime({ offset: true }),
     anonymous: z.boolean(),
+    // 아이디어 카드 → 투표 전환 시 전달. UI 호출부가 아직 미구현이라 선택적이지만,
+    // BE 와의 schema 는 지금 맞춰 둬서 전환 UI 작업 때 추가 교정이 없도록.
+    sourceCardId: z.number().int().positive().optional(),
   })
   .superRefine((v, ctx) => {
     if (v.voteType !== "YES_NO" && v.options.length < 2) {
@@ -135,7 +141,7 @@ export async function createVoteAction(
       fieldErrors,
     };
   }
-  const { roomId, title, voteType, options, maxSelectCount, deadlineAt, anonymous } =
+  const { roomId, title, voteType, options, maxSelectCount, deadlineAt, anonymous, sourceCardId } =
     parsed.data;
 
   // YES_NO 는 선택지를 서버가 고정으로 깔고 maxSelectCount 도 1 로 강제.
@@ -206,6 +212,7 @@ export async function createVoteAction(
         maxSelectCount: normalizedMax,
         deadlineAt,
         anonymous,
+        ...(sourceCardId !== undefined && { sourceCardId }),
       },
     });
     revalidatePath(`/rooms/${roomId}/votes`, "page");
@@ -233,10 +240,12 @@ function nextMockId(existing: readonly number[]): number {
 /**
  * 투표 수정 결과 — 생성·참여 액션과 같이 kind 리턴 패턴.
  * - `ok` : 수정 성공, `vote` 최신 상세
+ * - `conflict` : BE 낙관적 잠금 충돌 (version 불일치) — UI 는 안내 + 상세 재조회
  * - `error` : 검증 실패 or 서버 거절 (403 작성자 아님 등)
  */
 export type UpdateVoteResult =
   | { kind: "ok"; vote: VoteDetail }
+  | { kind: "conflict"; message: string }
   | { kind: "error"; message: string; fieldErrors?: Record<string, string> };
 
 /**
@@ -259,7 +268,7 @@ export async function updateVoteAction(
       fieldErrors,
     };
   }
-  const { roomId, voteId, title, deadlineAt, anonymous } = parsed.data;
+  const { roomId, voteId, version, title, deadlineAt, anonymous } = parsed.data;
 
   if (isMock) {
     const v = votes.find((x) => x.roomId === roomId && x.voteId === voteId);
@@ -283,15 +292,27 @@ export async function updateVoteAction(
     return { kind: "ok", vote: detail };
   }
 
+  // ⚠️ BE 는 `anonymous` 를 받지 않는다 (VoteUpdateRequest 에 없음). 익명 토글은 mock 환경
+  //    전용 UX 이고, 실 API 전환 시에는 "익명 여부 수정" 자체를 BE 가 지원해야 한다.
   try {
     const res = await api<VoteDetail>(
       `/api/v1/rooms/${roomId}/votes/${voteId}`,
-      { method: "PATCH", json: { title, deadlineAt, anonymous } },
+      { method: "PATCH", json: { title, deadlineAt, version } },
     );
     revalidatePath(`/rooms/${roomId}/votes`, "page");
     return { kind: "ok", vote: res };
   } catch (e) {
-    if (e instanceof ApiError) return { kind: "error", message: e.message };
+    if (e instanceof ApiError) {
+      // 409 는 BE 가 낙관적 잠금 충돌 (version 불일치) 때 돌리는 상태 코드.
+      // 일반 오류와 구분해 UI 가 최신 상세를 재조회하고 version 을 갱신하도록 유도한다.
+      if (e.status === 409) {
+        return {
+          kind: "conflict",
+          message: "다른 사용자가 먼저 수정했어요. 최신 내용을 불러온 뒤 다시 저장해 주세요.",
+        };
+      }
+      return { kind: "error", message: e.message };
+    }
     return {
       kind: "error",
       message: "투표 수정에 실패했습니다. 잠시 뒤 다시 시도해 주세요.",
@@ -362,7 +383,7 @@ export async function closeVoteAction(
   try {
     const res = await api<VoteDetail>(
       `/api/v1/rooms/${roomId}/votes/${voteId}/close`,
-      { method: "PATCH" },
+      { method: "POST" },
     );
     revalidatePath(`/rooms/${roomId}/votes`, "page");
     return { kind: "ok", vote: res };
@@ -590,11 +611,14 @@ export async function createRevoteAction(
     return { kind: "ok", vote: detail };
   }
 
+  // ⚠️ BE 는 `POST /{voteId}/revote` + `{deadlineAt}` 만 받는다. 부모 투표의 voteType ·
+  //    options · maxSelectCount · title 은 서버가 자동 복제한다. UI 쪽 title · anonymous
+  //    입력은 mock 환경 전용이며, BE 는 무시한다 (다이얼로그 정리는 Phase 2 PR).
   try {
-    const res = await api<VoteDetail>(`/api/v1/rooms/${roomId}/votes`, {
-      method: "POST",
-      json: { parentVoteId, title, deadlineAt, anonymous },
-    });
+    const res = await api<VoteDetail>(
+      `/api/v1/rooms/${roomId}/votes/${parentVoteId}/revote`,
+      { method: "POST", json: { deadlineAt } },
+    );
     revalidatePath(`/rooms/${roomId}/votes`, "page");
     return { kind: "ok", vote: res };
   } catch (e) {
