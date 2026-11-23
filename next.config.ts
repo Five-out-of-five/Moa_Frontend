@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   experimental: {
-    serverActions: { bodySizeLimit: "6mb" },
+    serverActions: { bodySizeLimit: "6mb", allowedOrigins: ["moayo.site"] },
   },
   // 이미지 도메인은 BE가 외부 URL을 돌려주면 그때 추가한다.
   images: {

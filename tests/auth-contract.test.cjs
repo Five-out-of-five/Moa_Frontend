@@ -6,7 +6,7 @@ const vm = require("node:vm");
 const { test } = require("node:test");
 const ts = require("typescript");
 
-function fixture({ env = {}, fetch: backend = async () => { throw Error("예상하지 않은 BE 요청"); }, incoming = {} } = {}) {
+function fixture({ env = {}, fetch: backend = async () => { throw Error("예상하지 않은 BE 요청"); }, incoming = {}, signupAccount = async () => ({ provider: "GOOGLE", displayName: "테스트" }) } = {}) {
   const values = new Map();
   const options = new Map();
   const jar = {
@@ -23,7 +23,7 @@ function fixture({ env = {}, fetch: backend = async () => { throw Error("예상�
     "next/headers": { cookies: async () => jar, headers: async () => headers },
     "next/navigation": { redirect },
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
-    "@/features/auth/server": { getSignupAccount: async () => ({ provider: "GOOGLE", displayName: "테스트" }) },
+    "@/features/auth/server": { getSignupAccount: signupAccount },
   };
   function load(name, parent = path.join(process.cwd(), "src")) {
     if (name in overrides) return overrides[name];
@@ -35,7 +35,7 @@ function fixture({ env = {}, fetch: backend = async () => { throw Error("예상�
     const record = { exports: {} };
     modules.set(file, record);
     const output = ts.transpileModule(fs.readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
-    vm.runInNewContext(output, { module: record, exports: record.exports, require: (id) => load(id, path.dirname(file)), process: { env: { AUTH_USE_MOCK: "false", NODE_ENV: "test", ...env } }, fetch: backend, Headers, Request, Response, URL, FormData, AbortController, setTimeout, clearTimeout }, { filename: file });
+    vm.runInNewContext(output, { module: record, exports: record.exports, require: (id) => load(id, path.dirname(file)), process: { env: { AUTH_USE_MOCK: "false", NODE_ENV: "test", ...env } }, fetch: backend, Headers, Request, Response, URL, URLSearchParams, FormData, AbortController, setTimeout, clearTimeout }, { filename: file });
     return record.exports;
   }
   return { load, jar, values, options };
@@ -153,4 +153,83 @@ test("인증 목 모드에서는 세션 BFF가 BE를 호출하지 않는다", as
   const f = fixture({ env: { AUTH_USE_MOCK: "true" } });
   const response = await f.load("@/app/api/auth/session/route").POST(new Request("http://localhost:3000/api/auth/session", { method: "POST", headers: { host: "localhost:3000", origin: "http://localhost:3000" }, body: "{}" }));
   assert.equal(response.status, 400);
+});
+
+test("공통 오류의 traceId·추가 데이터·필드 오류를 보존한다", async () => {
+  const f = fixture({ fetch: async () => Response.json({ success: false, error: { code: "AUTH_ACCOUNT_SUSPENDED", message: "정지된 계정입니다.", traceId: "fixture-trace", data: "2040-01-01T09:00:00+09:00", errors: [{ field: "name", reason: "이름 오류" }] } }, { status: 403 }) });
+  await assert.rejects(f.load("@/lib/api").api("/api/v1/auth/refresh"), (error) => error.traceId === "fixture-trace" && error.data === "2040-01-01T09:00:00+09:00" && error.fields[0].field === "name");
+});
+
+const sessionRequest = () => new Request("http://localhost:3000/api/auth/session", { method: "POST", headers: { host: "localhost:3000", origin: "http://localhost:3000" }, body: "{}" });
+
+test("정지 오류는 403과 종료 시각을 보존하고 로그인으로 안내한다", async () => {
+  const f = fixture({ fetch: async () => Response.json({ success: false, error: { code: "AUTH_ACCOUNT_SUSPENDED", message: "정지된 계정입니다.", traceId: "fixture-suspend", data: "2040-01-01T09:00:00+09:00" } }, { status: 403 }) });
+  f.jar.set("refreshToken", "fixture-old");
+  const response = await f.load("@/app/api/auth/session/route").POST(sessionRequest());
+  const body = await response.json();
+  assert.equal(response.status, 403);
+  assert.equal(body.until, "2040-01-01T09:00:00+09:00");
+  assert.equal(body.traceId, "fixture-suspend");
+  assert.equal(new URL(body.redirectTo, "http://localhost:3000").searchParams.get("error"), "AUTH_ACCOUNT_SUSPENDED");
+  assert.equal(f.jar.has("refreshToken"), false);
+});
+
+test("일시 장애는 503으로 유지하며 정상 refresh 쿠키를 지우지 않는다", async () => {
+  const f = fixture({ fetch: async () => { throw new TypeError("fixture network failure"); } });
+  f.jar.set("refreshToken", "fixture-old");
+  const response = await f.load("@/app/api/auth/session/route").POST(sessionRequest());
+  const body = await response.json();
+  assert.equal(response.status, 503);
+  assert.equal(body.redirectTo, undefined);
+  assert.equal(f.values.get("refreshToken"), "fixture-old");
+});
+
+function signupForm(name = "테스트") { const form = new FormData(); form.set("name", name); form.set("terms", "on"); form.set("privacy", "on"); return form; }
+
+test("이름의 서버 오류는 필드 오류와 traceId로 반환한다", async () => {
+  const f = fixture({ fetch: async () => Response.json({ success: false, error: { code: "COMMON_INVALID_INPUT", message: "입력 오류", traceId: "fixture-name", errors: [{ field: "name", reason: "다른 이름을 입력해 주세요." }] } }, { status: 400 }) });
+  const result = await f.load("@/features/auth/actions").completeMockSignupAction("fixture-ticket", undefined, {}, signupForm());
+  assert.equal(result.nameError, "다른 이름을 입력해 주세요.");
+  assert.equal(result.traceId, "fixture-name");
+  assert.equal(result.error, undefined);
+});
+
+test("가입 티켓 조회 장애를 만료로 바꾸지 않는다", async () => {
+  const f = fixture({ signupAccount: async () => { throw new Error("fixture offline"); } });
+  const result = await f.load("@/features/auth/actions").completeMockSignupAction("fixture-ticket", undefined, {}, signupForm());
+  assert(!result.error.includes("만료"));
+  assert(result.error.includes("다시 시도"));
+});
+
+test("만료 티켓은 내부 복귀 경로를 보존해 로그인으로 보낸다", async () => {
+  const f = fixture({ signupAccount: async () => null });
+  await assert.rejects(f.load("@/features/auth/actions").completeMockSignupAction("expired", "/invite/fixture", {}, signupForm()), (error) => new URL(error.location, "http://localhost:3000").searchParams.get("error") === "AUTH_SIGNUP_TICKET_INVALID" && new URL(error.location, "http://localhost:3000").searchParams.get("returnPath") === "/invite/fixture");
+});
+
+test("명세 밖 문자와 영구 정지를 구분한다", async () => {
+  const f = fixture();
+  const result = await f.load("@/features/auth/actions").completeMockSignupAction("fixture-ticket", undefined, {}, signupForm("Иван"));
+  assert(result.nameError);
+  assert(f.load("@/features/auth/errors").getLoginErrorMessage("AUTH_ACCOUNT_SUSPENDED").includes("영구"));
+});
+
+test("프록시용 Server Action Origin은 운영 도메인만 추가로 허용한다", () => {
+  const config = fixture().load("../next.config.ts").default;
+  const { isCsrfOriginAllowed } = require("next/dist/server/app-render/csrf-protection");
+  const allowed = config.experimental.serverActions.allowedOrigins;
+  assert.equal(isCsrfOriginAllowed("moayo.site", allowed), true);
+  assert.equal(isCsrfOriginAllowed("evil.invalid", allowed), false);
+  assert.equal(isCsrfOriginAllowed("moayo.site.evil.invalid", allowed), false);
+});
+
+test("가입 제출 시 만료도 traceId를 보존해 로그인으로 이동한다", async () => {
+  const f = fixture({ fetch: async () => Response.json({ success: false, error: { code: "AUTH_SIGNUP_TICKET_INVALID", message: "가입 정보가 만료됐어요.", traceId: "fixture-expired" } }, { status: 400 }) });
+  await assert.rejects(f.load("@/features/auth/actions").completeMockSignupAction("fixture-ticket", undefined, {}, signupForm()), (error) => new URL(error.location, "http://localhost:3000").searchParams.get("traceId") === "fixture-expired");
+});
+
+test("API 재시도 중 정지되면 쿠키를 정리하고 종료 시각을 안내한다", async () => {
+  const f = fixture({ fetch: async (url) => new URL(url).pathname.endsWith("/refresh") ? Response.json({ success: false, error: { code: "AUTH_ACCOUNT_SUSPENDED", message: "정지 계정", data: "2040-01-01T09:00:00+09:00", traceId: "fixture-refresh" } }, { status: 403 }) : expired() });
+  f.jar.set("refreshToken", "fixture-old");
+  await assert.rejects(f.load("@/lib/api").api("/api/v1/test-resource", { allowAuthRefresh: true }), (error) => new URL(error.location, "http://localhost:3000").searchParams.get("until") === "2040-01-01T09:00:00+09:00");
+  assert.equal(f.jar.has("refreshToken"), false);
 });

@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { getAuthFailure } from "@/features/auth/auth-failure";
 import { isAuthMock } from "@/features/auth/config";
 import { isSameOriginRequest } from "@/features/auth/origin";
 import { getAuthReturnPath } from "@/features/auth/return-path";
@@ -18,8 +19,9 @@ export async function POST(request: Request) {
     jar.delete("moa_auth_return");
     if ("reason" in input && input.reason === "expired") jar.set("moa_auth_retry", "1", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 10 });
     return NextResponse.json({ redirectTo: returnPath }, { headers: { "Cache-Control": "no-store" } });
-  } catch {
-    await clearAuthTokens();
-    return NextResponse.json({ error: "로그인 세션을 갱신하지 못했어요. 다시 로그인해 주세요." }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    const { status, ...failure } = getAuthFailure(error);
+    if (failure.redirectTo) await clearAuthTokens();
+    return NextResponse.json(failure, { status, headers: { "Cache-Control": "no-store" } });
   }
 }
