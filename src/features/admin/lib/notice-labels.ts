@@ -13,11 +13,11 @@ const TYPE_LABELS: Record<AdminNoticeType, string> = {
   URGENT: "긴급",
 };
 
-/** BE 가 string 이라 모르는 값은 원문 그대로 노출. */
+/** BE 가 string 이라 모르는 값은 원문 그대로 노출. 키는 BE `AdminNoticeService::stateOf` 와 일치. */
 const STATE_LABELS: Record<string, string> = {
   SCHEDULED: "예약",
   ACTIVE: "노출 중",
-  EXPIRED: "종료",
+  ENDED: "종료",
 };
 
 export function noticeTypeLabel(code: string | undefined | null): string {
@@ -41,5 +41,5 @@ export const NOTICE_TYPE_OPTIONS: { value: AdminNoticeType; label: string }[] = 
 export const NOTICE_STATE_OPTIONS: { value: string; label: string }[] = [
   { value: "SCHEDULED", label: STATE_LABELS.SCHEDULED },
   { value: "ACTIVE", label: STATE_LABELS.ACTIVE },
-  { value: "EXPIRED", label: STATE_LABELS.EXPIRED },
+  { value: "ENDED", label: STATE_LABELS.ENDED },
 ];

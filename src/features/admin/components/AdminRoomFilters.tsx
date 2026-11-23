@@ -121,7 +121,15 @@ export function AdminRoomFilters({
       </select>
 
       <select
-        value={initialSort}
+        // URL 에 sort 가 없으면 빈 문자열이 들어오는데 셀렉트는 그걸 매칭하지 못해 "최근 활동 순"
+        // 을 띄우지만 서버는 BE 기본값과 같은 CREATED 로 정렬한다. 보이는 값과 결과를
+        // 맞추기 위해 매칭 토큰이 없으면 CREATED 로 표시한다. `hasAny` 는 원본 initialSort 로
+        // 판단해야 "필터 초기화" 버튼 노출 조건이 바뀌지 않는다.
+        value={
+          ROOM_SORT_OPTIONS.some((o) => o.value === initialSort)
+            ? initialSort
+            : "CREATED"
+        }
         onChange={(e) => writeQuery({ sort: e.target.value })}
         className="rounded-md border border-slate-200 bg-white px-2 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
         aria-label="정렬"

@@ -2,7 +2,7 @@
 
 import { ArrowRight, Clock3, TriangleAlert, X } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -19,6 +19,9 @@ export function NoticeBanner({
   refreshAt: number | null;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const isChatPage = /^\/rooms\/[^/]+\/(?:channels|chat)(?:\/|$)/.test(pathname)
+    || /^\/dms(?:\/|$)/.test(pathname);
   const [pending, start] = useTransition();
   const bannerRef = useRef<HTMLElement>(null);
   const noticeId = banner?.noticeId;
@@ -37,10 +40,10 @@ export function NoticeBanner({
       observer.disconnect();
       shell.style.removeProperty("--notice-banner-height");
     };
-  }, [noticeId, title]);
+  }, [noticeId, title, isChatPage]);
 
   useEffect(() => {
-    if (refreshAt === null) return;
+    if (isChatPage || refreshAt === null) return;
     const deadline = refreshAt;
     let timer: number;
     function schedule() {
@@ -50,9 +53,9 @@ export function NoticeBanner({
     }
     schedule();
     return () => window.clearTimeout(timer);
-  }, [refreshAt, router]);
+  }, [refreshAt, router, isChatPage]);
 
-  if (!banner || !noticeId || !title) return null;
+  if (isChatPage || !banner || !noticeId || !title) return null;
   const urgent = banner.noticeType === "URGENT";
   const Icon = urgent ? TriangleAlert : Clock3;
 

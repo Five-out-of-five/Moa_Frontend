@@ -131,7 +131,7 @@ export async function changeAccountRoleAction(
 
     const accessToken = await readAccessToken();
     const detail = await api<AdminAccountDetail>(
-      `/api/v1/admin/accounts/${accountId}/role?adminId=${guard.adminId}`,
+      `/api/v1/admin/accounts/${accountId}/role`,
       { method: "PUT", json: { role: nextRole }, accessToken },
     );
     revalidatePath("/admin/accounts");
@@ -187,7 +187,7 @@ export async function suspendAccountAction(
     const payload: Record<string, unknown> = { period, reason: trimmed };
     if (reportId !== undefined) payload.reportId = reportId;
     const detail = await api<AdminAccountDetail>(
-      `/api/v1/admin/accounts/${accountId}/suspension?adminId=${guard.adminId}`,
+      `/api/v1/admin/accounts/${accountId}/suspension`,
       { method: "POST", json: payload, accessToken },
     );
     revalidatePath("/admin/accounts");
@@ -212,7 +212,7 @@ export async function unsuspendAccountAction(accountId: number): Promise<Result>
 
     const accessToken = await readAccessToken();
     const detail = await api<AdminAccountDetail>(
-      `/api/v1/admin/accounts/${accountId}/suspension?adminId=${guard.adminId}`,
+      `/api/v1/admin/accounts/${accountId}/suspension`,
       { method: "DELETE", accessToken },
     );
     revalidatePath("/admin/accounts");
@@ -250,7 +250,7 @@ export async function reviewReportAction(reportId: number): Promise<ReportResult
 
     const accessToken = await readAccessToken();
     const detail = await api<AdminReportDetail>(
-      `/api/v1/admin/reports/${reportId}/review?adminId=${guard.adminId}`,
+      `/api/v1/admin/reports/${reportId}/review`,
       { method: "POST", accessToken },
     );
     revalidatePath("/admin/reports");
@@ -343,7 +343,7 @@ export async function resolveReportAction(
     if (input.suspensionPeriod) payload.suspensionPeriod = input.suspensionPeriod;
     if (input.falseReport !== undefined) payload.falseReport = input.falseReport;
     const detail = await api<AdminReportDetail>(
-      `/api/v1/admin/reports/${reportId}/resolve?adminId=${guard.adminId}`,
+      `/api/v1/admin/reports/${reportId}/resolve`,
       { method: "POST", json: payload, accessToken },
     );
     revalidatePath("/admin/reports");
@@ -387,7 +387,7 @@ export async function rejectReportAction(
     const payload: Record<string, unknown> = { actionReason: reason };
     if (input.falseReport !== undefined) payload.falseReport = input.falseReport;
     const detail = await api<AdminReportDetail>(
-      `/api/v1/admin/reports/${reportId}/reject?adminId=${guard.adminId}`,
+      `/api/v1/admin/reports/${reportId}/reject`,
       { method: "POST", json: payload, accessToken },
     );
     revalidatePath("/admin/reports");
@@ -474,7 +474,7 @@ export async function createNoticeAction(
 
     const accessToken = await readAccessToken();
     const detail = await api<AdminNoticeDetail>(
-      `/api/v1/admin/notices?adminId=${guard.adminId}`,
+      `/api/v1/admin/notices`,
       { method: "POST", json: payload, accessToken },
     );
     revalidatePath("/admin/notices");
@@ -507,7 +507,7 @@ export async function updateNoticeAction(
 
     const accessToken = await readAccessToken();
     const detail = await api<AdminNoticeDetail>(
-      `/api/v1/admin/notices/${noticeId}?adminId=${guard.adminId}`,
+      `/api/v1/admin/notices/${noticeId}`,
       { method: "PUT", json: payload, accessToken },
     );
     revalidatePath("/admin/notices");
@@ -535,7 +535,7 @@ export async function deleteNoticeAction(
 
     const accessToken = await readAccessToken();
     await api<void>(
-      `/api/v1/admin/notices/${noticeId}?adminId=${guard.adminId}`,
+      `/api/v1/admin/notices/${noticeId}`,
       { method: "DELETE", accessToken },
     );
     revalidatePath("/admin/notices");
@@ -577,7 +577,7 @@ export async function inactivateRoomAction(
 
     const accessToken = await readAccessToken();
     const detail = await api<AdminRoomDetail>(
-      `/api/v1/admin/rooms/${roomId}/inactivation?adminId=${guard.adminId}`,
+      `/api/v1/admin/rooms/${roomId}/inactivation`,
       { method: "POST", json: { reason: trimmed }, accessToken },
     );
     revalidatePath("/admin/rooms");
@@ -609,7 +609,7 @@ export async function reactivateRoomAction(
 
     const accessToken = await readAccessToken();
     const detail = await api<AdminRoomDetail>(
-      `/api/v1/admin/rooms/${roomId}/inactivation?adminId=${guard.adminId}`,
+      `/api/v1/admin/rooms/${roomId}/inactivation`,
       { method: "DELETE", accessToken },
     );
     revalidatePath("/admin/rooms");

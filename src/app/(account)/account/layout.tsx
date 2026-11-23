@@ -2,6 +2,7 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { AppShell } from "@/components/common/AppShell";
 import { AccountSettingsNav } from "@/features/account/components/AccountSettingsNav";
 import { getMyAccount } from "@/features/account/server";
 import { requireAuthSession } from "@/features/auth/guard";
@@ -15,7 +16,7 @@ export default async function AccountLayout({ children }: { children: ReactNode 
   const currentRoom = rooms.find(({ id }) => id === account.lastRoomId) ?? rooms[0];
 
   return (
-    <main className="bg-background min-h-dvh px-5 py-8 sm:px-8">
+    <AppShell>
       <div className="mx-auto max-w-6xl">
         <Link
           href={currentRoom ? `/rooms/${currentRoom.id}` : "/workspaces"}
@@ -38,6 +39,6 @@ export default async function AccountLayout({ children }: { children: ReactNode 
           {children}
         </div>
       </div>
-    </main>
+    </AppShell>
   );
 }

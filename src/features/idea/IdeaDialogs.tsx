@@ -7,10 +7,10 @@ import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescript
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import type { IdeaCard, IdeaCardType } from "@/types/db";
 
 import { closeIdeaSession, deleteIdeaCard, saveIdeaCard, startIdeaSession } from "./actions";
+import { IdeaCardFields } from "./IdeaCardFields";
 import { IDEA_COLUMNS, type IdeaFormResult } from "./model";
 
 type FormAction = (state: IdeaFormResult, data: FormData) => Promise<IdeaFormResult>;
@@ -135,12 +135,7 @@ export function IdeaCardDialog({ roomId, sessionId, trigger, defaultType = "AGEN
           ))}
         </div>
       </fieldset>
-      <label className="block space-y-2 text-sm font-medium">
-        <span>제목</span><Input name="title" required maxLength={100} defaultValue={card?.title} placeholder="아이디어 제목을 입력하세요." />
-      </label>
-      <label className="block space-y-2 text-sm font-medium">
-        <span>내용</span><Textarea name="content" rows={4} maxLength={1000} defaultValue={card?.content} placeholder="배경이나 제안 내용을 간단히 적어 주세요." />
-      </label>
+      <IdeaCardFields roomId={roomId} sessionId={sessionId} card={card} />
     </IdeaDialog>
   );
 }

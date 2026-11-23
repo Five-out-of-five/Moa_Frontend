@@ -57,7 +57,7 @@ function computeState(detail: AdminNoticeDetail | null): string | undefined {
   const e = Date.parse(detail.displayEndsAt);
   if (!Number.isFinite(s) || !Number.isFinite(e)) return undefined;
   if (now < s) return "SCHEDULED";
-  if (now > e) return "EXPIRED";
+  if (now > e) return "ENDED";
   return "ACTIVE";
 }
 
