@@ -6,6 +6,7 @@ import { z } from "zod";
 import { api } from "@/lib/api";
 import { isMock } from "@/mocks/config";
 import { deleteNotificationFromMock, notificationPreferences, notifications } from "@/mocks/db";
+import type { components } from "@/types/api";
 import type { Notification } from "@/types/db";
 
 import { getMyAccount } from "../account/server";
@@ -13,21 +14,37 @@ import type { SettingsResult } from "../account/settings-types";
 import { NOTIFICATION_GROUP_ORDER } from "./lib/category-for-kind";
 import { listMyNotifications } from "./server";
 
+type NotificationSettingUpdateRequest = components["schemas"]["NotificationSettingUpdateRequest"];
+
 export async function updateGlobalNotificationPreferencesAction(
   _previous: SettingsResult,
   formData: FormData,
 ): Promise<SettingsResult> {
-  if (!isMock) {
-    return { success: false, message: "현재 환경에서는 알림 설정을 저장할 수 없습니다." };
+  // SYSTEM 그룹은 사용자 토글 없이 항상 켜 둔다 (BE 쪽도 locked=true 로 내려옴).
+  const groups = NOTIFICATION_GROUP_ORDER.map((group) => ({
+    group,
+    enabled: group === "SYSTEM" || formData.get(group) === "on",
+  }));
+
+  if (isMock) {
+    const { id } = await getMyAccount();
+    notificationPreferences.set(id, Object.fromEntries(groups.map((g) => [g.group, g.enabled])));
+    revalidatePath("/account/settings");
+    return { success: true, message: "알림 설정을 저장했습니다." };
   }
 
-  const { id } = await getMyAccount();
-  notificationPreferences.set(
-    id,
-    Object.fromEntries(
-      NOTIFICATION_GROUP_ORDER.map((group) => [group, group === "SYSTEM" || formData.get(group) === "on"]),
-    ),
-  );
+  try {
+    const payload: NotificationSettingUpdateRequest = { groups };
+    await api<unknown>("/api/v1/notification-settings", {
+      method: "PUT",
+      json: payload,
+    });
+  } catch (e) {
+    return {
+      success: false,
+      message: e instanceof Error ? e.message : "알림 설정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.",
+    };
+  }
   revalidatePath("/account/settings");
   return { success: true, message: "알림 설정을 저장했습니다." };
 }

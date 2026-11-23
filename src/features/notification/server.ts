@@ -3,25 +3,52 @@ import "server-only";
 import { api } from "@/lib/api";
 import { isMock } from "@/mocks/config";
 import { notificationPreferences, notifications } from "@/mocks/db";
-import type { Notification, PageResponse } from "@/types/db";
+import type { components } from "@/types/api";
+import type { Notification, NotificationGroup, PageResponse } from "@/types/db";
 
 import { getMyAccount } from "../account/server";
 import type { NotificationPreferences } from "./lib/preferences";
 
-export async function getGlobalNotificationPreferences(): Promise<NotificationPreferences | null> {
-  if (!isMock) return null;
+type NotificationSettingResponse = components["schemas"]["NotificationSettingResponse"];
 
-  const { id } = await getMyAccount();
-  const preferences = notificationPreferences.get(id);
-  return {
+/**
+ * BE `NotificationSettingResponse` → FE `NotificationPreferences` 매핑.
+ *
+ * ⚠️ BE 응답은 `{ groups: [{ group, enabled, locked }] }` 배열, FE 소비 타입은 group→boolean 레코드.
+ *    BE 가 돌려주지 않은 그룹은 기본 활성화(true)로 두어 UI 토글 초기값 꼬임을 막는다.
+ *    `locked` 는 FE 가 아직 UI 로 사용하지 않지만, SYSTEM 그룹은 BE 쪽에서 항상 locked 로 내려온다.
+ */
+function toPreferences(res: NotificationSettingResponse): NotificationPreferences {
+  const base: NotificationPreferences = {
     MY_ACTIVITY: true,
     TASK: true,
     VOTE: true,
     SESSION: true,
     MEMBER_ROLE: true,
-    ...preferences,
     SYSTEM: true,
   };
+  for (const g of res.groups ?? []) {
+    if (g.group) base[g.group as NotificationGroup] = g.enabled ?? true;
+  }
+  return base;
+}
+
+export async function getGlobalNotificationPreferences(): Promise<NotificationPreferences | null> {
+  if (isMock) {
+    const { id } = await getMyAccount();
+    const preferences = notificationPreferences.get(id);
+    return {
+      MY_ACTIVITY: true,
+      TASK: true,
+      VOTE: true,
+      SESSION: true,
+      MEMBER_ROLE: true,
+      ...preferences,
+      SYSTEM: true,
+    };
+  }
+  const res = await api<NotificationSettingResponse>("/api/v1/notification-settings");
+  return toPreferences(res);
 }
 
 /**
@@ -65,13 +92,14 @@ export async function listMyNotifications(
     };
   }
 
+  // ⚠️ size 는 항상 전달한다. BE 기본값(20) 과 FE 기본값(50) 이 달라 생략하면
+  //    헤더 드로워의 첫 페이지 노출 분량이 쪼그라든다.
   const query = new URLSearchParams();
   if (unreadOnly) query.set("unreadOnly", "true");
   if (page > 0) query.set("page", String(page));
-  if (size !== 50) query.set("size", String(size));
-  const qs = query.toString();
+  query.set("size", String(size));
   return api<PageResponse<Notification>>(
-    `/api/v1/notifications${qs ? `?${qs}` : ""}`,
+    `/api/v1/notifications?${query.toString()}`,
   );
 }
 
