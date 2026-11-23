@@ -22,6 +22,8 @@ import { updateVoteAction } from "../actions";
 interface Props {
   roomId: number;
   voteId: number;
+  /** BE 가 낙관적 잠금을 위해 요구하는 현재 버전. 상세 응답의 `version` 그대로 넘긴다. */
+  initialVersion: number;
   initialTitle: string;
   /** 서버 ISO (UTC). datetime-local 입력 초기값으로 변환해 넣는다. */
   initialDeadlineAt: string;
@@ -45,6 +47,7 @@ const MAX_TITLE_LENGTH = 120;
 export function VoteEditDialog({
   roomId,
   voteId,
+  initialVersion,
   initialTitle,
   initialDeadlineAt,
   initialAnonymous,
@@ -92,6 +95,7 @@ export function VoteEditDialog({
         result = await updateVoteAction({
           roomId,
           voteId,
+          version: initialVersion,
           title: title.trim(),
           deadlineAt: deadlineIso,
           anonymous,
