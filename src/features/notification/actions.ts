@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { api } from "@/lib/api";
+import { isNextControlFlowError } from "@/lib/next-redirect";
 import { isMock } from "@/mocks/config";
 import { deleteNotificationFromMock, notificationPreferences, notifications } from "@/mocks/db";
 import type { components } from "@/types/api";
@@ -40,6 +41,9 @@ export async function updateGlobalNotificationPreferencesAction(
       json: payload,
     });
   } catch (e) {
+    // ⚠️ 토큰 만료로 api 가 로그인 전환을 위해 던진 Next 리다이렉트 예외는 다시 던진다.
+    //    실패 결과로 변환하면 사용자가 인증 쿠키가 비워진 채 설정 화면에 그대로 남는다.
+    if (isNextControlFlowError(e)) throw e;
     return {
       success: false,
       message: e instanceof Error ? e.message : "알림 설정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.",

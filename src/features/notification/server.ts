@@ -1,6 +1,7 @@
 import "server-only";
 
 import { api } from "@/lib/api";
+import { isNextControlFlowError } from "@/lib/next-redirect";
 import { isMock } from "@/mocks/config";
 import { notificationPreferences, notifications } from "@/mocks/db";
 import type { components } from "@/types/api";
@@ -47,8 +48,16 @@ export async function getGlobalNotificationPreferences(): Promise<NotificationPr
       SYSTEM: true,
     };
   }
-  const res = await api<NotificationSettingResponse>("/api/v1/notification-settings");
-  return toPreferences(res);
+  // ⚠️ 알림 설정 API 장애가 계정 설정 페이지 전체 렌더를 깨뜨리지 않도록 일반 조회 실패는
+  //    기존 "미지원" 처리였던 null 로 수렴시킨다. 로그인 만료 같은 Next 리다이렉트 예외는
+  //    그대로 전파해야 /login 전환이 정상 실행된다.
+  try {
+    const res = await api<NotificationSettingResponse>("/api/v1/notification-settings");
+    return toPreferences(res);
+  } catch (e) {
+    if (isNextControlFlowError(e)) throw e;
+    return null;
+  }
 }
 
 /**
