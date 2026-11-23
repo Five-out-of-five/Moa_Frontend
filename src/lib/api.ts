@@ -4,6 +4,7 @@ import { cookies, headers as requestHeaders } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { isAuthMock } from "@/features/auth/config";
+import { getAuthLoginHref, getSuspendedUntil } from "@/features/auth/errors";
 import { getAuthReturnPath } from "@/features/auth/return-path";
 
 import { BACKEND_BASE_URL, DEFAULT_TIMEOUT_MS } from "./endpoints";
@@ -39,6 +40,8 @@ export interface ApiEnvelopeFailure {
     code: string;
     message: string;
     errors?: ApiErrorField[];
+    traceId?: string;
+    data?: unknown;
   };
 }
 
@@ -50,6 +53,8 @@ export class ApiError extends Error {
     message: string,
     readonly code: string,
     readonly fields?: ApiErrorField[],
+    readonly traceId?: string,
+    readonly data?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
@@ -111,7 +116,13 @@ export async function api<T>(path: string, init: ApiInit = {}, attempt = 0): Pro
         const { refreshAuthSession, clearAuthTokens } = await import("@/features/auth/session");
         let token: string;
         try { token = await refreshAuthSession(); }
-        catch (error) { if (error instanceof ApiError && error.status === 401) { await clearAuthTokens(); redirect("/login?error=session"); } throw error; }
+        catch (error) {
+          if (error instanceof ApiError && (error.status === 401 || error.code === "AUTH_ACCOUNT_SUSPENDED")) {
+            await clearAuthTokens();
+            redirect(getAuthLoginHref(error.code === "AUTH_ACCOUNT_SUSPENDED" ? error.code : "session", getSuspendedUntil(error.data), error.traceId));
+          }
+          throw error;
+        }
         return api<T>(path, { ...init, accessToken: token }, 1);
       }
       // Server Component는 쿠키를 쓸 수 없어 페이지/BFF 왕복 후 조회를 재실행한다.
@@ -125,6 +136,8 @@ export async function api<T>(path: string, init: ApiInit = {}, attempt = 0): Pro
       failure?.message ?? "서버 요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.",
       failure?.code ?? "API_RESPONSE_INVALID",
       failure?.errors,
+      failure?.traceId,
+      failure?.data,
     );
   } finally {
     clearTimeout(timeout);

@@ -13,7 +13,7 @@ const SOCIAL_LOGIN_OPTIONS = [
   { provider: "NAVER", initial: "N", badgeClassName: "bg-login-naver text-login-badge-light" },
 ] as const;
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; returnPath?: string; error?: string; until?: string }> }) {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; returnPath?: string; error?: string; until?: string; traceId?: string }> }) {
   const query = await searchParams;
   const next = getAuthReturnPath(query.returnPath ?? query.next);
   const errorMessage = getLoginErrorMessage(query.error, query.until);
@@ -30,10 +30,11 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         </p>
 
         {errorMessage && <p role="alert" className="text-destructive mt-4 text-sm">{errorMessage}</p>}
+        {errorMessage && typeof query.traceId === "string" && query.traceId.length <= 128 && <p className="text-muted-foreground mt-2 text-xs">오류 확인 번호: {query.traceId}</p>}
         <ul className="mt-7 grid gap-2.5">
           {SOCIAL_LOGIN_OPTIONS.map(({ provider, initial, badgeClassName }) => {
             const signup = getSignupPreviewHref(provider);
-            const href = signup && next ? `${signup}?next=${encodeURIComponent(next)}` : signup;
+            const href = signup && next ? `${signup}${signup.includes("?") ? "&" : "?"}returnPath=${encodeURIComponent(next)}` : signup;
             const content = (
               <>
                 <span
