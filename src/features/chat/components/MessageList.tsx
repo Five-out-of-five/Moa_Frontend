@@ -92,8 +92,8 @@ export function MessageList({ messages, emptyState, roomId }: Props) {
       className="flex-1 overflow-y-auto"
     >
       <div className="mx-auto flex max-w-[720px] flex-col gap-1 px-6 py-6">
-        {grouped.map((group, i) => (
-          <div key={group.dateKey + "-" + i} className="flex flex-col gap-1">
+        {grouped.map((group) => (
+          <div key={group.items[0]!.id} className="flex flex-col gap-1">
             {group.showDateDivider && (
               <DateDivider
                 label={formatDateDivider(group.items[0]!.createdAt, mounted)}
