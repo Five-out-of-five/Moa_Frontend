@@ -8,7 +8,7 @@ import { getSignupAccount } from "@/features/auth/server";
 
 export default async function SignupPage({ params, searchParams }: {
   params: Promise<{ ticket: string }>;
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; returnPath?: string }>;
 }) {
   const { ticket } = await params;
   const account = await getSignupAccount(ticket);
@@ -54,7 +54,7 @@ export default async function SignupPage({ params, searchParams }: {
         <CircleCheck aria-hidden="true" className="text-success size-4 shrink-0" />
       </div>
 
-      <TermsConsent ticket={ticket} next={(await searchParams).next} defaultName={account.displayName} />
+      <TermsConsent ticket={ticket} next={(await searchParams).returnPath ?? (await searchParams).next} defaultName={account.displayName} />
     </section>
   );
 }

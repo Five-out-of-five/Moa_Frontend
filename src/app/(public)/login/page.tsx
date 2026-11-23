@@ -1,10 +1,10 @@
 import { ArrowRight } from "lucide-react";
-import Link from "next/link";
 
 import { MoaLogo } from "@/components/common/MoaLogo";
 import { Button } from "@/components/ui/button";
-import { getInviteReturnPath } from "@/features/auth/mock-session";
+import { getLoginErrorMessage } from "@/features/auth/errors";
 import { SOCIAL_PROVIDER_NAMES } from "@/features/auth/providers";
+import { getAuthReturnPath } from "@/features/auth/return-path";
 import { getSignupPreviewHref } from "@/features/auth/server";
 
 const SOCIAL_LOGIN_OPTIONS = [
@@ -13,9 +13,10 @@ const SOCIAL_LOGIN_OPTIONS = [
   { provider: "NAVER", initial: "N", badgeClassName: "bg-login-naver text-login-badge-light" },
 ] as const;
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string }> }) {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; returnPath?: string; error?: string; until?: string }> }) {
   const query = await searchParams;
-  const next = getInviteReturnPath(query.next);
+  const next = getAuthReturnPath(query.returnPath ?? query.next);
+  const errorMessage = getLoginErrorMessage(query.error, query.until);
   return (
     <main className="bg-login-surface grid min-h-dvh place-items-center px-5 py-10 sm:py-14">
       <section aria-labelledby="login-title" className="w-full max-w-md text-center">
@@ -28,7 +29,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           MOA에서 아이디어와 업무, 팀의 대화를 한 흐름으로 연결하세요.
         </p>
 
-        {query.error && <p role="alert" className="text-destructive mt-4 text-sm">로그인을 완료하지 못했어요. 다시 시도해 주세요.</p>}
+        {errorMessage && <p role="alert" className="text-destructive mt-4 text-sm">{errorMessage}</p>}
         <ul className="mt-7 grid gap-2.5">
           {SOCIAL_LOGIN_OPTIONS.map(({ provider, initial, badgeClassName }) => {
             const signup = getSignupPreviewHref(provider);
@@ -54,7 +55,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
                   variant="outline"
                   className="bg-card text-card-foreground hover:border-ring/60 focus-visible:ring-ring active:bg-accent-foreground/10 dark:active:bg-accent-foreground/10 grid h-12 w-full grid-cols-[1.5rem_minmax(0,1fr)_1.5rem] justify-items-center rounded-lg px-3 active:shadow-none"
                 >
-                  {href ? <Link href={href}>{content}</Link> : content}
+                  {href ? <a href={href}>{content}</a> : content}
                 </Button>
               </li>
             );

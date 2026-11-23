@@ -1,6 +1,7 @@
 import "server-only";
 
 import { api } from "@/lib/api";
+import { ApiError } from "@/lib/api";
 import { accounts } from "@/mocks/db";
 import type { SocialProvider } from "@/types/db";
 
@@ -15,14 +16,18 @@ const SIGNUP_PREVIEW_TICKETS = {
 
 export function getSignupPreviewHref(provider: SocialProvider) {
   if (isAuthMock) return `/signup/${SIGNUP_PREVIEW_TICKETS[provider]}`;
-  return process.env[`AUTH_${provider}_LOGIN_URL`] ? `/api/auth/login/${provider.toLowerCase()}` : null;
+  return `/api/auth/login/${provider.toLowerCase()}`;
 }
 
 export async function getSignupAccount(ticket: string): Promise<{ provider: SocialProvider; displayName: string } | null> {
   if (!isAuthMock) {
     const data = await api<{ provider: string; email: string; name: string }>(
       `/api/v1/auth/signup-tickets/${encodeURIComponent(ticket)}`, { cache: "no-store" },
-    );
+    ).catch((error: unknown) => {
+      if (error instanceof ApiError && error.code === "AUTH_SIGNUP_TICKET_INVALID") return null;
+      throw error;
+    });
+    if (!data) return null;
     const provider = data.provider.toUpperCase();
     if (provider !== "GOOGLE" && provider !== "KAKAO" && provider !== "NAVER") return null;
     return { provider, displayName: data.name };

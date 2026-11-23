@@ -21,7 +21,7 @@ export function TermsConsent({ ticket, next, defaultName }: { ticket: string; ne
   const hasAcceptedAll = REQUIRED_TERMS.every(({ id }) => consents[id]);
 
   return (
-    <form action={action} className="grid gap-3">
+    <form action={action} onReset={(event) => event.preventDefault()} className="grid gap-3">
       <label className="grid gap-2 text-left text-sm font-medium">
         기본 이름
         <Input name="name" defaultValue={defaultName} required minLength={2} maxLength={20} />

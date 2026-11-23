@@ -13,6 +13,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test:auth": "node --test tests/auth-contract.test.cjs",
     "format": "prettier --write .",
     "prepare": "husky",
     "generate:api": "openapi-typescript \"${BE_SWAGGER_URL:-https://dev.moarang.kro.kr/v3/api-docs}\" -o src/types/api.d.ts"

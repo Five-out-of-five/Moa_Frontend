@@ -2,6 +2,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
+import { requireAuthSession } from "@/features/auth/guard";
 import { MOCK_ACCOUNT_COOKIE, MOCK_ACCOUNT_IDS } from "@/features/auth/mock-session";
 import { api } from "@/lib/api";
 import { isMock } from "@/mocks/config";
@@ -14,6 +15,7 @@ import type { Account } from "@/types/db";
  * 목 로그인 후에는 선택한 데모 계정을 사용한다. 기존 로컬 화면은 기본 계정으로 열린다.
  */
 export async function getMyAccount(): Promise<Account> {
+  await requireAuthSession();
   if (isMock) {
     const me = (await getExplicitMockAccount()) ?? accounts[0];
     if (!me) throw new Error("mock accounts[0] 가 비어 있다 — 시드를 확인하세요.");

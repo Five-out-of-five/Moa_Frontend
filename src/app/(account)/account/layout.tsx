@@ -4,11 +4,13 @@ import type { ReactNode } from "react";
 
 import { AccountSettingsNav } from "@/features/account/components/AccountSettingsNav";
 import { getMyAccount } from "@/features/account/server";
+import { requireAuthSession } from "@/features/auth/guard";
 import { listMyRooms } from "@/features/room/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function AccountLayout({ children }: { children: ReactNode }) {
+  await requireAuthSession();
   const [account, rooms] = await Promise.all([getMyAccount(), listMyRooms()]);
   const currentRoom = rooms.find(({ id }) => id === account.lastRoomId) ?? rooms[0];
 

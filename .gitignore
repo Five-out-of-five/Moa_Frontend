@@ -24,6 +24,8 @@
 # .env 는 어떤 변형이든 커밋 금지. 예시만 .env.example 로 공유.
 .env
 .env.*
+.front.env
+.front.env.*
 !.env.example
 
 # ===== 개인 인증서/키 =====

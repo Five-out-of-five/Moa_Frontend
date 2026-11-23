@@ -2,6 +2,7 @@ import { Suspense } from "react";
 
 import { Header } from "@/components/common/Header";
 import { Sidebar } from "@/components/common/Sidebar";
+import { requireAuthSession } from "@/features/auth/guard";
 import { NoticeBannerLoader } from "@/features/notice/NoticeBannerLoader";
 
 /**
@@ -19,9 +20,10 @@ import { NoticeBannerLoader } from "@/features/notice/NoticeBannerLoader";
 // 받아 그려야 한다. prerender 되면 헤더 로더가 실패했을 때의 "다시 시도" (router.refresh)
 // 가 캐시된 에러 상태를 그대로 돌려줄 수 있어 복구가 안 된다.
 export const dynamic = "force-dynamic";
-export default function ShellLayout({
+export default async function ShellLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  await requireAuthSession();
   return (
     <div className="bg-background min-h-dvh">
       <Header />

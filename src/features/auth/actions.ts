@@ -4,10 +4,11 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 
 import { isAuthMock } from "./config";
-import { getInviteReturnPath, MOCK_ACCOUNT_COOKIE, MOCK_ACCOUNT_IDS } from "./mock-session";
+import { MOCK_ACCOUNT_COOKIE, MOCK_ACCOUNT_IDS } from "./mock-session";
+import { getAuthReturnPath } from "./return-path";
 import { getSignupAccount } from "./server";
 import { storeAuthTokens } from "./session";
 
@@ -29,15 +30,17 @@ export async function completeMockSignupAction(
         json: { ticket, name: parsed.data, termsAgreed: true, privacyAgreed: true },
         onResponse: storeAuthTokens,
       });
-    } catch {
-      return { error: "가입을 완료하지 못했어요. 다시 시도해 주세요." };
+    } catch (error) {
+      return { error: error instanceof ApiError ? error.message : "가입을 완료하지 못했어요. 다시 시도해 주세요." };
     }
-    redirect(getInviteReturnPath(next) ?? "/workspaces");
+    const destination = getAuthReturnPath(next) ?? getAuthReturnPath((await cookies()).get("moa_auth_return")?.value) ?? "/workspaces";
+    (await cookies()).delete("moa_auth_return");
+    redirect(destination);
   }
   (await cookies()).set(MOCK_ACCOUNT_COOKIE, String(MOCK_ACCOUNT_IDS[account.provider]), {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
   });
-  redirect(getInviteReturnPath(next) ?? "/workspaces");
+  redirect(getAuthReturnPath(next) ?? "/workspaces");
 }
