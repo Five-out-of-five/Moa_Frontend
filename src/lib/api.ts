@@ -1,5 +1,11 @@
 import "server-only";
 
+import { cookies, headers as requestHeaders } from "next/headers";
+import { redirect } from "next/navigation";
+
+import { isAuthMock } from "@/features/auth/config";
+import { getAuthReturnPath } from "@/features/auth/return-path";
+
 import { BACKEND_BASE_URL, DEFAULT_TIMEOUT_MS } from "./endpoints";
 
 /**
@@ -57,6 +63,10 @@ export interface ApiInit extends Omit<RequestInit, "body"> {
   timeoutMs?: number;
   /** Access Token — 로그인 전 화면이면 넘기지 않는다 */
   accessToken?: string;
+  onResponse?: (data: unknown, headers: Headers) => Promise<void>;
+  onHeaders?: (headers: Headers) => Promise<void>;
+  /** 쿠키를 쓸 수 있는 Route Handler에서만 사용한다. Server Action은 자동 판별한다. */
+  allowAuthRefresh?: boolean;
 }
 
 /**
@@ -65,8 +75,11 @@ export interface ApiInit extends Omit<RequestInit, "body"> {
  * - 성공: `data` 를 반환
  * - 실패: `ApiError` throw (상위에서 toast·redirect 등으로 처리)
  */
-export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
-  const { json, timeoutMs, accessToken, headers, ...rest } = init;
+export async function api<T>(path: string, init: ApiInit = {}, attempt = 0): Promise<T> {
+  const { json, timeoutMs, accessToken: suppliedToken, headers, onResponse, onHeaders, allowAuthRefresh, ...rest } = init;
+  const authenticated = !isAuthMock && !path.startsWith("/api/v1/auth/");
+  const jar = authenticated ? await cookies() : null;
+  const accessToken = suppliedToken ?? jar?.get(process.env.AUTH_ACCESS_TOKEN_COOKIE_NAME || "accessToken")?.value;
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
@@ -74,27 +87,44 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
   );
 
   try {
+    const outgoingHeaders = new Headers(headers);
+    if (!outgoingHeaders.has("Accept")) outgoingHeaders.set("Accept", "application/json");
+    if (json !== undefined) outgoingHeaders.set("Content-Type", "application/json");
+    if (accessToken) outgoingHeaders.set("Authorization", `Bearer ${accessToken}`);
     const res = await fetch(`${BACKEND_BASE_URL}${path}`, {
       ...rest,
       signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        ...(json !== undefined && { "Content-Type": "application/json" }),
-        ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
-        ...headers,
-      },
+      headers: outgoingHeaders,
       body: json !== undefined ? JSON.stringify(json) : undefined,
     });
 
-    const envelope = (await res.json()) as ApiEnvelope<T>;
-    if (envelope.success) {
+    await onHeaders?.(res.headers);
+    const envelope = await res.json().catch(() => null) as ApiEnvelope<T> | null;
+    if (res.ok && envelope?.success) {
+      await onResponse?.(envelope.data, res.headers);
       return envelope.data;
+    }
+    const failure = envelope && !envelope.success ? envelope.error : null;
+    if (authenticated && res.status === 401 && failure?.code === "AUTH_ACCESS_TOKEN_EXPIRED" && attempt === 0) {
+      const incoming = await requestHeaders();
+      if (allowAuthRefresh || incoming.has("next-action")) {
+        const { refreshAuthSession, clearAuthTokens } = await import("@/features/auth/session");
+        let token: string;
+        try { token = await refreshAuthSession(); }
+        catch (error) { if (error instanceof ApiError && error.status === 401) { await clearAuthTokens(); redirect("/login?error=session"); } throw error; }
+        return api<T>(path, { ...init, accessToken: token }, 1);
+      }
+      // Server Component는 쿠키를 쓸 수 없어 페이지/BFF 왕복 후 조회를 재실행한다.
+      if (!jar?.has("moa_auth_retry")) {
+        const returnPath = getAuthReturnPath(incoming.get("x-moa-request-path")) ?? "/workspaces";
+        redirect(`/auth/callback?reason=expired&returnPath=${encodeURIComponent(returnPath)}`);
+      }
     }
     throw new ApiError(
       res.status,
-      envelope.error.message,
-      envelope.error.code,
-      envelope.error.errors,
+      failure?.message ?? "서버 요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.",
+      failure?.code ?? "API_RESPONSE_INVALID",
+      failure?.errors,
     );
   } finally {
     clearTimeout(timeout);

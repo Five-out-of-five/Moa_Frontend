@@ -2,10 +2,11 @@
 
 import { ArrowRight, ExternalLink } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useActionState, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 
 import { completeMockSignupAction } from "../actions";
 
@@ -14,12 +15,17 @@ const REQUIRED_TERMS = [
   { id: "privacy", name: "개인정보 처리방침", href: "/privacy" },
 ] as const;
 
-export function TermsConsent({ ticket, next }: { ticket: string; next?: string }) {
+export function TermsConsent({ ticket, next, defaultName }: { ticket: string; next?: string; defaultName: string }) {
   const [consents, setConsents] = useState({ terms: false, privacy: false });
+  const [result, action, pending] = useActionState(completeMockSignupAction.bind(null, ticket, next), {});
   const hasAcceptedAll = REQUIRED_TERMS.every(({ id }) => consents[id]);
 
   return (
-    <form action={completeMockSignupAction.bind(null, ticket, next)} className="grid gap-3">
+    <form action={action} onReset={(event) => event.preventDefault()} className="grid gap-3">
+      <label className="grid gap-2 text-left text-sm font-medium">
+        기본 이름
+        <Input name="name" defaultValue={defaultName} required minLength={2} maxLength={20} />
+      </label>
       <fieldset className="rounded-card border-border bg-card text-card-foreground min-w-0 divide-y border">
         <legend className="sr-only">필수 약관 동의</legend>
         {REQUIRED_TERMS.map(({ id, name, href }) => (
@@ -58,12 +64,13 @@ export function TermsConsent({ ticket, next }: { ticket: string; next?: string }
         ))}
       </fieldset>
 
+      {result.error && <p role="alert" className="text-destructive text-sm">{result.error}</p>}
       <Button
         type="submit"
         className="rounded-control h-11 w-full"
-        disabled={!hasAcceptedAll}
+        disabled={!hasAcceptedAll || pending}
       >
-        계속하기 <ArrowRight aria-hidden="true" />
+        {pending ? "처리 중…" : "계속하기"} <ArrowRight aria-hidden="true" />
       </Button>
     </form>
   );

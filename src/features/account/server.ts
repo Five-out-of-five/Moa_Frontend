@@ -2,6 +2,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
+import { requireAuthSession } from "@/features/auth/guard";
 import { MOCK_ACCOUNT_COOKIE, MOCK_ACCOUNT_IDS } from "@/features/auth/mock-session";
 import { api } from "@/lib/api";
 import { isMock } from "@/mocks/config";
@@ -21,6 +22,7 @@ type MyAccountResponse = components["schemas"]["MyAccountResponse"];
  *    화면이 전역으로 깨진다.
  */
 export async function getMyAccount(): Promise<Account> {
+  await requireAuthSession();
   if (isMock) {
     const me = (await getExplicitMockAccount()) ?? accounts[0];
     if (!me) throw new Error("mock accounts[0] 가 비어 있다 — 시드를 확인하세요.");
