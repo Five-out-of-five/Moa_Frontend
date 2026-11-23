@@ -240,10 +240,12 @@ function nextMockId(existing: readonly number[]): number {
 /**
  * 투표 수정 결과 — 생성·참여 액션과 같이 kind 리턴 패턴.
  * - `ok` : 수정 성공, `vote` 최신 상세
+ * - `conflict` : BE 낙관적 잠금 충돌 (version 불일치) — UI 는 안내 + 상세 재조회
  * - `error` : 검증 실패 or 서버 거절 (403 작성자 아님 등)
  */
 export type UpdateVoteResult =
   | { kind: "ok"; vote: VoteDetail }
+  | { kind: "conflict"; message: string }
   | { kind: "error"; message: string; fieldErrors?: Record<string, string> };
 
 /**
@@ -300,7 +302,17 @@ export async function updateVoteAction(
     revalidatePath(`/rooms/${roomId}/votes`, "page");
     return { kind: "ok", vote: res };
   } catch (e) {
-    if (e instanceof ApiError) return { kind: "error", message: e.message };
+    if (e instanceof ApiError) {
+      // 409 는 BE 가 낙관적 잠금 충돌 (version 불일치) 때 돌리는 상태 코드.
+      // 일반 오류와 구분해 UI 가 최신 상세를 재조회하고 version 을 갱신하도록 유도한다.
+      if (e.status === 409) {
+        return {
+          kind: "conflict",
+          message: "다른 사용자가 먼저 수정했어요. 최신 내용을 불러온 뒤 다시 저장해 주세요.",
+        };
+      }
+      return { kind: "error", message: e.message };
+    }
     return {
       kind: "error",
       message: "투표 수정에 실패했습니다. 잠시 뒤 다시 시도해 주세요.",
