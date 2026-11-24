@@ -565,13 +565,23 @@ function statusDotClass(status: TaskStatus): string {
  * Figma 디자인의 "6월 17일-6월 28일" 포맷으로 스프린트 기간을 만든다.
  * endsAt 이 없으면 시작일만.
  */
+/**
+ * 스프린트 기간을 "M월 D일 - M월 D일" 로 표시. 실 API 는 `/sprints/current` 응답의
+ * `startDate` / `endDate` 를 "yyyy-MM-dd" 날짜 전용 문자열로 내려주고 매퍼가 그대로
+ * `sprint.startsAt`·`endsAt` 로 전달한다. `new Date("yyyy-MM-dd")` 로 파싱하면 UTC 자정으로
+ * 해석되어 음수 오프셋 로케일(예: UTC-8)에서는 전날로 표시된다. 날짜 문자열을 직접
+ * split 해 월·일을 꺼내면 어떤 로케일에서든 동일한 라벨로 그려진다.
+ */
 function formatSprintRange(startsAt: string, endsAt: string | null): string {
-  const s = new Date(startsAt);
-  const sLabel = `${s.getMonth() + 1}월 ${s.getDate()}일`;
+  const sLabel = formatDateOnly(startsAt);
   if (!endsAt) return sLabel;
-  const e = new Date(endsAt);
-  const eLabel = `${e.getMonth() + 1}월 ${e.getDate()}일`;
-  return `${sLabel} - ${eLabel}`;
+  return `${sLabel} - ${formatDateOnly(endsAt)}`;
+}
+
+function formatDateOnly(date: string): string {
+  // "yyyy-MM-dd" 또는 "yyyy-MM-ddTHH:mm:ss..." 둘 다 앞 10자만 사용.
+  const [, month, day] = date.slice(0, 10).split("-").map(Number);
+  return `${month}월 ${day}일`;
 }
 
 function TaskCard({

@@ -629,11 +629,15 @@ export async function updateTaskAction(
   }
 
   // ⚠️ BE 는 수정을 **세 엔드포인트로 쪼개** 둔다. 하나로 묶인 UI Dialog 를 그대로 유지하려면
-  //    액션이 현재 상태와 비교해 바뀐 축만 순차 호출한다. 호출 순서는 내용 → 담당자 → 상태:
-  //    상태 변경이 마지막인 이유는 version 낙관적 잠금이 상태 PATCH 에만 적용되고, 내용·담당자
-  //    변경이 서버의 version 을 올리기 전 시점에 최신 version 을 재바인딩하기 위함이다.
-  //    한 PATCH 는 성공했는데 다음이 실패하면 "부분 반영" 상태가 남는데, revalidate 로 보드가
-  //    재조회되므로 UI 는 최신 서버 상태에 재동기화된다.
+  //    액션이 현재 상태와 비교해 바뀐 축만 순차 호출한다.
+  //
+  //    호출 순서는 **상태 → 내용 → 담당자**. 상태 PATCH 만 version 낙관적 잠금을 쓰기 때문에
+  //    가장 먼저 보내서 **동시 상태 변경을 초기에 감지**한다. 이 순서를 뒤집어 내용·담당자를
+  //    먼저 보내면 BE 가 version 을 올리고, 그 뒤 상태 PATCH 에 최신 version 을 쓰게 되어
+  //    그 사이 다른 사용자의 상태 변경이 감지되지 않고 덮어써질 수 있다 (CodeRabbit Major).
+  //
+  //    한 PATCH 는 성공했는데 다음이 실패하면 "부분 반영" 상태가 남는데, finally 의 revalidate
+  //    로 보드가 재조회되므로 UI 는 최신 서버 상태에 재동기화된다.
   try {
     const previous = await api<TaskDetail>(
       `/api/v1/rooms/${roomId}/tasks/${taskId}`,
@@ -658,33 +662,16 @@ export async function updateTaskAction(
 
     let current = previous;
 
-    if (contentChanged) {
-      current = await api<TaskDetail>(
-        `/api/v1/rooms/${roomId}/tasks/${taskId}`,
-        {
-          method: "PATCH",
-          json: { title, description, dueDate, priority },
-        },
-      );
-    }
-    if (assigneeChanged) {
-      current = await api<TaskDetail>(
-        `/api/v1/rooms/${roomId}/tasks/${taskId}/assignee`,
-        {
-          method: "PATCH",
-          json: { assigneeAccountId },
-        },
-      );
-    }
     if (statusChanged) {
-      // 상태 변경은 `/status` 로. 응답은 재정렬된 리스트지만 이번 범위에선 그대로 두고 상세를
-      // 한 번 더 조회해 UI 가 최신 Detail 을 얻도록 한다. (TODO: Phase 2 — [[업무 보드 그리드]])
+      // **초기 version 으로** 상태 변경. 그 사이 다른 사용자가 바꿨다면 BE 가 409 를 돌려줘
+      // 즉시 conflict 로 떨어뜨린다. (TODO: Phase 2 — 응답의 List<TaskSummaryResponse>
+      // 를 활용해 상세 GET 재조회를 제거 — [[업무 보드 그리드]])
       try {
         await api<unknown[]>(
           `/api/v1/rooms/${roomId}/tasks/${taskId}/status`,
           {
             method: "PATCH",
-            json: { status, toIndex: 0, version: current.version },
+            json: { status, toIndex: 0, version },
           },
         );
         current = await api<TaskDetail>(
@@ -702,6 +689,24 @@ export async function updateTaskAction(
         }
         throw e;
       }
+    }
+    if (contentChanged) {
+      current = await api<TaskDetail>(
+        `/api/v1/rooms/${roomId}/tasks/${taskId}`,
+        {
+          method: "PATCH",
+          json: { title, description, dueDate, priority },
+        },
+      );
+    }
+    if (assigneeChanged) {
+      current = await api<TaskDetail>(
+        `/api/v1/rooms/${roomId}/tasks/${taskId}/assignee`,
+        {
+          method: "PATCH",
+          json: { assigneeAccountId },
+        },
+      );
     }
 
     return {
