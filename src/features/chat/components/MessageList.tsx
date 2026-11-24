@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import { ReportMenu } from "@/features/report/ReportMenu";
 import { cn } from "@/lib/utils";
 
 import {
@@ -16,6 +17,7 @@ import type { ChatMessage } from "../types";
 interface Props {
   messages: readonly ChatMessage[];
   roomId?: number;
+  viewerId?: number;
   /** 메시지가 하나도 없을 때 렌더할 Hero. 채널/DM 각각 자기 안내 문구를 넘긴다. */
   emptyState: React.ReactNode;
 }
@@ -37,7 +39,7 @@ interface Props {
  * ⚠️ 자동 스크롤 가드: 사용자가 이미 위로 스크롤해서 과거 메시지를 보는 중이라면 신규 메시지가
  *    들어와도 **점프하지 않는다** — 리스트 바닥에서 약 80px 이내일 때만 자동 bottom 이동.
  */
-export function MessageList({ messages, emptyState, roomId }: Props) {
+export function MessageList({ messages, emptyState, roomId, viewerId }: Props) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [mounted, setMounted] = useState(false);
@@ -104,6 +106,7 @@ export function MessageList({ messages, emptyState, roomId }: Props) {
                 key={msg.id}
                 message={msg}
                 roomId={roomId}
+                viewerId={viewerId}
                 isFirstInGroup={j === 0}
                 useLocal={mounted}
               />
@@ -163,11 +166,13 @@ function groupMessages(
 function MessageRow({
   message,
   roomId,
+  viewerId,
   isFirstInGroup,
   useLocal,
 }: {
   message: ChatMessage;
   roomId?: number;
+  viewerId?: number;
   isFirstInGroup: boolean;
   useLocal: boolean;
 }) {
@@ -220,6 +225,10 @@ function MessageRow({
           {message.content}
         </p>
       </div>
+      {roomId && viewerId && message.id > 0 && message.author.accountId > 0 &&
+        message.author.accountId !== viewerId && !message.deleted && !message.isSystem && !message.pending && (
+          <ReportMenu target={{ roomId, id: message.id, type: "MESSAGE", author: message.author.displayName, content: message.content }} />
+        )}
     </div>
   );
 }

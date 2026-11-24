@@ -10,7 +10,7 @@ import { IdeaBoard } from "@/features/idea/IdeaBoard";
 import { IdeaBoardLive } from "@/features/idea/IdeaBoardLive";
 import { CloseIdeaDialog, IdeaCardDialog, StartIdeaDialog } from "@/features/idea/IdeaDialogs";
 import { ideaDateTime } from "@/features/idea/model";
-import { getIdeaBoard, getIdeaDiscussions } from "@/features/idea/server";
+import { getIdeaBoard, loadIdeaDiscussions } from "@/features/idea/server";
 import { listConflicts } from "@/features/mediation/server";
 import { getReportViewerAccountId } from "@/features/report/server";
 import { getFirstRoomProfile } from "@/features/room/first-profile/server";
@@ -33,7 +33,7 @@ export default async function IdeaBoardPage({ params, searchParams }: {
   const cards = selected ? board.cards.filter(({ sessionId }) => sessionId === selected.id) : [];
   const roster = board.editable && cards.some(({ commentCount }) => commentCount > 0)
     ? await listRoomMembers(id) : [];
-  const discussion = getIdeaDiscussions(cards, roster);
+  const discussion = await loadIdeaDiscussions(cards, roster);
   const conflicts = await listConflicts(id).catch(() => []);
   const conflictByCard = Object.fromEntries(conflicts.filter(({ state }) => state === "OPEN")
     .flatMap((conflict) => [[conflict.leftCardId, conflict.id], [conflict.rightCardId, conflict.id]]));

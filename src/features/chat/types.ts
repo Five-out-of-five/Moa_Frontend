@@ -48,4 +48,6 @@ export interface ChatMessage {
   createdAt: string;
   content: string;
   pending?: boolean;
+  deleted?: boolean;
+  isSystem?: boolean;
 }

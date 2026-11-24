@@ -9,7 +9,7 @@ import type { IdeaCard } from "@/types/db";
 import { DeleteIdeaDialog, IdeaCardDialog } from "./IdeaDialogs";
 import { IDEA_COLUMNS, ideaDateTime, type IdeaDiscussion, type IdeaSourceLink } from "./model";
 
-export function IdeaCardDetails({ card, canEdit, canReport = false, discussion, conflictId, sources = [] }: { card: IdeaCard; canEdit: boolean; canReport?: boolean; discussion?: IdeaDiscussion; conflictId?: number; sources?: IdeaSourceLink[] }) {
+export function IdeaCardDetails({ card, accountId, canEdit, canReport = false, discussion, conflictId, sources = [] }: { card: IdeaCard; accountId: number; canEdit: boolean; canReport?: boolean; discussion?: IdeaDiscussion; conflictId?: number; sources?: IdeaSourceLink[] }) {
   const label = IDEA_COLUMNS.find(({ type }) => type === card.cardType)?.title;
   return (
     <div className="relative">
@@ -60,15 +60,18 @@ export function IdeaCardDetails({ card, canEdit, canReport = false, discussion, 
                 <span key={emoji} className="bg-secondary rounded-full px-2 py-1 text-xs">{emoji} {count}</span>
               ))}
             </div>
-            {card.reactionCount > 0 && !discussion && <p className="text-muted-foreground text-xs">리액션별 내역은 현재 제공되지 않아요.</p>}
+            {card.reactionCount > 0 && !discussion?.reactions.length && <p className="text-muted-foreground text-xs">리액션별 내역은 현재 제공되지 않아요.</p>}
           </section>
           <section aria-label="댓글" className="border-border space-y-2 border-t pt-4">
             <h3 className="text-sm font-semibold">댓글 {card.commentCount}개</h3>
-            {discussion?.comments.length ? discussion.comments.map(({ author, text }, index) => (
-              <div key={index} className="bg-muted rounded-control p-2.5 text-xs">
-                <p className="font-semibold">{author}</p><p className="mt-1">{text}</p>
+            {discussion?.comments.length ? discussion.comments.map(({ id, author, authorId, text, deleted }) => (
+              <div key={id} className="bg-muted rounded-control flex items-start justify-between gap-2 p-2.5 text-xs">
+                <div><p className="font-semibold">{author}</p><p className="mt-1">{text}</p></div>
+                {accountId > 0 && authorId > 0 && authorId !== accountId && !deleted && (
+                  <ReportMenu target={{ roomId: card.roomId, id, type: "COMMENT", author, content: text }} />
+                )}
               </div>
-            )) : <p className="text-muted-foreground text-xs">{card.commentCount ? "댓글 내역은 현재 제공되지 않아요." : "남겨진 댓글이 없어요."}</p>}
+            )) : <p className="text-muted-foreground text-xs">{discussion?.commentsUnavailable ? "댓글을 불러오지 못했어요. 새로고침해 주세요." : "남겨진 댓글이 없어요."}</p>}
           </section>
         </div>
       </SheetContent>

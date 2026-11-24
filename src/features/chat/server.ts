@@ -175,6 +175,8 @@ export async function getChannelMessages(
     author: { accountId: message.sender?.accountId ?? 0, displayName: message.sender?.displayName ?? "알 수 없는 사용자" },
     createdAt: message.createdAt,
     content: message.deleted ? "삭제된 메시지입니다." : message.content ?? "",
+    deleted: message.deleted,
+    isSystem: message.messageType === "SYSTEM",
   }]).sort((first, second) => Date.parse(first.createdAt) - Date.parse(second.createdAt) || first.id - second.id);
 }
 

@@ -302,7 +302,9 @@ const TASK_PREVIEWS = [
 
 // dDay/overdue 계산은 features/task/lib/d-day.ts 를 공유 사용 — 타임존 처리 통일.
 
-export const tasks: Array<TaskDetail & { roomId: number; sprintId: number | null }> =
+// 저장 shape: `fileCount` 는 저장하지 않고 `files.length` 로 derived (실 BE 는 서버가
+// 계산해 내려줌). 매 액션마다 fileCount 를 갱신할 필요 없이 reader·writer 가 항상 일치.
+export const tasks: Array<Omit<TaskDetail, "fileCount"> & { roomId: number }> =
   shareSettingsMock("tasks", sprints.flatMap((sprint) => {
     const roomMembersOfRoom = roomMembers.filter(
       (m) => m.roomId === sprint.roomId,
@@ -349,7 +351,7 @@ export const tasks: Array<TaskDetail & { roomId: number; sprintId: number | null
           },
         ],
         createdAt: nowIso(),
-      } satisfies TaskDetail & { roomId: number; sprintId: number | null };
+      } satisfies Omit<TaskDetail, "fileCount"> & { roomId: number };
     });
     sprint.totalTasks = items.length;
     sprint.doneTasks = items.filter((t) => t.status === "DONE").length;

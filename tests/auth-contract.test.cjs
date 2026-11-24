@@ -409,4 +409,57 @@ test("위젯 제거와 레이아웃 초기화는 서버가 반환한 새 ID를 �
   assert.equal((await actions.removeWidgetAction(3, 12)).snapshot.widgets[0].id, 11);
   assert.equal((await actions.resetWidgetLayoutAction(3)).snapshot.widgets[0].id, 21);
   assert.deepEqual(calls, [["DELETE", "/api/v1/rooms/3/dashboard/widgets/12"], ["POST", "/api/v1/rooms/3/dashboard/reset"]]);
+test("다운로드는 매번 새 서명 URL을 발급받아 302로 이동한다", async () => {
+  let calls = 0;
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    assert.equal(new URL(url).pathname + new URL(url).search, "/api/v1/rooms/3/files/41/download-url");
+    assert.equal(new Headers(init.headers).get("Authorization"), "Bearer fixture-access");
+    return ok({ url: "https://storage.example/meeting.pdf?signature=" + ++calls });
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const { downloadRoomFile } = f.load("@/features/room-files/server");
+  for (const signature of [1, 2]) {
+    const response = await downloadRoomFile("3", "41");
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get("cache-control"), "private, no-store");
+    assert.equal(response.headers.get("location"), "https://storage.example/meeting.pdf?signature=" + signature);
+  }
+});
+
+test("활성 공지 배너는 활성 목록의 종료 시각을 사용한다", async () => {
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url) => {
+    assert.equal(new URL(url).pathname + new URL(url).search, "/api/v1/notices/active");
+    return ok({
+      banner: { noticeId: 9, noticeType: "URGENT", title: "긴급 점검" },
+      notices: [{ noticeId: 9, noticeType: "URGENT", displayEndsAt: "2040-01-01T00:00:00Z" }],
+    });
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const result = await f.load("@/features/notice/server").getNoticeBanner();
+  assert.equal(result.banner.noticeId, 9);
+  assert.equal(result.refreshAt, Date.parse("2040-01-01T00:00:00Z"));
+});
+
+test("댓글과 메시지 신고는 명세 필드만 제출하고 서버의 중복 오류를 반환한다", async () => {
+  const targets = ["COMMENT", "MESSAGE"];
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    assert.equal(new URL(url).pathname + new URL(url).search, "/api/v1/reports");
+    assert.equal(init.method, "POST");
+    assert.deepEqual(JSON.parse(init.body), { targetId: 41, targetType: targets.shift(), reason: "ABUSE" });
+    return Response.json({ success: false, error: { code: "REPORT_DUPLICATED", message: "이미 신고한 내용입니다." } }, { status: 409 });
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const { submitReportAction } = f.load("@/features/report/actions");
+  for (const targetType of ["COMMENT", "MESSAGE"]) {
+    const form = new FormData();
+    for (const [key, value] of Object.entries({ roomId: "3", targetId: "41", targetType, reason: "ABUSE" })) form.set(key, value);
+    assert.equal((await submitReportAction({}, form)).error, "이미 신고한 내용입니다.");
+  }
+});
+
+test("허용되지 않은 첨부 확장자와 20MB 초과 파일은 백엔드 호출 전에 막는다", async () => {
+  const f = fixture();
+  const { uploadRoomFile } = f.load("@/features/room-files/upload-server");
+  await assert.rejects(uploadRoomFile(3, "CARD_ATTACHMENT", new File(["content"], "sample.exe")), { code: "FILE_TYPE_NOT_ALLOWED" });
+  await assert.rejects(uploadRoomFile(3, "CHAT_ATTACHMENT", new File([new Uint8Array(20 * 1024 ** 2 + 1)], "sample.pdf")), { code: "FILE_SIZE_EXCEEDED" });
 });

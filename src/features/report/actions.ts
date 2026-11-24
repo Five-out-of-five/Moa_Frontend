@@ -1,11 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 
+import { CHANNEL_MESSAGES, CHAT_CHANNELS } from "@/features/chat/mock-seed";
+import { getIdeaDiscussions } from "@/features/idea/server";
 import { getManagedRoom } from "@/features/room/management/server";
+import { listRoomMembers } from "@/features/room/server";
 import { api, ApiError } from "@/lib/api";
-import { getApiAccountContext } from "@/lib/api-account";
 import { isAuthor } from "@/lib/permission";
 import { adminReportsStore } from "@/mocks/admin";
 import { isMock } from "@/mocks/config";
@@ -46,13 +49,9 @@ export async function submitReportAction(_: ReportResult, form: FormData): Promi
     if (isMock) {
       const context = await getManagedRoom(roomId);
       if (!context) return { error: "이 방의 콘텐츠를 신고할 권한이 없어요." };
-      if (request.targetType !== "CARD") return { error: "이 대상의 신고는 아직 지원하지 않아요." };
-      const card = ideaCards.find(
-        ({ id, roomId: cardRoom }) => id === request.targetId && cardRoom === roomId,
-      );
-      if (!card) return { error: "삭제되었거나 찾을 수 없는 카드예요." };
-      if (isAuthor(context.account, card.author))
-        return { error: "본인의 카드는 신고할 수 없어요." };
+      const target = await getMockReportTarget(roomId, request.targetType, request.targetId);
+      if (!target) return { error: "삭제되었거나 찾을 수 없는 콘텐츠예요." };
+      if (isAuthor(context.account, target.author)) return { error: "본인의 콘텐츠는 신고할 수 없어요." };
       // 스냅샷은 클라이언트가 보낸 미리보기가 아닌 서버 원본으로 만든다.
       const entries = [...adminReportsStore.values()];
       if (
@@ -60,23 +59,23 @@ export async function submitReportAction(_: ReportResult, form: FormData): Promi
           (entry) =>
             entry.reporterAccountId === context.account.id &&
             entry.targetType === request.targetType &&
-            entry.targetId === card.id,
+            entry.targetId === request.targetId,
         )
       )
-        return { error: "이미 신고한 카드예요." };
+        return { error: "이미 신고한 내용입니다." };
       const reportId = entries.reduce((max, entry) => Math.max(max, entry.reportId), 0) + 1;
       adminReportsStore.set(reportId, {
         reportId,
-        targetId: card.id,
+        targetId: request.targetId,
         targetType: request.targetType,
         reason: request.reason,
         detail: request.detail,
         status: "RECEIVED",
         reporterAccountId: context.account.id,
-        targetAccountId: card.author.accountId,
+        targetAccountId: target.author.accountId,
         roomId,
         roomName: context.room.name,
-        snapshot: `${card.title}\n${card.content}`,
+        snapshot: target.snapshot,
         targetDeleted: false,
         createdAt: new Date().toISOString(),
         action: null,
@@ -86,36 +85,21 @@ export async function submitReportAction(_: ReportResult, form: FormData): Promi
         falseReport: false,
       });
     } else {
-      const { init, query, accountId } = await getApiAccountContext();
-      if (request.targetType === "CARD") {
-        const card = await api<components["schemas"]["IdeaCardDetailResponse"]>(
-          `/api/v1/rooms/${roomId}/idea-cards/${request.targetId}?${query}`,
-          init,
-        );
-        if (!card?.cardId || !card.writer?.accountId)
-          return { error: "삭제되었거나 찾을 수 없는 카드예요." };
-        if (
-          isAuthor(
-            { id: accountId },
-            {
-              accountId: card.writer.accountId,
-              displayName: "",
-              profileImageUrl: null,
-              memberStatus: "ACTIVE",
-            },
-          )
-        )
-          return { error: "본인의 카드는 신고할 수 없어요." };
-      } else return { error: "이 대상의 신고는 아직 지원하지 않아요." };
-      await api<components["schemas"]["ReportResponse"]>(`/api/v1/reports?${query}`, {
-        ...init,
+      await api<components["schemas"]["ReportResponse"]>("/api/v1/reports", {
+        cache: "no-store",
         method: "POST",
-        json: request,
+        json: { ...request, detail: request.detail || undefined },
       });
     }
     revalidatePath("/admin/reports");
     return { saved: true };
   } catch (error) {
+    unstable_rethrow(error);
+    if (error instanceof ApiError && error.code === "COMMON_INVALID_INPUT") {
+      const reasonError = error.fields?.find(({ field }) => field === "reason")?.reason;
+      const detailError = error.fields?.find(({ field }) => field === "detail")?.reason;
+      if (reasonError || detailError) return { reasonError, detailError };
+    }
     return {
       error:
         error instanceof ApiError
@@ -123,4 +107,27 @@ export async function submitReportAction(_: ReportResult, form: FormData): Promi
           : "신고를 접수하지 못했어요. 잠시 후 다시 시도해 주세요.",
     };
   }
+}
+
+async function getMockReportTarget(roomId: number, type: z.infer<typeof schema>["targetType"], targetId: number) {
+  const cards = ideaCards.filter((card) => card.roomId === roomId);
+  if (type === "CARD") {
+    const card = cards.find(({ id }) => id === targetId);
+    return card && { author: card.author, snapshot: `${card.title}\n${card.content}` };
+  }
+  if (type === "COMMENT") {
+    const members = await listRoomMembers(roomId);
+    const comment = Object.values(getIdeaDiscussions(cards, members)).flatMap(({ comments }) => comments)
+      .find(({ id }) => id === targetId);
+    if (!comment) return;
+    const author = members.find(({ accountId }) => accountId === comment.authorId)
+      ?? cards.find(({ author }) => author.accountId === comment.authorId)?.author;
+    return author && { author, snapshot: comment.text };
+  }
+  const message = CHAT_CHANNELS.filter((channel) => channel.roomId === roomId)
+    .flatMap(({ id }) => CHANNEL_MESSAGES[id] ?? []).find(({ id }) => id === targetId);
+  return message && !message.deleted && !message.isSystem && {
+    author: { ...message.author, profileImageUrl: null, memberStatus: "ACTIVE" as const },
+    snapshot: message.content,
+  };
 }

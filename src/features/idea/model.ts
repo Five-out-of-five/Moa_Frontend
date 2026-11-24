@@ -22,7 +22,8 @@ export function parseIdeaDeadline(value: string) {
 export type IdeaFormResult = { saved?: boolean; error?: string };
 
 export interface IdeaDiscussion {
-  comments: { authorId: number; author: string; text: string }[];
+  comments: { id: number; authorId: number; author: string; text: string; deleted?: boolean }[];
+  commentsUnavailable?: boolean;
   reactions: { emoji: string; count: number }[];
 }
 export type IdeaSourceLink = { id: number; href: string; title: string };
