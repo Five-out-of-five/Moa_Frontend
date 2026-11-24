@@ -2,10 +2,24 @@ import "server-only";
 
 import { api, ApiError } from "@/lib/api";
 import { isMock } from "@/mocks/config";
-import { sprints, tasks } from "@/mocks/db";
-import type { Sprint, TaskDetail, TaskSummary } from "@/types/db";
+import { accounts, roomMembers, sprints, tasks } from "@/mocks/db";
+import type {
+  MemberLoad,
+  RoomProgress,
+  RoomWorkload,
+  Sprint,
+  TaskDetail,
+  TaskPriority,
+  TaskStatus,
+  TaskSummary,
+  WorkloadLevel,
+  WorkloadWarning,
+} from "@/types/db";
 
 import { computeDDay, computeOverdue } from "./lib/d-day";
+
+/** BE `DUE_SOON_DAYS` 와 맞춤 — 오늘 포함 3일 이내 마감이면 due soon. */
+const DUE_SOON_DAYS = 3;
 
 /**
  * 목 저장 shape → 외부 Detail. `roomId` 는 경로 변수라서 응답에는 들어가지 않고,
@@ -151,4 +165,153 @@ export async function getTaskDetail(
     `/api/v1/rooms/${roomId}/tasks/${taskId}`,
   );
   return withFreshDDay(detail);
+}
+
+/**
+ * 진척도 — 명세 `GET /api/v1/rooms/{roomId}/tasks/progress` `ProgressResponse`.
+ *
+ * 활성 스프린트에 속한 업무만 집계한다. 활성 스프린트가 없으면 `sprint: null` 에 전부
+ * 0 (totalCount·doneCount·progressRate·statusCounts·dueSoonCount 모두 0) — BE 와 같은 규칙.
+ *
+ * ⚠️ 목 모드는 BE 와 동일한 집계 규칙을 FE 에서 재현. BE 가 EnumMap 으로 모든 TaskStatus
+ *    키를 돌려주므로 FE 도 4개 상태 전부 초기화한다 (UI 가 없는 상태 라벨 조회를 피함).
+ */
+export async function getRoomProgress(roomId: number): Promise<RoomProgress> {
+  if (isMock) {
+    const sprint = sprints.find(
+      (s) => s.roomId === roomId && s.state === "ACTIVE",
+    );
+    const sprintTasks = sprint
+      ? tasks.filter(
+          (t) => t.roomId === roomId && t.sprintId === sprint.id,
+        )
+      : [];
+    const statusCounts: Record<TaskStatus, number> = {
+      TODO: 0,
+      IN_PROGRESS: 0,
+      REVIEW: 0,
+      DONE: 0,
+    };
+    for (const t of sprintTasks) statusCounts[t.status] += 1;
+    const doneCount = statusCounts.DONE;
+    const totalCount = sprintTasks.length;
+    const progressRate =
+      totalCount === 0 ? 0 : Math.floor((doneCount * 100) / totalCount);
+    const limit = addDaysKst(DUE_SOON_DAYS);
+    const dueSoonCount = sprintTasks.filter(
+      (t) =>
+        t.status !== "DONE" &&
+        t.dueDate !== null &&
+        t.dueDate <= limit,
+    ).length;
+    return {
+      sprint: sprint
+        ? {
+            sprintId: sprint.id,
+            // BE 는 sprintNo 를 별도 저장하지만 목 Sprint 엔 없어 id 를 재사용한다.
+            sprintNo: sprint.id,
+            name: sprint.name,
+            startDate: sprint.startsAt.slice(0, 10),
+            endDate: sprint.endsAt ? sprint.endsAt.slice(0, 10) : null,
+          }
+        : null,
+      totalCount,
+      doneCount,
+      progressRate,
+      statusCounts,
+      dueSoonCount,
+    };
+  }
+  return api<RoomProgress>(
+    `/api/v1/rooms/${roomId}/tasks/progress`,
+    { cache: "no-store" },
+  );
+}
+
+/**
+ * 업무 밸런서 — 명세 `GET /api/v1/rooms/{roomId}/tasks/workload` `WorkloadResponse`.
+ *
+ * 방의 **담당자 지정된 open 업무** (DONE 제외) 를 멤버별로 집계. 미담당 수는 응답에 없고
+ * TaskBalancer 가 Summary 에서 별도로 계산한다. BE 공식과 1:1 매칭:
+ *   score = Σ(priority weight + (dueDate 가 오늘~+3일 이내면 1, 아니면 0))
+ *   priority weight: HIGH 1.5, NORMAL 1, LOW 0.5
+ *   level: score < 3 → RELAXED, < 6 → NORMAL, 그 이상 → OVERLOADED
+ *   warnings: OVERLOADED 이거나 (평균>0 & score>=평균*2) 면 추가
+ */
+export async function getRoomWorkload(roomId: number): Promise<RoomWorkload> {
+  if (isMock) {
+    const memberIds = roomMembers
+      .filter((m) => m.roomId === roomId && m.state === "ACTIVE")
+      .map((m) => m.accountId);
+    const limit = addDaysKst(DUE_SOON_DAYS);
+    const openByAssignee = new Map<number, typeof tasks>();
+    for (const t of tasks) {
+      if (t.roomId !== roomId) continue;
+      if (t.status === "DONE") continue;
+      if (!t.assignee) continue;
+      const bucket = openByAssignee.get(t.assignee.accountId) ?? [];
+      bucket.push(t);
+      openByAssignee.set(t.assignee.accountId, bucket);
+    }
+    const members: MemberLoad[] = memberIds.map((id) => {
+      const mine = openByAssignee.get(id) ?? [];
+      const score = mine.reduce(
+        (s, t) =>
+          s +
+          priorityWeight(t.priority) +
+          (t.dueDate !== null && t.dueDate <= limit ? 1 : 0),
+        0,
+      );
+      return {
+        accountId: id,
+        displayName: displayNameOf(id, roomId),
+        score,
+        level: classifyLevel(score),
+        openTaskCount: mine.length,
+      };
+    }).sort((a, b) => a.score - b.score);
+    const averageScore =
+      members.length === 0
+        ? 0
+        : members.reduce((s, m) => s + m.score, 0) / members.length;
+    const warnings: WorkloadWarning[] = [];
+    for (const m of members) {
+      if (m.level === "OVERLOADED") {
+        warnings.push({ accountId: m.accountId, reason: "OVERLOADED" });
+      } else if (averageScore > 0 && m.score >= averageScore * 2) {
+        warnings.push({ accountId: m.accountId, reason: "DOUBLE_OF_AVERAGE" });
+      }
+    }
+    return { members, averageScore, warnings };
+  }
+  return api<RoomWorkload>(
+    `/api/v1/rooms/${roomId}/tasks/workload`,
+    { cache: "no-store" },
+  );
+}
+
+function priorityWeight(p: TaskPriority): number {
+  return p === "HIGH" ? 1.5 : p === "LOW" ? 0.5 : 1;
+}
+
+function classifyLevel(score: number): WorkloadLevel {
+  if (score < 3) return "RELAXED";
+  if (score < 6) return "NORMAL";
+  return "OVERLOADED";
+}
+
+/** 오늘(KST) 기준 N일 뒤의 "yyyy-MM-dd". task.dueDate 비교에 사용. */
+function addDaysKst(days: number): string {
+  const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  nowKst.setUTCDate(nowKst.getUTCDate() + days);
+  return nowKst.toISOString().slice(0, 10);
+}
+
+function displayNameOf(accountId: number, roomId: number): string {
+  const rm = roomMembers.find(
+    (m) => m.roomId === roomId && m.accountId === accountId,
+  );
+  if (rm?.nickname) return rm.nickname;
+  const acc = accounts.find((a) => a.id === accountId);
+  return acc?.name ?? `사용자 ${accountId}`;
 }

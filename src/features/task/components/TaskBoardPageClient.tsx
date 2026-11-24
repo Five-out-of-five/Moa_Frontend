@@ -17,10 +17,13 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type {
   MemberRef,
+  RoomProgress,
+  RoomWorkload,
   Sprint,
   TaskDetail,
   TaskStatus,
   TaskSummary,
+  WorkloadLevel,
 } from "@/types/db";
 
 import {
@@ -43,8 +46,12 @@ interface Props {
   members: readonly MemberRef[];
   /** 로그인 사용자의 accountId. 생성 시 기본 담당자로 지정. */
   meAccountId: number | null;
-  /** 방의 활성 스프린트 — 헤더 뱃지·기간·진행률에 쓴다. null 이면 "활성 스프린트 없음". */
+  /** 방의 활성 스프린트 — 헤더 뱃지·기간 표시에 쓴다. null 이면 "활성 스프린트 없음". */
   activeSprint: Sprint | null;
+  /** 진척도 — `/tasks/progress` 응답. 활성 스프린트 기준 집계. null 이면 조회 실패. */
+  progress: RoomProgress | null;
+  /** 업무 밸런서 — `/tasks/workload` 응답. 방 전체 open 업무 기준. null 이면 조회 실패. */
+  workload: RoomWorkload | null;
   /**
    * URL `?open={taskId}` 로 들어왔을 때 자동으로 열 업무 — 알림 클릭 등 외부 진입 경로.
    * 같은 라우트에서 쿼리만 바뀌어도 다시 반영된다.
@@ -82,6 +89,8 @@ export function TaskBoardPageClient({
   members,
   meAccountId,
   activeSprint,
+  progress,
+  workload,
   initialOpenTaskId = null,
   unavailableTaskIds = [],
 }: Props) {
@@ -210,7 +219,7 @@ export function TaskBoardPageClient({
         </div>
       </header>
 
-      <SprintProgressBar sprint={activeSprint} />
+      <SprintProgressBar progress={progress} activeSprint={activeSprint} />
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
         {TASK_STATUS_ORDER.map((status) => {
@@ -279,7 +288,7 @@ export function TaskBoardPageClient({
         })}
 
         <TaskBalancer
-          members={members}
+          workload={workload}
           summaries={localSummaries}
           sprintName={activeSprint?.name ?? null}
         />
@@ -344,11 +353,27 @@ function SprintHeadline({ sprint }: { sprint: Sprint | null }) {
  *    이 값은 `createTask` / `updateTask` / `changeStatus` / `deleteTask` 액션에서 함께
  *    보정한다.
  */
-function SprintProgressBar({ sprint }: { sprint: Sprint | null }) {
-  const total = sprint?.totalTasks ?? 0;
-  const done = sprint?.doneTasks ?? 0;
+/**
+ * 스프린트 진행률 — BE `/tasks/progress` 응답으로 그린다.
+ *
+ * ⚠️ progress 조회가 실패(null) 하면 activeSprint 의 `totalTasks`/`doneTasks` 로 fallback —
+ *    활성 스프린트 요약은 별 경로로 실패할 수 있고, 진행률이라도 노출되는 편이 사용자에게 유용.
+ * ⚠️ progress.sprint 가 null 이면 "활성 스프린트 없음" 상태 — 전체 0 으로 표시.
+ */
+function SprintProgressBar({
+  progress,
+  activeSprint,
+}: {
+  progress: RoomProgress | null;
+  activeSprint: Sprint | null;
+}) {
+  const total = progress?.totalCount ?? activeSprint?.totalTasks ?? 0;
+  const done = progress?.doneCount ?? activeSprint?.doneTasks ?? 0;
   const remain = Math.max(0, total - done);
-  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+  const percent =
+    progress?.progressRate ?? (total > 0 ? Math.round((done / total) * 100) : 0);
+  const sprintName = progress?.sprint?.name ?? activeSprint?.name ?? null;
+  const dueSoon = progress?.dueSoonCount ?? 0;
 
   return (
     <section
@@ -358,7 +383,7 @@ function SprintProgressBar({ sprint }: { sprint: Sprint | null }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between pb-1.5">
           <span className="text-muted-foreground text-xs font-medium">
-            {sprint ? `${sprint.name} 진행률` : "스프린트 진행률"}
+            {sprintName ? `${sprintName} 진행률` : "스프린트 진행률"}
           </span>
           <span className="text-foreground text-sm font-semibold">{percent}%</span>
         </div>
@@ -378,76 +403,76 @@ function SprintProgressBar({ sprint }: { sprint: Sprint | null }) {
       <Stat label="완료 업무" value={done} />
       <Stat label="전체 업무" value={total} />
       <Stat label="남은 업무" value={remain} />
+      <Stat label="임박 마감" value={dueSoon} tone={dueSoon > 0 ? "warn" : "default"} />
     </section>
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: number;
+  tone?: "default" | "warn";
+}) {
   return (
     <div className="shrink-0 text-center">
-      <p className="text-foreground text-xl font-bold leading-none">{value}</p>
+      <p
+        className={cn(
+          "text-xl font-bold leading-none",
+          tone === "warn" ? "text-destructive" : "text-foreground",
+        )}
+      >
+        {value}
+      </p>
       <p className="text-muted-foreground mt-1 text-[11px]">{label}</p>
     </div>
   );
 }
 
 /**
- * 업무 밸런서 — 활성 멤버별 업무량을 가로 바로 보여주고, 상대 비율로 "여유 / 적당 / 많음"
- * 라벨을 붙인다. Figma Make 디자인 재현.
+ * 업무 밸런서 — BE `/tasks/workload` 응답을 멤버별 가로 바로 보여준다.
  *
- * ⚠️ 집계 기준: `localSummaries` (DONE 제외한 진행 중 업무) 의 assignee 별 count. "미담당"
- *    은 별도 라인으로 노출.
- * ⚠️ 라벨: 평균 대비 1.3배 이상 "많음" · 0.6배 이하 "여유" · 그 사이 "적당". AI 기반
- *    담당자 추천은 명세 확정 뒤 후속 PR.
+ * ⚠️ workload 가 null (조회 실패) 이면 섹션을 접고 안내만 노출한다. BE score/level 을
+ *    FE 가 재계산하면 공식이 어긋날 위험이 있어 fallback 집계를 두지 않는다.
+ * ⚠️ 미담당 건수는 BE 응답에 없어 `summaries` 에서 DONE 제외·assignee null 로 계산한다.
+ * ⚠️ 레벨 매핑: RELAXED → "여유"(light), NORMAL → "적당"(even), OVERLOADED → "많음"(heavy).
+ * ⚠️ warnings 는 멤버 라인에 알림 아이콘을 띄워 "주의" 를 시각화한다.
  */
 function TaskBalancer({
-  members,
+  workload,
   summaries,
   sprintName,
 }: {
-  members: readonly MemberRef[];
+  workload: RoomWorkload | null;
   summaries: readonly TaskSummary[];
   sprintName: string | null;
 }) {
-  const workload = useMemo(() => {
-    const open = summaries.filter((s) => s.status !== "DONE");
-    const counts = new Map<number, number>();
-    for (const m of members) counts.set(m.accountId, 0);
-    let unassigned = 0;
-    for (const t of open) {
-      if (t.assignee) {
-        counts.set(t.assignee.accountId, (counts.get(t.assignee.accountId) ?? 0) + 1);
-      } else {
-        unassigned += 1;
-      }
-    }
-    const rows = members.map((m) => ({
+  const view = useMemo(() => {
+    if (!workload) return null;
+    const warnBy = new Set(workload.warnings.map((w) => w.accountId));
+    // 바 비율은 open 업무 수 기준 (score 가 가중치라 시각 비교에 덜 직관적).
+    const max = Math.max(
+      1,
+      ...workload.members.map((m) => m.openTaskCount),
+      unassignedCount(summaries),
+    );
+    const rows = workload.members.map((m) => ({
       accountId: m.accountId,
       name: m.displayName,
-      count: counts.get(m.accountId) ?? 0,
+      count: m.openTaskCount,
+      band: levelToBand(m.level),
+      warned: warnBy.has(m.accountId),
+      ratio: m.openTaskCount / max,
     }));
-    const avg = rows.length > 0
-      ? rows.reduce((s, r) => s + r.count, 0) / rows.length
-      : 0;
-    const max = Math.max(1, ...rows.map((r) => r.count), unassigned);
-    const classify = (n: number): "heavy" | "even" | "light" => {
-      if (avg === 0) return n > 0 ? "even" : "light";
-      if (n >= avg * 1.3) return "heavy";
-      if (n <= avg * 0.6) return "light";
-      return "even";
-    };
+    const un = unassignedCount(summaries);
     return {
-      rows: rows.map((r) => ({
-        ...r,
-        ratio: r.count / max,
-        band: classify(r.count),
-      })),
-      unassigned: {
-        count: unassigned,
-        ratio: unassigned / max,
-      },
+      rows,
+      unassigned: { count: un, ratio: un / max },
     };
-  }, [members, summaries]);
+  }, [workload, summaries]);
 
   return (
     <aside
@@ -466,8 +491,13 @@ function TaskBalancer({
       <p className="text-muted-foreground text-xs">
         팀원의 업무량을 확인해 담당자를 균형 있게 배정하세요.
       </p>
+      {view === null ? (
+        <p className="text-muted-foreground text-xs">
+          밸런서 정보를 불러오지 못했어요. 잠시 뒤 새로고침해 주세요.
+        </p>
+      ) : (
       <ul className="flex flex-col gap-2.5">
-        {workload.rows.map((r) => (
+        {view.rows.map((r) => (
           <li key={r.accountId} className="flex flex-col gap-1">
             <div className="flex items-center justify-between gap-2 text-xs">
               <span className="text-foreground inline-flex items-center gap-1.5">
@@ -478,6 +508,16 @@ function TaskBalancer({
                   {r.name.slice(0, 1)}
                 </span>
                 {r.name}
+                {r.warned && (
+                  <span
+                    role="img"
+                    aria-label="업무 과다 주의"
+                    title="업무가 과도하게 쏠려 있어요"
+                    className="text-destructive text-[11px]"
+                  >
+                    ⚠
+                  </span>
+                )}
               </span>
               <span className="text-muted-foreground">
                 {r.count} · {bandLabel(r.band)}
@@ -486,7 +526,7 @@ function TaskBalancer({
             <WorkloadBar ratio={r.ratio} band={r.band} />
           </li>
         ))}
-        {workload.unassigned.count > 0 && (
+        {view.unassigned.count > 0 && (
           <li className="flex flex-col gap-1 border-t border-border-soft pt-2.5">
             <div className="flex items-center justify-between gap-2 text-xs">
               <span className="text-muted-foreground inline-flex items-center gap-1.5">
@@ -499,13 +539,14 @@ function TaskBalancer({
                 미담당
               </span>
               <span className="text-muted-foreground">
-                {workload.unassigned.count}건
+                {view.unassigned.count}건
               </span>
             </div>
-            <WorkloadBar ratio={workload.unassigned.ratio} band="light" />
+            <WorkloadBar ratio={view.unassigned.ratio} band="light" />
           </li>
         )}
       </ul>
+      )}
       <div className="border-border-soft bg-background mt-1 flex items-start gap-2 rounded-[var(--radius-control)] border px-3 py-2">
         <User aria-hidden="true" className="text-muted-foreground mt-0.5 size-3.5 shrink-0" />
         <div>
@@ -546,6 +587,18 @@ function bandLabel(band: "heavy" | "even" | "light"): string {
   if (band === "heavy") return "많음";
   if (band === "light") return "여유";
   return "적당";
+}
+
+/** BE WorkloadLevel → UI 밴드. OVERLOADED=heavy, NORMAL=even, RELAXED=light. */
+function levelToBand(level: WorkloadLevel): "heavy" | "even" | "light" {
+  if (level === "OVERLOADED") return "heavy";
+  if (level === "RELAXED") return "light";
+  return "even";
+}
+
+/** 담당자 없는 open 업무(DONE 제외) 수 — BE workload 응답에 포함되지 않아 Summary 로 계산. */
+function unassignedCount(summaries: readonly TaskSummary[]): number {
+  return summaries.filter((s) => s.status !== "DONE" && !s.assignee).length;
 }
 
 function statusDotClass(status: TaskStatus): string {

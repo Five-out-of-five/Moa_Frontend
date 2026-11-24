@@ -233,6 +233,60 @@ export interface TaskDetail extends TaskSummary {
   createdAt: string;
 }
 
+/**
+ * 진척도 — 명세 `GET /api/v1/rooms/{roomId}/tasks/progress` `ProgressResponse`.
+ * 활성 스프린트에 속한 업무만 집계한다 (BE 가 sprint = IN_PROGRESS 로 필터).
+ */
+export interface RoomProgress {
+  sprint: ProgressSprintInfo | null;
+  totalCount: number;
+  doneCount: number;
+  /** 0..100 정수 (서버 계산) */
+  progressRate: number;
+  statusCounts: Record<TaskStatus, number>;
+  /** 오늘 포함 3일 이내 마감 예정 + DONE 제외 */
+  dueSoonCount: number;
+}
+
+export interface ProgressSprintInfo {
+  sprintId: number;
+  sprintNo: number;
+  name: string;
+  startDate: string;
+  endDate: string | null;
+}
+
+/**
+ * 업무 밸런서 — 명세 `GET /api/v1/rooms/{roomId}/tasks/workload` `WorkloadResponse`.
+ * 방 전체의 담당 업무(DONE 제외) 중 담당자가 지정된 것만 멤버별로 집계. 미담당 수는
+ * 클라이언트가 별도로 Summary 에서 계산한다 (BE 응답에 없음).
+ *
+ * score = Σ (priority 가중치 + 마감 임박 보너스).
+ *   가중치 HIGH 1.5 · NORMAL 1 · LOW 0.5, 마감 3일 이내면 +1.
+ * level: score < 3 → RELAXED, < 6 → NORMAL, 그 이상 → OVERLOADED.
+ */
+export type WorkloadLevel = "RELAXED" | "NORMAL" | "OVERLOADED";
+
+export interface MemberLoad {
+  accountId: number;
+  displayName: string;
+  score: number;
+  level: WorkloadLevel;
+  openTaskCount: number;
+}
+
+export interface WorkloadWarning {
+  accountId: number;
+  /** 예: "OVERLOADED", "DOUBLE_OF_AVERAGE". UI 라벨 매핑은 클라이언트가. */
+  reason: string;
+}
+
+export interface RoomWorkload {
+  members: MemberLoad[];
+  averageScore: number;
+  warnings: WorkloadWarning[];
+}
+
 // ===== 위젯 · 투표 (VOTE) =====
 
 /** 명세 `voteType`. `APPROVAL` 은 명세의 `YES_NO` 와 동일 (찬반) — BE 명세 용어로 통일. */
