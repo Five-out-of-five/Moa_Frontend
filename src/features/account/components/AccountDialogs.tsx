@@ -18,19 +18,24 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { leaveRoomAction } from "@/features/room/actions";
+import { checkRoomLeaveAction, leaveRoomAction } from "@/features/room/actions";
 
 import { checkWithdrawalAction, withdrawAccountAction } from "../actions";
 import { INITIAL_SETTINGS_RESULT, type WithdrawalResult } from "../settings-types";
 import { SettingsSubmit } from "./SettingsForms";
 
 export function LeaveWorkspaceDialog({ id, name }: { id: number; name: string }) {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
+  const [check, setCheck] = useState<Awaited<ReturnType<typeof checkRoomLeaveAction>>>();
+  const [isChecking, startChecking] = useTransition();
+  const handleCheck = () => startChecking(async () => setCheck(await checkRoomLeaveAction(id)));
   const [, action, pending] = useActionState(async () => {
     const next = await leaveRoomAction(id);
     if (next.success) {
       setIsOpen(false);
       toast.success(next.message);
+      router.push("/workspaces");
     } else {
       toast.error(next.message);
     }
@@ -38,7 +43,11 @@ export function LeaveWorkspaceDialog({ id, name }: { id: number; name: string })
   }, INITIAL_SETTINGS_RESULT);
 
   return (
-    <AlertDialog open={isOpen} onOpenChange={(open) => !pending && setIsOpen(open)}>
+    <AlertDialog open={isOpen} onOpenChange={(open) => {
+      if (pending || isChecking) return;
+      setIsOpen(open);
+      if (open) { setCheck(undefined); handleCheck(); }
+    }}>
       <AlertDialogTrigger asChild>
         <Button variant="outline" size="sm">
           나가기
@@ -51,10 +60,14 @@ export function LeaveWorkspaceDialog({ id, name }: { id: number; name: string })
             작성한 카드와 메시지는 방에 남고, 담당 중인 업무는 미담당으로 바뀝니다.
           </AlertDialogDescription>
         </AlertDialogHeader>
+        {isChecking && <p role="status" className="text-sm">나가기 가능 여부 확인 중…</p>}
+        {check?.error && <div className="space-y-2"><p role="alert">{check.error}</p><Button type="button" onClick={handleCheck}>다시 확인</Button></div>}
+        {check?.isOwner && <Link href={`/workspaces/manage?room=${id}&tab=members`} className="underline">방장을 위임한 뒤 나갈 수 있습니다.</Link>}
+        {Boolean(check?.count) && <p role="status">완료하지 않은 할 일 {check?.count}개가 있습니다.</p>}
         <form action={action}>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>취소</AlertDialogCancel>
-            <SettingsSubmit>워크스페이스 나가기</SettingsSubmit>
+            {check?.leavable && !isChecking && <SettingsSubmit>워크스페이스 나가기</SettingsSubmit>}
           </AlertDialogFooter>
         </form>
       </AlertDialogContent>

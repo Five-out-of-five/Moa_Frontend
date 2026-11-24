@@ -1,10 +1,14 @@
 import "server-only";
 
+import { cache } from "react";
+
 import { getMyAccount } from "@/features/account/server";
+import { listMyRooms } from "@/features/room/server";
 import { api, ApiError } from "@/lib/api";
 import { isActiveMember } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
 import { accounts, roomMembers } from "@/mocks/db";
+import type { components } from "@/types/api";
 
 import {
   CHANNEL_MESSAGES,
@@ -22,6 +26,33 @@ const runtime = globalThis as typeof globalThis & {
   moaMockDms?: Map<number, { viewerId: number; thread: DirectMessageThread }>;
 };
 const mockDms = (runtime.moaMockDms ??= new Map());
+
+type ChannelResponse = components["schemas"]["ChannelResponse"];
+
+const listApiChannels = cache(async () => {
+  const rooms = (await listMyRooms()).filter((room) => room.status !== "INACTIVE");
+  const groups = await Promise.all(rooms.map(async (room) => {
+    try {
+      const channels = await api<ChannelResponse[]>(`/api/v1/rooms/${room.id}/channels`, { cache: "no-store" });
+      return channels.map((channel) => ({ ...channel, roomId: room.id }));
+    } catch (error) {
+      if (error instanceof ApiError && ["ROOM_NOT_FOUND", "ROOM_NOT_MEMBER", "ROOM_INACTIVE"].includes(error.code)) return [];
+      throw error;
+    }
+  }));
+  return groups.flat();
+});
+
+function toChatChannel(channel: ChannelResponse, roomId: number): ChatChannel | null {
+  if (channel.channelId == null || !channel.channelType) return null;
+  return {
+    id: channel.channelId,
+    roomId,
+    kind: channel.channelType === "PUBLIC" ? "PUBLIC" : "PRIVATE",
+    name: (channel.channelType === "DIRECT" ? channel.peer?.displayName : channel.name) ?? "이름 없는 채널",
+    unreadCount: channel.unreadCount ?? 0,
+  };
+}
 
 function listMockDmThreads(viewerId: number) {
   return [
@@ -69,7 +100,10 @@ export async function listMyChannels(): Promise<ChatChannel[]> {
     );
     return CHAT_CHANNELS.filter((c) => myRoomIds.has(c.roomId));
   }
-  return api<ChatChannel[]>("/api/v1/accounts/me/channels");
+  return (await listApiChannels()).flatMap((channel) => {
+    const mapped = channel.channelType === "DIRECT" ? null : toChatChannel(channel, channel.roomId);
+    return mapped ? [mapped] : [];
+  });
 }
 
 /** 내 1:1 메시지 스레드 전부 */
@@ -78,7 +112,16 @@ export async function listMyDmThreads(): Promise<DirectMessageThread[]> {
     const { id } = await getMyAccount();
     return listMockDmThreads(id);
   }
-  return api<DirectMessageThread[]>("/api/v1/accounts/me/dms");
+  return (await listApiChannels()).flatMap((channel) =>
+    channel.channelType !== "DIRECT" || channel.channelId == null || channel.peer?.accountId == null ? [] : [{
+      id: channel.channelId,
+      roomId: channel.roomId,
+      accountId: channel.peer.accountId,
+      displayName: channel.peer.displayName ?? "이름 없는 멤버",
+      online: false,
+      unreadCount: channel.unreadCount ?? 0,
+    }],
+  );
 }
 
 /**
@@ -101,9 +144,10 @@ export async function getChannel(
   //    리턴해야 page 의 `notFound()` 분기가 작동하므로 404 만 null 로 변환하고 나머지는
   //    그대로 던져 상위 error boundary 로 올린다 (CodeRabbit).
   try {
-    return await api<ChatChannel>(
-      `/api/v1/rooms/${roomId}/channels/${channelId}`,
+    const channel = await api<ChannelResponse>(
+      `/api/v1/rooms/${roomId}/channels/${channelId}`, { cache: "no-store" },
     );
+    return toChatChannel(channel, roomId);
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) return null;
     throw e;
@@ -123,9 +167,15 @@ export async function getChannelMessages(
   if (isMock) {
     return CHANNEL_MESSAGES[channelId] ?? [];
   }
-  return api<ChatMessage[]>(
-    `/api/v1/rooms/${roomId}/channels/${channelId}/messages?limit=100`,
+  const response = await api<components["schemas"]["CursorResponseMessageResponse"]>(
+    `/api/v1/rooms/${roomId}/channels/${channelId}/messages`, { cache: "no-store" },
   );
+  return (response.items ?? []).flatMap((message) => message.messageId == null || !message.createdAt ? [] : [{
+    id: message.messageId,
+    author: { accountId: message.sender?.accountId ?? 0, displayName: message.sender?.displayName ?? "알 수 없는 사용자" },
+    createdAt: message.createdAt,
+    content: message.deleted ? "삭제된 메시지입니다." : message.content ?? "",
+  }]).sort((first, second) => Date.parse(first.createdAt) - Date.parse(second.createdAt) || first.id - second.id);
 }
 
 /**

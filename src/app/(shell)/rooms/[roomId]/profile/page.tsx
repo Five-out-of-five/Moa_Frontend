@@ -1,13 +1,11 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 
-import { getFirstRoomProfile } from "@/features/room/first-profile/server";
+import { getRoomPageProfile } from "@/features/room/first-profile/server";
 import { RoomProfileForm } from "@/features/room/profile/RoomProfileForm";
 
 export default async function RoomProfilePage({ params }: { params: Promise<{ roomId: string }> }) {
   const { roomId } = await params;
-  const entry = await getFirstRoomProfile(roomId);
-  if (!entry) notFound();
+  const entry = await getRoomPageProfile(roomId);
 
   const setup = entry.setup;
   return (

@@ -35,15 +35,15 @@ export default async function MemberProfilePage({
         )}
         <p className="font-medium break-words">{profile.name}</p>
         {profile.position && <p className="text-muted-foreground text-sm">{profile.position}</p>}
-        {profile.canStartDm && (
-          <>
+        {profile.online !== undefined && (
             <p className="text-muted-foreground text-sm">
-              {profile.online === undefined ? "접속 상태 확인 불가" : profile.online ? "온라인" : "오프라인"}
+              {profile.online ? "온라인" : "오프라인"}
             </p>
+        )}
+        {profile.canStartDm && (
             <form action={startRoomMemberDmAction.bind(null, roomId, accountId)}>
               <Button type="submit" size="sm">1:1 대화</Button>
             </form>
-          </>
         )}
       </div>
     </section>

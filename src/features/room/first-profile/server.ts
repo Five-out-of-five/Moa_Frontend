@@ -1,15 +1,16 @@
 import "server-only";
 
+import { redirect } from "next/navigation";
 import { cache } from "react";
 
 import { getMyAccount } from "@/features/account/server";
 import { listMyRooms } from "@/features/room/server";
-import { api, ApiError } from "@/lib/api";
+import { ApiError } from "@/lib/api";
 import { isActiveMember } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
 import { accounts, roomMembers } from "@/mocks/db";
-import type { components } from "@/types/api";
 
+import { getRoomDetail } from "../management/api-server";
 import { roomManagementMock } from "../management/mock-state";
 import type { FirstRoomProfile } from "./types";
 
@@ -36,9 +37,8 @@ export const getFirstRoomProfile = cache(async (roomId: string) => {
   if (!/^[1-9]\d*$/.test(roomId) || !Number.isSafeInteger(Number(roomId))) return null;
   if (!isMock) {
     try {
-      const detail = await api<components["schemas"]["RoomDetailResponse"]>(
-        `/api/v1/rooms/${roomId}`, { cache: "no-store" },
-      );
+      const detail = await getRoomDetail(Number(roomId));
+      if (detail.status === "INACTIVE") throw new ApiError(403, "운영 정책에 따라 비활성화된 방입니다.", "ROOM_INACTIVE");
       if (detail.roomId !== Number(roomId) || !detail.name || !detail.myMembership) return null;
       const membership = detail.myMembership;
       return {
@@ -76,6 +76,17 @@ export const getFirstRoomProfile = cache(async (roomId: string) => {
   const needsSetup = (room.id === 2 || roomManagementMock.newMemberships.has(member.id)) && !profile;
   return { room, setup: { account, member, mockKey: key, profile, needsSetup } };
 });
+
+export async function getRoomPageProfile(roomId: string) {
+  try {
+    const entry = await getFirstRoomProfile(roomId);
+    if (entry) return entry;
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "ROOM_INACTIVE") redirect("/workspaces?roomStatus=inactive");
+    throw error;
+  }
+  redirect("/workspaces");
+}
 
 export function isNicknameTaken(roomId: number, accountId: number, nickname: string) {
   return roomMembers.some(

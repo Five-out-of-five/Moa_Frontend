@@ -3,11 +3,14 @@
 import { randomUUID } from "node:crypto";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 
+import { api, ApiError } from "@/lib/api";
 import { isRoomOwner } from "@/lib/permission";
+import { isMock } from "@/mocks/config";
 import { roomMembers, rooms } from "@/mocks/db";
 
+import { isRoomId } from "./api-server";
 import {
   addMockRoomMember,
   isPendingJoinRequest,
@@ -18,8 +21,26 @@ import { getManagedRoom, getRoomInvite } from "./server";
 import type { RoomManagementResult } from "./types";
 
 export async function requestRoomJoinAction(token: string): Promise<RoomManagementResult> {
+  if (typeof token !== "string" || !/^[\w-]+$/.test(token)) return { message: "초대 링크를 확인해 주세요." };
+  if (!isMock) {
+    try {
+      await api(`/api/v1/invites/${encodeURIComponent(token)}/join-requests`, { method: "POST", cache: "no-store" });
+    } catch (error) {
+      unstable_rethrow(error);
+      if (error instanceof ApiError && error.code === "JOIN_ALREADY_MEMBER") {
+        const data = error.data;
+        if (data && typeof data === "object" && "roomId" in data && typeof data.roomId === "number" && isRoomId(data.roomId)) {
+          redirect(`/rooms/${data.roomId}`);
+        }
+      }
+      if (error instanceof ApiError && error.code === "JOIN_REQUEST_ALREADY_PENDING") revalidatePath(`/invite/${token}`);
+      return { message: error instanceof ApiError ? error.message : "참여 요청을 보내지 못했습니다." };
+    }
+    revalidatePath(`/invite/${token}`);
+    return { success: true, message: "참여 요청을 보냈습니다." };
+  }
   const invite = await getRoomInvite(token);
-  if (!invite?.account || !rooms.includes(invite.room))
+  if (invite?.kind !== "mock" || !invite.account || !rooms.includes(invite.room))
     return { message: "초대 링크나 로그인 상태를 확인해 주세요." };
   const { room, account } = invite;
   if (invite.isMember) redirect(`/rooms/${room.id}`);
@@ -47,6 +68,21 @@ export async function decideRoomJoinAction(
   requestId: string,
   approve: boolean,
 ): Promise<RoomManagementResult> {
+  if (!isMock) {
+    if (!isRoomId(roomId) || !/^[1-9]\d*$/.test(requestId) || !isRoomId(Number(requestId)) || typeof approve !== "boolean") {
+      return { message: "참여 요청을 확인해 주세요." };
+    }
+    const operation = approve ? "approve" : "reject";
+    try {
+      await api(`/api/v1/rooms/${roomId}/join-requests/${requestId}/${operation}`, { method: "POST", cache: "no-store" });
+    } catch (error) {
+      unstable_rethrow(error);
+      if (error instanceof ApiError && error.code === "JOIN_REQUEST_ALREADY_PROCESSED") revalidatePath("/workspaces/manage");
+      return { message: error instanceof ApiError ? error.message : "참여 요청을 처리하지 못했습니다." };
+    }
+    revalidatePath("/", "layout");
+    return { success: true, message: approve ? "참여 요청을 승인했습니다." : "참여 요청을 거절했습니다." };
+  }
   const context = await getManagedRoom(roomId);
   if (!context || !isRoomOwner(context.membership))
     return { message: "방장만 참여 요청을 처리할 수 있습니다." };

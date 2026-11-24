@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import {
   LeaveWorkspaceDialog,
   RetryRoomRoleButton,
@@ -47,9 +49,9 @@ export default async function AccountPage() {
                   </p>
                 </div>
                 {room.isOwner ? (
-                  <p className="text-muted-foreground text-xs">
+                  <Link href={`/workspaces/manage?room=${room.id}&tab=members`} className="text-muted-foreground text-xs underline">
                     방장 권한을 위임한 후 나갈 수 있습니다.
-                  </p>
+                  </Link>
                 ) : room.canLeave ? (
                   <LeaveWorkspaceDialog id={room.id} name={room.name} />
                 ) : room.isOwner === null ? <RetryRoomRoleButton /> : null}

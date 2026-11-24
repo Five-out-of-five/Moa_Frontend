@@ -11,8 +11,11 @@ import { accounts, getRoomSnapshot, roomMembers, rooms } from "@/mocks/db";
 import type { components } from "@/types/api";
 import type { MemberRef, Room } from "@/types/db";
 
+import { listActiveRoomMembers } from "./management/api-server";
+
 type RoomSummary = Pick<Room, "id" | "name" | "description" | "imageUrl" | "memberCount"> & {
   myRole?: "OWNER" | "MEMBER";
+  status?: "ACTIVE" | "INACTIVE";
 };
 
 export async function listMyRoomsForSettings() {
@@ -20,8 +23,8 @@ export async function listMyRoomsForSettings() {
   if (!isMock) {
     return myRooms.map((room) => ({
       ...room,
-      isOwner: room.myRole ? room.myRole === "OWNER" : null,
-      canLeave: false,
+      isOwner: room.myRole ? isRoomOwner({ role: room.myRole }) : null,
+      canLeave: room.myRole === "MEMBER" && room.status !== "INACTIVE",
     }));
   }
   const account = await getMyAccount();
@@ -58,6 +61,7 @@ export const listMyRooms = cache(async (): Promise<RoomSummary[]> => {
       imageUrl: room.imageUrl ?? null,
       memberCount: room.memberCount ?? 0,
       myRole: room.myRole,
+      status: room.status,
     };
   });
 });
@@ -65,7 +69,7 @@ export const listMyRooms = cache(async (): Promise<RoomSummary[]> => {
 export async function getWorkspaceSelection() {
   const workspaces = await listMyRooms();
   const recentRoomId = (await getMyAccount()).lastRoomId;
-  const recentWorkspace = workspaces.find((room) => room.id === recentRoomId);
+  const recentWorkspace = workspaces.find((room) => room.id === recentRoomId && room.status !== "INACTIVE");
 
   return { workspaces, recentWorkspace };
 }
@@ -97,5 +101,11 @@ export async function listRoomMembers(roomId: number): Promise<MemberRef[]> {
         } satisfies MemberRef;
       });
   }
-  return api<MemberRef[]>(`/api/v1/rooms/${roomId}/members`);
+  const members = await listActiveRoomMembers(roomId);
+  return members.flatMap((member) => member.accountId == null ? [] : [{
+    accountId: member.accountId,
+    displayName: member.displayName ?? "이름 없는 멤버",
+    profileImageUrl: member.profileImageUrl ?? null,
+    memberStatus: "ACTIVE" as const,
+  }]);
 }
