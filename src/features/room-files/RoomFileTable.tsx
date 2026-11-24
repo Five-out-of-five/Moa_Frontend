@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 
-import { FILE_TYPES, fileType, formatBytes, type RoomFile, sourceLabel } from "./model";
+import { FILE_TYPES, fileType, formatBytes, type RoomFile, sourceLabel, uploaderLabel } from "./model";
 
 const dateFormat = new Intl.DateTimeFormat("ko-KR", {
   dateStyle: "medium",
@@ -39,7 +39,7 @@ export function RoomFileTable({ files, roomId }: { files: RoomFile[]; roomId: st
                     <span className="break-all">
                       {file.originalName}
                       <span className="text-muted-foreground block text-xs font-normal">
-                        {FILE_TYPES[type]}
+                        {type === "OTHER" ? "기타" : FILE_TYPES[type]}
                       </span>
                     </span>
                   </div>
@@ -47,7 +47,7 @@ export function RoomFileTable({ files, roomId }: { files: RoomFile[]; roomId: st
                 <td className="text-muted-foreground px-3 py-3 whitespace-nowrap">
                   {formatBytes(file.sizeBytes)}
                 </td>
-                <td className="px-3 py-3">{file.uploader?.displayName ?? "—"}</td>
+                <td className="px-3 py-3">{uploaderLabel(file.uploader)}</td>
                 <td className="text-muted-foreground px-3 py-3 whitespace-nowrap">
                   {Number.isFinite(uploadedAt.getTime()) ? (
                     <time dateTime={file.uploadedAt}>{dateFormat.format(uploadedAt)}</time>

@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FILE_TYPES, formatBytes } from "@/features/room-files/model";
+import { FILE_SOURCES, FILE_TYPES, formatBytes } from "@/features/room-files/model";
 import { RoomFileTable } from "@/features/room-files/RoomFileTable";
 import { getRoomFileList } from "@/features/room-files/server";
 
@@ -17,6 +17,7 @@ export default async function RoomFilesPage({
 }) {
   const [{ roomId }, query] = await Promise.all([params, searchParams]);
   const keyword = typeof query.keyword === "string" ? query.keyword.trim().slice(0, 200) : "";
+  const source = typeof query.source === "string" && Object.hasOwn(FILE_SOURCES, query.source) ? query.source : "";
   const fileType =
     typeof query.fileType === "string" && Object.hasOwn(FILE_TYPES, query.fileType)
       ? query.fileType
@@ -28,7 +29,7 @@ export default async function RoomFilesPage({
   const page =
     typeof query.page === "string" && /^\d{1,9}$/.test(query.page) ? Number(query.page) : 0;
 
-  const data = await getRoomFileList(roomId, { keyword, fileType, uploaderId, page });
+  const data = await getRoomFileList(roomId, { keyword, source, fileType, uploaderId, page });
   if (!data) notFound();
 
   const href = `/rooms/${roomId}/files`;
@@ -37,11 +38,11 @@ export default async function RoomFilesPage({
     usedBytes !== undefined && limitBytes && limitBytes > 0
       ? Math.min(100, Math.max(0, (usedBytes / limitBytes) * 100))
       : null;
-  const hasFilters = Boolean(keyword || fileType || uploaderId);
+  const hasFilters = Boolean(keyword || source || fileType || uploaderId);
   const inputClass =
     "border-input bg-background focus-visible:ring-ring h-9 rounded-control border px-3 text-sm focus-visible:ring-2";
   const pageHref = (nextPage: number) =>
-    `${href}?${new URLSearchParams({ keyword, fileType, uploaderId, page: String(nextPage) })}`;
+    `${href}?${new URLSearchParams({ keyword, source, fileType, uploaderId, page: String(nextPage) })}`;
 
   return (
     <section className="mx-auto max-w-7xl space-y-4">
@@ -97,7 +98,7 @@ export default async function RoomFilesPage({
         <form
           action={href}
           method="get"
-          key={JSON.stringify([keyword, fileType, uploaderId])}
+          key={JSON.stringify([keyword, source, fileType, uploaderId])}
           className="flex flex-wrap items-center gap-2 border-b p-3"
         >
           <div className="relative min-w-48 flex-1 sm:flex-none">
@@ -115,6 +116,10 @@ export default async function RoomFilesPage({
               className="pl-9"
             />
           </div>
+          <select name="source" aria-label="출처" defaultValue={source} className={inputClass}>
+            <option value="">모든 출처</option>
+            {Object.entries(FILE_SOURCES).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
           <select
             name="fileType"
             aria-label="파일 유형"

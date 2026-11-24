@@ -91,6 +91,7 @@ export function ChannelPageClient({ channel, initialMessages, me }: Props) {
 
       <MessageList
         roomId={channel.roomId}
+        viewerId={me?.accountId}
         messages={messages}
         emptyState={
           <EmptyChannelHero

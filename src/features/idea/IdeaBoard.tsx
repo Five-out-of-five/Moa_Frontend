@@ -45,7 +45,7 @@ export function IdeaBoard({ session, cards, accountId, editable, discussion, con
               {column.length ? (
                 <ul className="space-y-2">
                   {column.map((card) => (
-                    <li key={card.id} data-briefing-id={card.id} className="rounded-control data-briefing-highlight:ring-primary data-briefing-highlight:ring-2"><IdeaCardDetails card={card} canReport={accountId > 0 && !isAuthor({ id: accountId }, card.author)} canEdit={canCreate && isAuthor({ id: accountId }, card.author)} discussion={discussion[card.id]} conflictId={conflictByCard[card.id]} sources={(card.sourceCardIds ?? []).flatMap((id) => {
+                    <li key={card.id} data-briefing-id={card.id} className="rounded-control data-briefing-highlight:ring-primary data-briefing-highlight:ring-2"><IdeaCardDetails card={card} accountId={accountId} canReport={accountId > 0 && card.author.accountId > 0 && !isAuthor({ id: accountId }, card.author)} canEdit={canCreate && isAuthor({ id: accountId }, card.author)} discussion={discussion[card.id]} conflictId={conflictByCard[card.id]} sources={(card.sourceCardIds ?? []).flatMap((id) => {
                       const source = sources.get(id);
                       return source ? [source] : [];
                     })} /></li>
