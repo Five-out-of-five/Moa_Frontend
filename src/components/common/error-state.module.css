@@ -1,0 +1,108 @@
+.state {
+  box-sizing: border-box;
+  display: grid;
+  min-block-size: min(65dvh, 40rem);
+  padding: clamp(1.5rem, 5vw, 4rem);
+  place-items: center;
+  color: var(--foreground, CanvasText);
+  background: var(--background, Canvas);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  text-align: center;
+}
+
+.fullPage {
+  min-block-size: 100dvh;
+}
+.content {
+  inline-size: 100%;
+  max-inline-size: 34rem;
+}
+.brand {
+  margin: 0 0 1.5rem;
+  color: var(--primary, LinkText);
+  font-size: 0.875rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+}
+.code {
+  margin: 0;
+  color: color-mix(in srgb, var(--primary, CanvasText) 18%, transparent);
+  font-size: clamp(5rem, 18vw, 9rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.06em;
+}
+.title {
+  margin: 1.5rem 0 0;
+  font-size: clamp(1.25rem, 4vw, 1.75rem);
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.description {
+  margin: 0.75rem auto 0;
+  max-inline-size: 28rem;
+  color: var(--muted-foreground, GrayText);
+  font-size: 0.9375rem;
+  line-height: 1.8;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-block-start: 2rem;
+}
+.retry,
+.link {
+  box-sizing: border-box;
+  display: inline-flex;
+  min-block-size: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.625rem 1.125rem;
+  border: 1px solid var(--border, ButtonBorder);
+  border-radius: var(--radius-control, 0.5rem);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.5;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 150ms;
+}
+.retry {
+  border-color: var(--primary, ButtonBorder);
+  color: var(--primary-foreground, ButtonText);
+  background: var(--primary, ButtonFace);
+}
+.link {
+  color: var(--foreground, CanvasText);
+  background: var(--card, Canvas);
+}
+.retry:hover {
+  background: color-mix(in srgb, var(--primary, ButtonFace) 85%, var(--background, Canvas));
+}
+.link:hover {
+  background: var(--muted, ButtonFace);
+}
+.retry:focus-visible,
+.link:focus-visible {
+  outline: 3px solid var(--ring, Highlight);
+  outline-offset: 4px;
+}
+.reference {
+  margin: 1.5rem 0 0;
+  color: var(--muted-foreground, GrayText);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+@media (prefers-reduced-motion: reduce) {
+  .retry,
+  .link {
+    transition: none;
+  }
+}
