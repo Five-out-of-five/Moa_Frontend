@@ -79,8 +79,9 @@ export async function listTasksInRoom(roomId: number): Promise<TaskSummary[]> {
  *    로 공유되므로 live 계산은 안전하고, 상태 변경·반려·삭제·수정 등 각 액션에서 집계
  *    보정을 잊어도 reader 레벨에서 자동으로 맞춰진다.
  * ⚠️ 실 API 는 `GET /api/v1/rooms/{roomId}/sprints/current`. BE 는 활성 스프린트가 없으면
- *    404 를 돌려주므로 이를 `null` 로 수렴해 Dialog 가 "활성 스프린트 없음" 상태로 그린다.
- *    BE `SprintResponse` 는 FE `Sprint` 와 shape 가 다르므로 어댑터로 매핑.
+ *    성공 봉투에 `data: null` 로 돌려준다 (`findFirst...orElse(null)`) — 404 가 아니다.
+ *    `api<T | null>` 로 nullable 응답을 명시해 받고, 혹시라도 404 가 떨어지면 안전망으로
+ *    같이 null 로 수렴한다. BE `SprintResponse` 는 FE `Sprint` 와 shape 가 다르므로 어댑터로 매핑.
  */
 export async function getActiveSprint(
   roomId: number,
@@ -100,11 +101,11 @@ export async function getActiveSprint(
     };
   }
   try {
-    const res = await api<SprintResponse>(
+    const res = await api<SprintResponse | null>(
       `/api/v1/rooms/${roomId}/sprints/current`,
       { cache: "no-store" },
     );
-    return toSprint(roomId, res);
+    return res ? toSprint(roomId, res) : null;
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) return null;
     throw e;

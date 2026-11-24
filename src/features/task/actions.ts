@@ -704,7 +704,6 @@ export async function updateTaskAction(
       }
     }
 
-    revalidatePath(`/rooms/${roomId}/boards/task`, "page");
     return {
       kind: "ok",
       task: {
@@ -722,6 +721,11 @@ export async function updateTaskAction(
       kind: "error",
       message: "업무 수정에 실패했습니다. 잠시 뒤 다시 시도해 주세요.",
     };
+  } finally {
+    // ⚠️ 세 단계 중 **일부만 성공해도** 보드가 서버 최신 상태로 재동기화되도록 모든 리턴/throw
+    //    경로에서 revalidate. conflict·error 분기 뒤에 Dialog 를 닫지 않아도 상위 보드는
+    //    최신값으로 다시 그려진다.
+    revalidatePath(`/rooms/${roomId}/boards/task`, "page");
   }
 }
 
