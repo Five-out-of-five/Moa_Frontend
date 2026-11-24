@@ -123,6 +123,8 @@ export function TaskBoardPageClient({
     registrant: task.registrant,
     assignee: task.assignee,
     source: task.source,
+    sprintId: task.sprintId,
+    fileCount: task.fileCount,
   });
 
   const handleCreated = (task: TaskDetail) => {

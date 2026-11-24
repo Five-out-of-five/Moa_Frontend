@@ -1,19 +1,22 @@
 import "server-only";
 
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { isMock } from "@/mocks/config";
 import { sprints, tasks } from "@/mocks/db";
 import type { Sprint, TaskDetail, TaskSummary } from "@/types/db";
 
 import { computeDDay, computeOverdue } from "./lib/d-day";
 
-function stripRoomAndSprint(
-  t: TaskDetail & { roomId: number; sprintId: number | null },
+/**
+ * 목 저장 shape → 외부 Detail. `roomId` 는 경로 변수라서 응답에는 들어가지 않고,
+ * `fileCount` 는 `files.length` 로 derived (실 BE 도 서버가 계산한 값을 내려줌).
+ */
+function stripRoom(
+  t: Omit<TaskDetail, "fileCount"> & { roomId: number },
 ): TaskDetail {
-  const { roomId: _room, sprintId: _sprint, ...detail } = t;
+  const { roomId: _room, ...detail } = t;
   void _room;
-  void _sprint;
-  return detail;
+  return { ...detail, fileCount: t.files.length };
 }
 
 /**
@@ -42,6 +45,8 @@ function toSummary(t: TaskDetail): TaskSummary {
     registrant: t.registrant,
     assignee: t.assignee,
     source: t.source,
+    sprintId: t.sprintId,
+    fileCount: t.fileCount,
   };
 }
 
@@ -57,7 +62,7 @@ export async function listTasksInRoom(roomId: number): Promise<TaskSummary[]> {
   if (isMock) {
     return tasks
       .filter((t) => t.roomId === roomId)
-      .map((t) => withFreshDDay(toSummary(stripRoomAndSprint(t))));
+      .map((t) => withFreshDDay(toSummary(stripRoom(t))));
   }
   const list = await api<TaskSummary[]>(`/api/v1/rooms/${roomId}/tasks`);
   return list.map(withFreshDDay);
@@ -73,9 +78,9 @@ export async function listTasksInRoom(roomId: number): Promise<TaskSummary[]> {
  *    서로 다른 모듈 인스턴스에서 집계가 drift 할 수 있다 (CodeRabbit). tasks 는 globalThis
  *    로 공유되므로 live 계산은 안전하고, 상태 변경·반려·삭제·수정 등 각 액션에서 집계
  *    보정을 잊어도 reader 레벨에서 자동으로 맞춰진다.
- * ⚠️ 아직 BE 명세에 Sprint 전용 엔드포인트가 확정되지 않아 **목 모드만 지원**. 실서버
- *    모드에선 null 을 돌려 Dialog 가 스프린트 라벨만 비활성 셀렉터로 보여주게 한다
- *    — 명세 확정 뒤 `/api/v1/rooms/{roomId}/sprints?state=ACTIVE` 로 교체.
+ * ⚠️ 실 API 는 `GET /api/v1/rooms/{roomId}/sprints/current`. BE 는 활성 스프린트가 없으면
+ *    404 를 돌려주므로 이를 `null` 로 수렴해 Dialog 가 "활성 스프린트 없음" 상태로 그린다.
+ *    BE `SprintResponse` 는 FE `Sprint` 와 shape 가 다르므로 어댑터로 매핑.
  */
 export async function getActiveSprint(
   roomId: number,
@@ -94,7 +99,42 @@ export async function getActiveSprint(
       doneTasks: sprintTasks.filter((t) => t.status === "DONE").length,
     };
   }
-  return null;
+  try {
+    const res = await api<SprintResponse>(
+      `/api/v1/rooms/${roomId}/sprints/current`,
+      { cache: "no-store" },
+    );
+    return toSprint(roomId, res);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
+/**
+ * BE `SprintResponse` — `/sprints/current` 응답. 최소한의 필드만 적어 어댑터로 바로 소화한다.
+ */
+type SprintResponse = {
+  sprintId: number;
+  name: string;
+  startDate: string;
+  endDate: string | null;
+  status: "ACTIVE" | "CLOSED";
+  totalTaskCount: number;
+  doneTaskCount: number;
+};
+
+function toSprint(roomId: number, res: SprintResponse): Sprint {
+  return {
+    id: res.sprintId,
+    roomId,
+    name: res.name,
+    state: res.status,
+    startsAt: res.startDate,
+    endsAt: res.endDate,
+    totalTasks: res.totalTaskCount,
+    doneTasks: res.doneTaskCount,
+  };
 }
 
 /** 업무 상세 조회 — 명세 `GET /api/v1/rooms/{roomId}/tasks/{taskId}`. */
@@ -104,7 +144,7 @@ export async function getTaskDetail(
 ): Promise<TaskDetail | null> {
   if (isMock) {
     const t = tasks.find((x) => x.roomId === roomId && x.taskId === taskId);
-    return t ? withFreshDDay(stripRoomAndSprint(t)) : null;
+    return t ? withFreshDDay(stripRoom(t)) : null;
   }
   const detail = await api<TaskDetail>(
     `/api/v1/rooms/${roomId}/tasks/${taskId}`,

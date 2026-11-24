@@ -178,6 +178,8 @@ export interface TaskSource {
  *
  * ⚠️ `dDay` 는 BE 가 계산해서 내려 준다 (양수=남음, 0=오늘, 음수=지남).
  * ⚠️ `assignee` 는 미담당이면 null.
+ * ⚠️ `sprintId` 는 BE 가 활성 스프린트 자동 배정. 백로그면 null.
+ * ⚠️ `fileCount` 는 BE 가 계산해 준다 — 카드에 첨부 뱃지용.
  */
 export interface TaskSummary {
   taskId: number;
@@ -192,6 +194,8 @@ export interface TaskSummary {
   registrant: MemberRef;
   assignee: MemberRef | null;
   source: TaskSource;
+  sprintId: number | null;
+  fileCount: number;
 }
 
 /** 명세 `TaskHistoryItem` — 상태/담당자 변경 이력 */
