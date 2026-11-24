@@ -53,8 +53,8 @@ export function WidgetRemovalControls({
           <Button variant="destructive" disabled={pending} onClick={() => start(async () => {
             try {
               const result = isReset ? await resetWidgetLayoutAction(roomId) : await removeWidgetAction(roomId, widgetId);
+              if (result.snapshot) onChanged(result.snapshot);
               if (!result.ok) { toast.error(result.message); return; }
-              onChanged(result.snapshot);
               setOpen(false);
               toast.success(isReset ? "기본 배치로 초기화했어요." : "위젯을 삭제했어요.");
             } catch {

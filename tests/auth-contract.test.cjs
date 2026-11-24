@@ -342,3 +342,71 @@ test("채팅 사이드바 목록은 활성 방의 채널 API를 사용한다", a
   assert.equal(dms[0].roomId, 3);
   assert.equal(dms[0].accountId, 20);
 });
+
+test("대시보드 조회는 Bearer를 붙이고 레이아웃 버전과 위젯 좌표를 매핑한다", async () => {
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    assert.equal(new URL(url).pathname, "/api/v1/rooms/3/dashboard");
+    assert.equal(new Headers(init.headers).get("Authorization"), "Bearer fixture-access");
+    return ok({ layoutVersion: 7, widgets: [{ widgetId: 11, widgetType: "MOOD", x: 0, y: 1, w: 3, h: 4 }] });
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const { getDashboardSnapshot, usesMockDashboardEvents } = f.load("@/features/widget/server");
+  const snapshot = await getDashboardSnapshot(3);
+  assert.equal(usesMockDashboardEvents(), false);
+  assert.deepEqual(JSON.parse(JSON.stringify(snapshot)), {
+    revision: 7,
+    widgets: [{ id: 11, roomId: 3, widgetType: "MOOD", x: 0, y: 1, width: 3, height: 4 }],
+    editors: [],
+  });
+});
+
+test("위젯 추가는 서버 최신 배치에서 빈자리를 계산한다", async () => {
+  const mood = { widgetId: 11, widgetType: "MOOD", x: 0, y: 0, w: 3, h: 4 };
+  const calls = [];
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    calls.push(new URL(url).pathname);
+    if (!init.method) return ok({ layoutVersion: 7, widgets: [mood] });
+    assert.equal(init.method, "POST");
+    const placement = JSON.parse(init.body);
+    assert.deepEqual(placement, { widgetType: "VOTE", x: 3, y: 0, w: 3, h: 3 });
+    return ok({ layoutVersion: 8, widgets: [mood, { widgetId: 12, ...placement }] });
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const result = await f.load("@/features/widget/actions").addWidgetAction(3, "VOTE");
+  assert.equal(result.ok, true);
+  assert.equal(result.snapshot.revision, 8);
+  assert.deepEqual(calls, ["/api/v1/rooms/3/dashboard", "/api/v1/rooms/3/dashboard/widgets"]);
+});
+
+test("배치 충돌 시 오류 메시지와 최신 서버 스냅샷을 함께 반환한다", async () => {
+  const calls = [];
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    calls.push(new URL(url).pathname);
+    if (!init.method) return ok({ layoutVersion: 9, widgets: [{ widgetId: 11, widgetType: "MOOD", x: 2, y: 0, w: 3, h: 4 }] });
+    assert.equal(init.method, "PUT");
+    assert.deepEqual(JSON.parse(init.body), { widgets: [{ widgetId: 11, x: 0, y: 4, w: 3, h: 4 }] });
+    return Response.json({ success: false, error: { code: "DASHBOARD_WIDGET_OVERLAP", message: "다른 위젯과 겹치는 위치입니다." } }, { status: 409 });
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const result = await f.load("@/features/widget/actions").saveWidgetPlacementAction(3, 11, { x: 0, y: 4, width: 3, height: 4 });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "DASHBOARD_WIDGET_OVERLAP");
+  assert.equal(result.message, "다른 위젯과 겹치는 위치입니다.");
+  assert.equal(result.snapshot.revision, 9);
+  assert.deepEqual(calls, ["/api/v1/rooms/3/dashboard/layout", "/api/v1/rooms/3/dashboard"]);
+});
+
+test("위젯 제거와 레이아웃 초기화는 서버가 반환한 새 ID를 사용한다", async () => {
+  const calls = [];
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    calls.push([init.method, new URL(url).pathname]);
+    assert.equal(init.body, undefined);
+    const widgetId = init.method === "DELETE" ? 11 : 21;
+    return ok({ layoutVersion: widgetId, widgets: [{ widgetId, widgetType: "MOOD", x: 0, y: 0, w: 3, h: 4 }] });
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const actions = f.load("@/features/widget/actions");
+  assert.equal((await actions.removeWidgetAction(3, 12)).snapshot.widgets[0].id, 11);
+  assert.equal((await actions.resetWidgetLayoutAction(3)).snapshot.widgets[0].id, 21);
+  assert.deepEqual(calls, [["DELETE", "/api/v1/rooms/3/dashboard/widgets/12"], ["POST", "/api/v1/rooms/3/dashboard/reset"]]);
+});
