@@ -4,11 +4,25 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { api, ApiError } from "@/lib/api";
+import { isNextControlFlowError } from "@/lib/next-redirect";
 import { isMock } from "@/mocks/config";
 import { accounts, roomMembers, sprints, tasks } from "@/mocks/db";
 import type { MemberRef, TaskDetail, TaskStatus } from "@/types/db";
 
 import { computeDDay, computeOverdue } from "./lib/d-day";
+
+/**
+ * 목 저장 shape → 외부 Detail. `roomId` 는 경로 변수라서 응답에 안 들어가고,
+ * `fileCount` 는 `files.length` 로 derived (실 BE 도 서버가 계산한 값을 내려줌).
+ * server.ts `stripRoom` 과 동일 규칙.
+ */
+function toDetail(
+  t: Omit<TaskDetail, "fileCount"> & { roomId: number },
+): TaskDetail {
+  const { roomId: _r, ...rest } = t;
+  void _r;
+  return { ...rest, fileCount: rest.files.length };
+}
 
 const changeStatusSchema = z.object({
   roomId: z.number().int().positive(),
@@ -176,14 +190,14 @@ export async function changeTaskStatusAction(
     }
 
     revalidatePath(`/rooms/${roomId}/boards/task`, "page");
-    const { roomId: _r, sprintId: _s, ...detail } = t;
-    void _r;
-    void _s;
-    return { kind: "ok", task: detail };
+    return { kind: "ok", task: toDetail(t) };
   }
 
   try {
-    await api<unknown>(`/api/v1/rooms/${roomId}/tasks/${taskId}/status`, {
+    // ⚠️ BE 는 재정렬된 칸반 전체 Summary 리스트를 돌려준다. 이번 범위에선 Detail GET 재조회
+    //    흐름을 유지하되, 응답 타입만 명시화해 돌려받는 shape 를 코드로 고정한다 (TODO:
+    //    Phase 2 에서 List 응답으로 캐시 반영해 round-trip 제거 — [[업무 보드 그리드]]).
+    await api<unknown[]>(`/api/v1/rooms/${roomId}/tasks/${taskId}/status`, {
       method: "PATCH",
       json: { status, toIndex: insertAt, version },
     });
@@ -307,7 +321,7 @@ export async function createTaskAction(
       tasks
         .filter((t) => t.roomId === roomId && t.status === status)
         .reduce((max, t) => Math.max(max, t.sortOrder), -1) + 1;
-    const newTask: TaskDetail & { roomId: number; sprintId: number | null } = {
+    const newTask: Omit<TaskDetail, "fileCount"> & { roomId: number } = {
       taskId: newTaskId,
       roomId,
       sprintId: sprint?.id ?? null,
@@ -344,19 +358,18 @@ export async function createTaskAction(
       if (status === "DONE") sprint.doneTasks += 1;
     }
     revalidatePath(`/rooms/${roomId}/boards/task`, "page");
-    const { roomId: _r, sprintId: _s, ...detail } = newTask;
-    void _r;
-    void _s;
-    return { kind: "ok", task: detail };
+    return { kind: "ok", task: toDetail(newTask) };
   }
 
   try {
+    // ⚠️ BE `TaskCreateRequest` 는 `status` 를 받지 않는다 (서버가 TODO 로 고정 생성한 뒤
+    //    활성 스프린트에 자동 배치). 다른 칸으로 바로 올리고 싶으면 생성 후 move 호출이 필요
+    //    하지만, 이번 범위에서는 UI 가 TODO 가 아닌 상태를 고를 때의 흐름을 Phase 2 로 미룬다.
     const res = await api<TaskDetail>(`/api/v1/rooms/${roomId}/tasks`, {
       method: "POST",
       json: {
         title,
         description,
-        status,
         priority,
         assigneeAccountId,
         dueDate,
@@ -612,45 +625,95 @@ export async function updateTaskAction(
     }
 
     revalidatePath(`/rooms/${roomId}/boards/task`, "page");
-    const { roomId: _r, sprintId: _s, ...detail } = t;
-    void _r;
-    void _s;
-    return { kind: "ok", task: detail };
+    return { kind: "ok", task: toDetail(t) };
   }
 
+  // ⚠️ BE 는 수정을 **세 엔드포인트로 쪼개** 둔다. 하나로 묶인 UI Dialog 를 그대로 유지하려면
+  //    액션이 현재 상태와 비교해 바뀐 축만 순차 호출한다. 호출 순서는 내용 → 담당자 → 상태:
+  //    상태 변경이 마지막인 이유는 version 낙관적 잠금이 상태 PATCH 에만 적용되고, 내용·담당자
+  //    변경이 서버의 version 을 올리기 전 시점에 최신 version 을 재바인딩하기 위함이다.
+  //    한 PATCH 는 성공했는데 다음이 실패하면 "부분 반영" 상태가 남는데, revalidate 로 보드가
+  //    재조회되므로 UI 는 최신 서버 상태에 재동기화된다.
   try {
-    const res = await api<TaskDetail>(
+    const previous = await api<TaskDetail>(
       `/api/v1/rooms/${roomId}/tasks/${taskId}`,
-      {
-        method: "PATCH",
-        json: {
-          title,
-          description,
-          status,
-          priority,
-          assigneeAccountId,
-          dueDate,
-          version,
-        },
-      },
+      { cache: "no-store" },
     );
-    revalidatePath(`/rooms/${roomId}/boards/task`, "page");
-    return {
-      kind: "ok",
-      task: {
-        ...res,
-        dDay: computeDDay(res.dueDate),
-        overdue: computeOverdue(res.dueDate, res.status),
-      },
-    };
-  } catch (e) {
-    if (e instanceof ApiError && e.status === 409) {
+    if (previous.version !== version) {
       return {
         kind: "conflict",
         message:
           "다른 사용자가 먼저 업데이트했어요. 새로고침 후 다시 시도해 주세요.",
       };
     }
+
+    const contentChanged =
+      previous.title !== title ||
+      (previous.description ?? "") !== description ||
+      previous.priority !== priority ||
+      (previous.dueDate ?? null) !== dueDate;
+    const assigneeChanged =
+      (previous.assignee?.accountId ?? null) !== assigneeAccountId;
+    const statusChanged = previous.status !== status;
+
+    let current = previous;
+
+    if (contentChanged) {
+      current = await api<TaskDetail>(
+        `/api/v1/rooms/${roomId}/tasks/${taskId}`,
+        {
+          method: "PATCH",
+          json: { title, description, dueDate, priority },
+        },
+      );
+    }
+    if (assigneeChanged) {
+      current = await api<TaskDetail>(
+        `/api/v1/rooms/${roomId}/tasks/${taskId}/assignee`,
+        {
+          method: "PATCH",
+          json: { assigneeAccountId },
+        },
+      );
+    }
+    if (statusChanged) {
+      // 상태 변경은 `/status` 로. 응답은 재정렬된 리스트지만 이번 범위에선 그대로 두고 상세를
+      // 한 번 더 조회해 UI 가 최신 Detail 을 얻도록 한다. (TODO: Phase 2 — [[업무 보드 그리드]])
+      try {
+        await api<unknown[]>(
+          `/api/v1/rooms/${roomId}/tasks/${taskId}/status`,
+          {
+            method: "PATCH",
+            json: { status, toIndex: 0, version: current.version },
+          },
+        );
+        current = await api<TaskDetail>(
+          `/api/v1/rooms/${roomId}/tasks/${taskId}`,
+          { cache: "no-store" },
+        );
+      } catch (e) {
+        if (isNextControlFlowError(e)) throw e;
+        if (e instanceof ApiError && e.status === 409) {
+          return {
+            kind: "conflict",
+            message:
+              "다른 사용자가 먼저 업데이트했어요. 새로고침 후 다시 시도해 주세요.",
+          };
+        }
+        throw e;
+      }
+    }
+
+    return {
+      kind: "ok",
+      task: {
+        ...current,
+        dDay: computeDDay(current.dueDate),
+        overdue: computeOverdue(current.dueDate, current.status),
+      },
+    };
+  } catch (e) {
+    if (isNextControlFlowError(e)) throw e;
     if (e instanceof ApiError) {
       return { kind: "error", message: e.message };
     }
@@ -658,6 +721,11 @@ export async function updateTaskAction(
       kind: "error",
       message: "업무 수정에 실패했습니다. 잠시 뒤 다시 시도해 주세요.",
     };
+  } finally {
+    // ⚠️ 세 단계 중 **일부만 성공해도** 보드가 서버 최신 상태로 재동기화되도록 모든 리턴/throw
+    //    경로에서 revalidate. conflict·error 분기 뒤에 Dialog 를 닫지 않아도 상위 보드는
+    //    최신값으로 다시 그려진다.
+    revalidatePath(`/rooms/${roomId}/boards/task`, "page");
   }
 }
 
@@ -807,16 +875,16 @@ export async function rejectTaskAction(
       },
     ];
     revalidatePath(`/rooms/${roomId}/boards/task`, "page");
-    const { roomId: _r, sprintId: _s, ...detail } = t;
-    void _r;
-    void _s;
-    return { kind: "ok", task: detail };
+    return { kind: "ok", task: toDetail(t) };
   }
 
   try {
+    // ⚠️ BE `POST /tasks/{id}/reject` 는 `@RequestBody` 자체가 없다. version 체크는 담당자
+    //    검증 로직 안쪽에서 이뤄지므로 FE 는 body 없이 호출만 보낸다.
+    void version;
     const res = await api<TaskDetail>(
       `/api/v1/rooms/${roomId}/tasks/${taskId}/reject`,
-      { method: "POST", json: { version } },
+      { method: "POST" },
     );
     revalidatePath(`/rooms/${roomId}/boards/task`, "page");
     return {
