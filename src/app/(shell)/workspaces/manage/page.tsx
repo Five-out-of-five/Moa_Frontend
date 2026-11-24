@@ -1,31 +1,45 @@
 import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { RoomFormDialog } from "@/features/room/management/RoomFormDialog";
 import { RoomManagementDetails } from "@/features/room/management/RoomManagementDetails";
 import { getRoomManagement } from "@/features/room/management/server";
+import { JOIN_REQUEST_STATUSES } from "@/features/room/management/types";
 import { listMyRoomsForSettings } from "@/features/room/server";
+import { ApiError } from "@/lib/api";
 
 export default async function WorkspaceManagementPage({
   searchParams,
 }: {
-  searchParams: Promise<{ room?: string; tab?: string; create?: string }>;
+  searchParams: Promise<{ room?: string; tab?: string; create?: string; status?: string; page?: string }>;
 }) {
   const query = await searchParams;
   const rooms = await listMyRoomsForSettings();
   const selected = rooms.find(({ id }) => String(id) === query.room) ?? rooms[0];
-  const management = selected ? await getRoomManagement(selected.id) : null;
+  const status = JOIN_REQUEST_STATUSES.find((item) => item === query.status) ?? "PENDING";
+  const page = Number(query.page ?? 0);
+  const showMembers = query.tab === "members";
+  const management = selected && selected.status !== "INACTIVE"
+    ? await getRoomManagement(selected.id, status, Number.isSafeInteger(page) && page >= 0 && page <= 2147483647 ? page : 0, showMembers).catch((error: unknown) => {
+        if (error instanceof ApiError) {
+          if (error.code === "ROOM_INACTIVE") redirect("/workspaces?roomStatus=inactive");
+          if (error.code === "ROOM_NOT_FOUND" || error.code === "ROOM_NOT_MEMBER") redirect("/workspaces");
+        }
+        throw error;
+      })
+    : null;
 
   return (
     <section className="mx-auto flex max-w-7xl flex-col gap-4 lg:h-[calc(100dvh-var(--header-height)-var(--spacing)*12)]">
       <Link
-        href={selected ? `/rooms/${selected.id}` : "/workspaces"}
+        href={selected && selected.status !== "INACTIVE" ? `/rooms/${selected.id}` : "/workspaces"}
         className="text-muted-foreground hover:text-foreground inline-flex w-fit shrink-0 items-center gap-2 text-sm font-medium hover:underline"
       >
         <ArrowLeft aria-hidden="true" className="size-4" />
-        {selected ? "대시보드로 돌아가기" : "워크스페이스 선택으로 돌아가기"}
+        {selected && selected.status !== "INACTIVE" ? "대시보드로 돌아가기" : "워크스페이스 선택으로 돌아가기"}
       </Link>
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
@@ -92,12 +106,12 @@ export default async function WorkspaceManagementPage({
             <RoomManagementDetails
               key={management.room.id}
               management={management}
-              showMembers={query.tab === "members"}
+              showMembers={showMembers}
             />
           </div>
         ) : (
           <p className="text-muted-foreground p-6 text-sm">
-            {selected
+            {selected?.status === "INACTIVE" ? "운영 정책에 따라 비활성화된 방입니다." : selected
               ? "현재 환경에서는 방 설정을 불러올 수 없습니다."
               : "참여 중인 워크스페이스가 없습니다."}
           </p>

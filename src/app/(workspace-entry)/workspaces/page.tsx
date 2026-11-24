@@ -8,10 +8,11 @@ import { RoomFormDialog } from "@/features/room/management/RoomFormDialog";
 import { listMyParticipationResults } from "@/features/room/management/server";
 import { getWorkspaceSelection } from "@/features/room/server";
 
-export default async function WorkspacesPage() {
-  const [{ workspaces, recentWorkspace }, results] = await Promise.all([
+export default async function WorkspacesPage({ searchParams }: { searchParams: Promise<{ roomStatus?: string }> }) {
+  const [{ workspaces, recentWorkspace }, results, query] = await Promise.all([
     getWorkspaceSelection(),
     listMyParticipationResults(),
+    searchParams,
   ]);
 
   return (
@@ -28,6 +29,7 @@ export default async function WorkspacesPage() {
           참여 중인 워크스페이스를 선택하거나 새로운 팀 공간을 만드세요.
         </p>
       </header>
+      {query.roomStatus === "inactive" && <p role="alert" className="mb-4 text-center text-sm">운영 정책에 따라 비활성화된 방입니다.</p>}
 
       {results.length > 0 && (
         <section
@@ -108,11 +110,13 @@ export default async function WorkspacesPage() {
               <Users aria-hidden="true" className="size-4" />
               멤버 {room.memberCount}명
             </p>
-            <Button asChild variant="outline" className="bg-card mt-auto w-full">
+            {room.status === "INACTIVE" ? (
+              <p className="text-muted-foreground mt-auto text-sm">운영 정책에 따라 비활성화된 방입니다.</p>
+            ) : <Button asChild variant="outline" className="bg-card mt-auto w-full">
               <Link href={`/rooms/${room.id}`} aria-label={`${room.name} 워크스페이스 입장`}>
                 워크스페이스 입장 <ArrowRight aria-hidden="true" />
               </Link>
-            </Button>
+            </Button>}
           </li>
         ))}
 

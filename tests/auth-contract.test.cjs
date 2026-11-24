@@ -36,7 +36,7 @@ function fixture({ env = {}, fetch: backend = async () => { throw Error("예상�
     const record = { exports: {} };
     modules.set(file, record);
     const output = ts.transpileModule(fs.readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
-    vm.runInNewContext(output, { module: record, exports: record.exports, require: (id) => load(id, path.dirname(file)), process: { env: { AUTH_USE_MOCK: "false", NODE_ENV: "test", ...env } }, fetch: backend, Headers, Request, Response, URL, URLSearchParams, FormData, AbortController, setTimeout, clearTimeout }, { filename: file });
+    vm.runInNewContext(output, { module: record, exports: record.exports, require: (id) => load(id, path.dirname(file)), process: { env: { AUTH_USE_MOCK: "false", NODE_ENV: "test", ...env } }, fetch: backend, Headers, Request, Response, URL, URLSearchParams, FormData, Blob, File, Buffer, AbortController, setTimeout, clearTimeout }, { filename: file });
     return record.exports;
   }
   return { load, jar, values, options };
@@ -294,4 +294,51 @@ test("프로필 이름만 수정할 때 이미지와 역할 표시 키를 보내
   const input = new FormData();
   input.set("nickname", "새 이름");
   assert.equal((await f.load("@/features/room/profile/actions").updateRoomProfileAction("3", {}, input)).success, true);
+});
+
+test("방 개설은 JSON multipart 파트를 보내고 서버가 반환한 방으로 이동한다", async () => {
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    assert.equal(new URL(url).pathname, "/api/v1/rooms");
+    assert.equal(init.method, "POST");
+    assert.equal(new Headers(init.headers).has("content-type"), false);
+    const request = init.body.get("request");
+    assert.equal(request.type, "application/json");
+    assert.deepEqual(JSON.parse(await request.text()), { name: "연동 테스트", description: "" });
+    assert.equal(init.body.has("image"), false);
+    return ok({ roomId: 31 });
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const input = new FormData();
+  input.set("name", "연동 테스트");
+  await assert.rejects(f.load("@/features/room/management/actions").saveManagedRoomAction(null, {}, input), (error) => error.location === "/rooms/31");
+});
+
+test("방 설명을 비우면 빈 문자열만 PATCH하고 기존 이미지를 유지한다", async () => {
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    assert.equal(new URL(url).pathname, "/api/v1/rooms/3");
+    if (!init.method) return ok({ roomId: 3, name: "테스트 방", description: "기존 설명", myMembership: { role: "OWNER" } });
+    assert.equal(init.method, "PATCH");
+    assert.deepEqual(JSON.parse(init.body), { description: "" });
+    return ok({ roomId: 3 });
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const input = new FormData();
+  input.set("description", "");
+  const result = await f.load("@/features/room/management/actions").saveManagedRoomAction(3, {}, input);
+  assert.equal(result.success, true);
+});
+
+test("채팅 사이드바 목록은 활성 방의 채널 API를 사용한다", async () => {
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url) => {
+    const path = new URL(url).pathname;
+    if (path === "/api/v1/rooms") return ok([{ roomId: 3, name: "활성 방", status: "ACTIVE" }, { roomId: 4, name: "비활성 방", status: "INACTIVE" }]);
+    assert.equal(path, "/api/v1/rooms/3/channels");
+    return ok([{ channelId: 16, channelType: "PUBLIC", name: "일반" }, { channelId: 17, channelType: "DIRECT", peer: { accountId: 20, displayName: "모아" } }]);
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const { listMyChannels, listMyDmThreads } = f.load("@/features/chat/server");
+  const [channels, dms] = await Promise.all([listMyChannels(), listMyDmThreads()]);
+  assert.equal(channels[0].id, 16);
+  assert.equal(dms[0].roomId, 3);
+  assert.equal(dms[0].accountId, 20);
 });

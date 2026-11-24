@@ -24,17 +24,23 @@ export function RoomFormDialog({
   initiallyOpen = false,
   trigger,
 }: {
-  room?: Room;
+  room?: Pick<Room, "id" | "name" | "description" | "imageUrl">;
   initiallyOpen?: boolean;
   trigger?: ReactElement;
 }) {
   const [open, setOpen] = useState(initiallyOpen);
-  const [result, action, pending] = useActionState(
-    saveManagedRoomAction.bind(null, room?.id ?? null),
-    {},
-  );
   const [name, setName] = useState(room?.name ?? "");
   const [description, setDescription] = useState(room?.description ?? "");
+  const [result, action, pending] = useActionState(
+    async (previous: Awaited<ReturnType<typeof saveManagedRoomAction>>, data: FormData) => {
+      if (room && name === room.name) data.delete("name");
+      if (room && description === (room.description ?? "")) data.delete("description");
+      const response = await saveManagedRoomAction(room?.id ?? null, previous, data);
+      if (response.success) setOpen(false);
+      return response;
+    },
+    {},
+  );
   useEffect(() => {
     if (!result.message) return;
     if (result.success) toast.success(result.message);

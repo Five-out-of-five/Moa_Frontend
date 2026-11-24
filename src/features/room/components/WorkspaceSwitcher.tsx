@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import type { Room } from "@/types/db";
 
 interface Props {
-  rooms: readonly Pick<Room, "id" | "name">[];
+  rooms: readonly (Pick<Room, "id" | "name"> & { status?: "ACTIVE" | "INACTIVE" })[];
   fallbackRoomId: number | null;
 }
 
@@ -42,7 +42,7 @@ export function WorkspaceSwitcher({ rooms, fallbackRoomId }: Props) {
     return fallbackRoomId;
   }, [pathname, fallbackRoomId]);
 
-  const current = rooms.find((r) => r.id === currentId) ?? rooms[0] ?? null;
+  const current = rooms.find((r) => r.id === currentId) ?? rooms.find((r) => r.status !== "INACTIVE") ?? rooms[0] ?? null;
 
   if (!current) {
     return (
@@ -75,6 +75,9 @@ export function WorkspaceSwitcher({ rooms, fallbackRoomId }: Props) {
           워크스페이스
         </DropdownMenuLabel>
         {rooms.map((room) => {
+          if (room.status === "INACTIVE") return (
+            <DropdownMenuItem key={room.id} disabled>{room.name} · 비활성화</DropdownMenuItem>
+          );
           const active = room.id === current.id;
           return (
             <DropdownMenuItem key={room.id} asChild>

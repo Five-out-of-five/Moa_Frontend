@@ -1,18 +1,21 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 
 import { getMyAccount } from "@/features/account/server";
+import { api, ApiError } from "@/lib/api";
 import { isActiveMember, isRoomOwner } from "@/lib/permission";
 import { adminRoomsOverlay } from "@/mocks/admin";
 import { isMock } from "@/mocks/config";
 import { addDefaultRoomWidgets, roomMembers, rooms } from "@/mocks/db";
 
 import { readProfileImage } from "../first-profile/validation";
+import { isRoomId } from "./api-server";
 import { purgeMockRoom, retireMockMember } from "./cleanup";
 import { addMockRoomMember, getMockInviteToken, roomManagementMock } from "./mock-state";
+import { saveApiRoom } from "./save-api-room";
 import { getManagedRoom } from "./server";
 import { ROOM_CREATE_LIMIT, ROOM_MEMBER_LIMIT, type RoomManagementResult } from "./types";
 
@@ -26,12 +29,13 @@ export async function saveManagedRoomAction(
   _previous: RoomManagementResult,
   form: FormData,
 ): Promise<RoomManagementResult> {
-  if (!isMock) return { message: "현재 환경에서는 워크스페이스를 저장할 수 없습니다." };
-  const fields = roomFields.safeParse({
-    name: form.get("name"),
-    description: form.get("description") ?? "",
+  if (roomId !== null && !isRoomId(roomId)) return { message: "워크스페이스를 찾을 수 없습니다." };
+  const fields = (roomId === null ? roomFields : roomFields.partial()).safeParse({
+    name: form.get("name") ?? undefined,
+    description: form.get("description") ?? (roomId === null ? "" : undefined),
   });
-  const image = await readProfileImage(form.get("image"));
+  const file = form.get("image");
+  const image = await readProfileImage(file, isMock);
   if (!fields.success || image.error) {
     const errors = fields.success ? undefined : fields.error.flatten().fieldErrors;
     return {
@@ -43,17 +47,21 @@ export async function saveManagedRoomAction(
     };
   }
   const { name, description } = fields.data;
+  if (!isMock) {
+    return saveApiRoom(roomId, { name, description }, file instanceof File && file.size ? file : null, form.get("removeImage") === "on");
+  }
   if (roomId !== null) {
     const context = await getManagedRoom(roomId);
     if (!context || !isRoomOwner(context.membership))
       return { message: "방장만 설정을 변경할 수 있습니다." };
-    context.room.name = name;
-    context.room.description = description || null;
+    if (name !== undefined) context.room.name = name;
+    if (description !== undefined) context.room.description = description || null;
     if (image.imageUrl || form.get("removeImage") === "on")
       context.room.imageUrl = image.imageUrl ?? null;
     revalidatePath("/", "layout");
     return { success: true, message: "워크스페이스 정보를 저장했습니다." };
   }
+  if (name === undefined) return { errors: { name: "이름을 입력해 주세요." } };
   const account = await getMyAccount();
   const createdCount = rooms.filter((room) => {
     const creatorId =
@@ -101,6 +109,22 @@ export async function deleteManagedRoomAction(
   _previous: RoomManagementResult,
   form: FormData,
 ): Promise<RoomManagementResult> {
+  if (!isRoomId(roomId)) return { message: "워크스페이스를 찾을 수 없습니다." };
+  if (!isMock) {
+    const confirmName = form.get("confirmation");
+    if (typeof confirmName !== "string" || !confirmName) return { errors: { confirmation: "워크스페이스 이름을 입력해 주세요." } };
+    try {
+      await api(`/api/v1/rooms/${roomId}`, { method: "DELETE", json: { confirmName }, cache: "no-store" });
+    } catch (error) {
+      unstable_rethrow(error);
+      if (error instanceof ApiError && error.code === "ROOM_DELETE_CONFIRM_MISMATCH") {
+        return { errors: { confirmation: error.message } };
+      }
+      return { message: error instanceof ApiError ? error.message : "워크스페이스를 삭제하지 못했습니다." };
+    }
+    revalidatePath("/", "layout");
+    redirect("/workspaces");
+  }
   const context = await getManagedRoom(roomId);
   if (!context || !isRoomOwner(context.membership))
     return { message: "방장만 워크스페이스를 삭제할 수 있습니다." };
@@ -117,6 +141,24 @@ export async function updateManagedMemberAction(
   accountId: number,
   operation: "transfer" | "remove",
 ): Promise<RoomManagementResult> {
+  if (!isRoomId(roomId) || !isRoomId(accountId) || (operation !== "transfer" && operation !== "remove")) {
+    return { message: "멤버 관리 요청을 확인해 주세요." };
+  }
+  if (!isMock) {
+    try {
+      const path = `/api/v1/rooms/${roomId}`;
+      if (operation === "transfer") {
+        await api(`${path}/delegate-owner`, { method: "POST", json: { targetAccountId: accountId }, cache: "no-store" });
+      } else {
+        await api(`${path}/members/${accountId}`, { method: "DELETE", cache: "no-store" });
+      }
+    } catch (error) {
+      unstable_rethrow(error);
+      return { message: error instanceof ApiError ? error.message : "멤버 정보를 변경하지 못했습니다." };
+    }
+    revalidatePath("/", "layout");
+    return { success: true, message: operation === "transfer" ? "방장 권한을 위임했습니다." : "멤버를 내보냈습니다." };
+  }
   const context = await getManagedRoom(roomId);
   if (!context || !isRoomOwner(context.membership))
     return { message: "방장만 멤버를 관리할 수 있습니다." };

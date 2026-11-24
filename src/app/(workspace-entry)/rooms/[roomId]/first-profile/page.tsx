@@ -1,8 +1,8 @@
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 
 import { MoaLogo } from "@/components/common/MoaLogo";
 import { FirstProfileForm } from "@/features/room/first-profile/FirstProfileForm";
-import { getFirstRoomProfile } from "@/features/room/first-profile/server";
+import { getRoomPageProfile } from "@/features/room/first-profile/server";
 
 export const dynamic = "force-dynamic";
 
@@ -12,8 +12,7 @@ export default async function FirstProfilePage({
   params: Promise<{ roomId: string }>;
 }) {
   const { roomId } = await params;
-  const entry = await getFirstRoomProfile(roomId);
-  if (!entry) notFound();
+  const entry = await getRoomPageProfile(roomId);
   if (!entry.setup?.needsSetup) redirect(`/rooms/${entry.room.id}`);
 
   return (

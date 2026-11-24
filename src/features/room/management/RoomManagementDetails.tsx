@@ -4,10 +4,10 @@ import { Button } from "@/components/ui/button";
 
 import { MemberProfileLink } from "../profile/MemberProfileLink";
 import { deleteManagedRoomAction, updateManagedMemberAction } from "./actions";
-import { decideRoomJoinAction } from "./invite-actions";
 import { InviteCopyButton } from "./InviteCopyButton";
 import { RoomCommand } from "./RoomCommand";
 import { RoomFormDialog } from "./RoomFormDialog";
+import { RoomJoinRequests } from "./RoomJoinRequests";
 import type { getRoomManagement } from "./server";
 
 type Management = NonNullable<Awaited<ReturnType<typeof getRoomManagement>>>;
@@ -70,8 +70,7 @@ export function RoomManagementDetails({
 }
 
 function SettingsPanel({ management }: { management: Management }) {
-  const { room, isOwner, inviteToken } = management;
-  const invitePath = inviteToken ? `/invite/${inviteToken}` : null;
+  const { room, isOwner, invitePath, inviteUrl } = management;
   return (
     <div className="space-y-4 p-5">
       <section className="rounded-card border p-4">
@@ -98,9 +97,9 @@ function SettingsPanel({ management }: { management: Management }) {
           </p>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <Link href={invitePath} className="text-primary text-sm break-all hover:underline">
-              {invitePath}
+              {inviteUrl ?? invitePath}
             </Link>
-            <InviteCopyButton path={invitePath} />
+            <InviteCopyButton path={inviteUrl ?? invitePath} />
           </div>
         </section>
       )}
@@ -131,43 +130,10 @@ function SettingsPanel({ management }: { management: Management }) {
 }
 
 function MembersPanel({ management }: { management: Management }) {
-  const { room, isOwner, requests, members, account } = management;
+  const { room, isOwner, members, account } = management;
   return (
     <div className="space-y-4 p-5">
-      {isOwner && (
-        <section className="rounded-card border p-4">
-          <h3 className="font-semibold">가입 요청 · {requests.length}건</h3>
-          {requests.length ? (
-            <ul className="divide-border mt-2 divide-y">
-              {requests.map((request) => (
-                <li
-                  key={request.id}
-                  className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm"
-                >
-                  <span>{request.name}</span>
-                  <div className="flex gap-2">
-                    <RoomCommand
-                      label="거절"
-                      confirmText={`${request.name}님의 참여 요청을 거절할까요?`}
-                      action={decideRoomJoinAction.bind(
-                        null, room.id, request.accountId, request.id, false,
-                      )}
-                    />
-                    <RoomCommand
-                      label="승인"
-                      action={decideRoomJoinAction.bind(
-                        null, room.id, request.accountId, request.id, true,
-                      )}
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-muted-foreground mt-2 text-sm">대기 중인 참여 요청이 없습니다.</p>
-          )}
-        </section>
-      )}
+      {isOwner && <RoomJoinRequests management={management} />}
       <section className="rounded-card border p-4">
         <h3 className="font-semibold">
           활성 멤버 · {members.length}/{room.maxMemberCount}명

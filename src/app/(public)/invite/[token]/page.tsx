@@ -14,13 +14,20 @@ export const dynamic = "force-dynamic";
 
 export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const invite = await getRoomInvite(token);
-  if (!invite) return <InviteEntry invalid />;
-  if (invite.isMember) redirect(`/rooms/${invite.room.id}`);
-  const { room, account, isKicked, requestStatus } = invite;
+  if (!/^[\w-]+$/.test(token)) return <InviteEntry invalid />;
   const invitePath = `/invite/${token}`;
   const loginHref = `/login?next=${encodeURIComponent(invitePath)}`;
-  const full = room.memberCount >= room.maxMemberCount;
+  const invite = await getRoomInvite(token);
+  if (!invite) return <InviteEntry invalid />;
+  if (invite.kind === "inactive") return <p role="alert">운영 정책에 따라 비활성화된 방입니다.</p>;
+  if (invite.kind === "login") return (
+    <>
+      <InviteEntryForm invitePath={invitePath} />
+      <Button asChild className="w-full"><Link href={loginHref}>로그인하고 참여 요청하기</Link></Button>
+    </>
+  );
+  if (invite.isMember) redirect(`/rooms/${invite.room.id}`);
+  const { room, isLoggedIn, isKicked, requestStatus, isFull } = invite;
 
   return (
     <>
@@ -54,7 +61,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
           멤버 {room.memberCount}/{room.maxMemberCount}명 · 방장 승인 후 입장
         </p>
       </section>
-      {!account ? (
+      {!isLoggedIn ? (
         <Button asChild className="w-full">
           <Link href={loginHref}>
             로그인하고 참여 요청하기 <ArrowRight aria-hidden="true" />
@@ -80,7 +87,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
               이전 참여 요청이 만료됐습니다.
             </p>
           )}
-          {full ? (
+          {isFull ? (
             <p role="status" className="text-sm">
               워크스페이스 정원이 가득 찼습니다.
             </p>

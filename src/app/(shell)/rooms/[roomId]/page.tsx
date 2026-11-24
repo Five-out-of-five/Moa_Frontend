@@ -1,17 +1,15 @@
 import Image from "next/image";
-import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { Assistant } from "@/features/ai/Assistant";
-import { getFirstRoomProfile } from "@/features/room/first-profile/server";
+import { getRoomPageProfile } from "@/features/room/first-profile/server";
 import { RoomDashboard } from "@/features/widget/RoomDashboard";
 import { WidgetLoading } from "@/features/widget/WidgetSummary";
 
 export default async function RoomPage({ params }: { params: Promise<{ roomId: string }> }) {
   const { roomId } = await params;
-  const entry = await getFirstRoomProfile(roomId);
+  const entry = await getRoomPageProfile(roomId);
 
-  if (!entry) notFound();
   const { room, setup } = entry;
   const profile = setup?.profile;
 

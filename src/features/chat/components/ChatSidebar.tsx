@@ -175,7 +175,7 @@ export function ChatSidebar({ channels, dms, profiles }: Props) {
                   key={dm.id}
                   dm={dm}
                   active={
-                    activePathMatch.kind === "dms" && activePathMatch.id === dm.id
+                    activePathMatch.kind === (dm.roomId ? "channels" : "dms") && activePathMatch.id === dm.id
                   }
                 />
               ))}
@@ -273,7 +273,7 @@ function DmRow({ dm, active }: { dm: DirectMessageThread; active: boolean }) {
   return (
     <li>
       <Link
-        href={`/dms/${dm.id}`}
+        href={dm.roomId ? `/rooms/${dm.roomId}/channels/${dm.id}` : `/dms/${dm.id}`}
         aria-current={active ? "page" : undefined}
         className={cn(
           "group flex h-8 items-center gap-2 rounded-[var(--radius-control)] px-2 text-sm transition-colors",

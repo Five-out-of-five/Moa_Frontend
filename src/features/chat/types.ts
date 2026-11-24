@@ -18,6 +18,7 @@ export interface ChatChannel {
 
 export interface DirectMessageThread {
   id: number;
+  roomId?: number;
   /** 상대 accountId */
   accountId: number;
   /** 상대 이름 */
