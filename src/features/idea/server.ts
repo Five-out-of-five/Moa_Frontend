@@ -1,5 +1,6 @@
 import "server-only";
 
+import { unstable_rethrow } from "next/navigation";
 import { cache } from "react";
 
 import { api, ApiError } from "@/lib/api";
@@ -131,7 +132,7 @@ export function getIdeaDiscussions(
       {
         comments: comments.slice(0, card.commentCount).map((text, index) => {
           const author = members[(card.id + index) % members.length] ?? card.author;
-          return { text, author: author.displayName, authorId: author.accountId };
+          return { id: card.id * 10 + index + 1, text, author: author.displayName, authorId: author.accountId };
         }),
         reactions: emoji
           .map((value, index) => ({
@@ -144,4 +145,28 @@ export function getIdeaDiscussions(
       },
     ]),
   );
+}
+
+export async function loadIdeaDiscussions(cards: IdeaCard[], members: MemberRef[]) {
+  if (isMock) return getIdeaDiscussions(cards, members);
+  const entries = await Promise.all(cards.filter((card) => card.commentCount > 0).map(async (card) => {
+    const discussion: IdeaDiscussion = { comments: [], reactions: [] };
+    try {
+      const comments = await api<Schemas["CommentResponse"][]>(
+        `/api/v1/rooms/${card.roomId}/idea-cards/${card.id}/comments`, { cache: "no-store" },
+      );
+      discussion.comments = comments.flatMap((comment) => comment.commentId == null ? [] : [{
+        id: comment.commentId,
+        authorId: comment.writer?.accountId ?? 0,
+        author: comment.writer?.displayName ?? "알 수 없는 사용자",
+        text: comment.deleted ? "삭제된 댓글입니다." : comment.content ?? "",
+        deleted: comment.deleted,
+      }]);
+    } catch (error) {
+      unstable_rethrow(error);
+      discussion.commentsUnavailable = true;
+    }
+    return [card.id, discussion] as const;
+  }));
+  return Object.fromEntries(entries);
 }

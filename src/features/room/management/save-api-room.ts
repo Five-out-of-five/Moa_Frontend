@@ -3,6 +3,7 @@ import "server-only";
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 
+import { discardRoomFileUpload, uploadRoomFile, validateRoomUpload } from "@/features/room-files/upload-server";
 import { api, ApiError } from "@/lib/api";
 import { isRoomOwner } from "@/lib/permission";
 import type { components } from "@/types/api";
@@ -17,11 +18,15 @@ export async function saveApiRoom(
   shouldRemoveImage: boolean,
 ): Promise<RoomManagementResult> {
   let createdId: number | undefined;
+  let uploadedId: number | undefined;
   try {
     if (roomId === null) {
       const body = new FormData();
       body.set("request", new Blob([JSON.stringify(fields)], { type: "application/json" }));
-      if (file) body.set("image", file);
+      if (file) {
+        validateRoomUpload("ROOM_IMAGE", file);
+        body.set("image", file);
+      }
       const result = await api<components["schemas"]["RoomDetailResponse"]>("/api/v1/rooms", {
         method: "POST",
         body,
@@ -40,21 +45,21 @@ export async function saveApiRoom(
       if (fields.description !== undefined && fields.description !== (detail.description ?? ""))
         json.description = fields.description;
       if (file) {
-        const body = new FormData();
-        body.set("file", file);
-        const uploaded = await api<components["schemas"]["FileResponse"]>(
-          `${path}/files?purpose=ROOM_IMAGE`,
-          { method: "POST", body, cache: "no-store" },
-        );
-        if (uploaded.fileId == null || !isRoomId(uploaded.fileId))
-          throw new Error("이미지 파일 번호를 받지 못했습니다.");
-        json.imageFileId = uploaded.fileId;
+        uploadedId = (await uploadRoomFile(roomId, "ROOM_IMAGE", file)).fileId;
+        json.imageFileId = uploadedId;
       } else if (shouldRemoveImage) json.imageFileId = null;
       if (Object.keys(json).length) await api(path, { method: "PATCH", json, cache: "no-store" });
     }
   } catch (error) {
     unstable_rethrow(error);
     if (error instanceof ApiError) {
+      if (roomId !== null && uploadedId !== undefined && [400, 403, 404, 409].includes(error.status)) {
+        try {
+          await discardRoomFileUpload(roomId, uploadedId);
+        } catch (cleanupError) {
+          unstable_rethrow(cleanupError);
+        }
+      }
       const field = (name: string) => error.fields?.find((item) => item.field === name)?.reason;
       const errors = {
         name: field("name"),

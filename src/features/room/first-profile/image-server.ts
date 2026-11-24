@@ -4,10 +4,6 @@ import { cookies } from "next/headers";
 
 import { api } from "@/lib/api";
 
-export function profileFilePath(roomId: number) {
-  return `/api/v1/rooms/${roomId}/files`;
-}
-
 export function profileUploadCookie(roomId: number, fileId: number) {
   return `moa_profile_upload_${roomId}_${fileId}`;
 }

@@ -3,10 +3,11 @@
 import { cookies } from "next/headers";
 import { unstable_rethrow } from "next/navigation";
 
-import { api, ApiError } from "@/lib/api";
+import { discardRoomFileUpload, uploadRoomFile } from "@/features/room-files/upload-server";
+import { ApiError } from "@/lib/api";
 import { isMock } from "@/mocks/config";
 
-import { finishProfileUpload, getStagedProfileFile, profileFilePath, profileUploadCookie } from "./image-server";
+import { finishProfileUpload, getStagedProfileFile, profileUploadCookie } from "./image-server";
 import { getFirstRoomProfile } from "./server";
 import { readProfileImage } from "./validation";
 
@@ -19,13 +20,9 @@ export async function uploadProfileImageAction(roomId: string, form: FormData) {
   if (image.error) return { error: image.error };
   if (isMock) return { previewUrl: image.imageUrl ?? undefined };
   try {
-    const body = new FormData();
-    body.set("file", file);
-    const { fileId, previewUrl } = await api<{ fileId: number; previewUrl: string }>(
-      `${profileFilePath(entry.room.id)}?purpose=PROFILE_IMAGE`,
-      { method: "POST", body, cache: "no-store" },
-    );
-    if (!Number.isSafeInteger(fileId) || fileId <= 0 || !previewUrl) {
+    const { fileId, previewUrl } = await uploadRoomFile(entry.room.id, "PROFILE_IMAGE", file);
+    if (!previewUrl) {
+      await discardRoomFileUpload(entry.room.id, fileId);
       return { error: "이미지 업로드 응답을 확인하지 못했습니다." };
     }
     (await cookies()).set(profileUploadCookie(entry.room.id, fileId), "1", {
@@ -45,7 +42,7 @@ export async function discardProfileImageAction(roomId: string, fileId: number) 
   const staged = await getStagedProfileFile(entry.room.id, String(fileId));
   if (!staged) return { error: "취소할 이미지를 찾을 수 없습니다." };
   try {
-    await api(`${profileFilePath(entry.room.id)}/${staged}`, { method: "DELETE", cache: "no-store" });
+    await discardRoomFileUpload(entry.room.id, staged);
   } catch (error) {
     unstable_rethrow(error);
     if (!(error instanceof ApiError && error.code === "FILE_NOT_FOUND")) {
