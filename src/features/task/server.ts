@@ -290,10 +290,14 @@ export async function getRoomWorkload(roomId: number): Promise<RoomWorkload> {
     return { members, averageScore, warnings };
   }
   const { query } = await getApiAccountContext();
-  return api<RoomWorkload>(
+  const res = await api<RoomWorkload>(
     `/api/v1/rooms/${roomId}/tasks/workload?${query}`,
     { cache: "no-store" },
   );
+  // ⚠️ BE OpenAPI 상 `warnings` 가 optional 로 선언되어 있어 응답에서 생략될 수 있다.
+  //    FE 쓰임새(Set 생성)는 배열을 가정하므로 경계에서 `[]` 로 정규화해 TaskBalancer 가
+  //    실패 없이 렌더되도록 한다 (CodeRabbit).
+  return { ...res, warnings: res.warnings ?? [] };
 }
 
 function priorityWeight(p: TaskPriority): number {

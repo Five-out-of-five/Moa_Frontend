@@ -372,7 +372,12 @@ function SprintProgressBar({
   const remain = Math.max(0, total - done);
   const percent =
     progress?.progressRate ?? (total > 0 ? Math.round((done / total) * 100) : 0);
-  const sprintName = progress?.sprint?.name ?? activeSprint?.name ?? null;
+  // progress 가 있으면 그 응답을 그대로 신뢰 — progress.sprint 가 null (스프린트 종료) 이면
+  // 이름도 null 로. 이전 activeSprint 로 fallback 하면 "이전 이름 + 새 0% 집계" 가 섞여 보임.
+  // progress 조회 실패(null) 일 때만 activeSprint 로 fallback (CodeRabbit).
+  const sprintName = progress
+    ? (progress.sprint?.name ?? null)
+    : (activeSprint?.name ?? null);
   const dueSoon = progress?.dueSoonCount ?? 0;
 
   return (
