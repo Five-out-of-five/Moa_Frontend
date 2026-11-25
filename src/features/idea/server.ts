@@ -1,40 +1,47 @@
 import "server-only";
 
-import { unstable_rethrow } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { cache } from "react";
 
-import { api, ApiError } from "@/lib/api";
-import { getApiAccountContext } from "@/lib/api-account";
+import { ApiError } from "@/lib/api";
 import { isMock } from "@/mocks/config";
-import { boardSessions, ideaCards } from "@/mocks/db";
+import { boardSessions, ideaCards, votes } from "@/mocks/db";
 import type { components } from "@/types/api";
-import type { BoardSession, IdeaCard, MemberRef } from "@/types/db";
+import type { IdeaCard, MemberRef } from "@/types/db";
 
-import { closeExpiredIdeaSession, getIdeaRevision } from "./mock-board";
+import { ideaApi, readIdeaBoard } from "./api-board";
+import { closeExpiredIdeaSession, getIdeaRevision, markIdeaChanged } from "./mock-board";
+import { readMockDiscussion } from "./mock-discussion";
 import type { IdeaDiscussion } from "./model";
 
-export async function getIdeaBoard(roomId: number, sessionId?: number) {
+export function refreshIdeaBoard(roomId: number) {
+  if (isMock) markIdeaChanged(roomId);
+  revalidatePath(`/rooms/${roomId}/boards/idea`);
+  revalidatePath(`/rooms/${roomId}`);
+  return { saved: true };
+}
+
+export async function getIdeaBoard(roomId: number, sessionId?: number, page?: number) {
   if (!isMock)
-    return { ...(await getLiveIdeaBoard(roomId, sessionId)), editable: false, revision: 0 };
+    return { ...(await readIdeaBoard(roomId, sessionId, page)), editable: true, usesMockStream: false, revision: 0 };
   closeExpiredIdeaSession(roomId);
   const sessions = boardSessions.filter((item) => item.roomId === roomId);
   const active = sessions.find(({ state }) => state === "ACTIVE") ?? null;
   const history = sessions
     .filter(({ state }) => state === "CLOSED")
     .sort((a, b) => (b.endsAt ?? b.startsAt).localeCompare(a.endsAt ?? a.startsAt));
-  const cards = ideaCards.filter((card) => card.roomId === roomId);
-  return { active, history, cards, editable: true, revision: getIdeaRevision(roomId) };
+  const cards = ideaCards.filter((card) => card.roomId === roomId).map((card) => {
+    const vote = card.linkedVote && votes.find(({ voteId, roomId: room }) => voteId === card.linkedVote?.id && room === roomId);
+    return vote ? { ...card, linkedVote: { id: vote.voteId, status: vote.status } } : card;
+  });
+  return { active, selected: sessionId === undefined ? active : history.find(({ id }) => id === sessionId), history, cards, editable: true, usesMockStream: true, hasNextHistory: false, revision: getIdeaRevision(roomId) };
 }
 
 type Schemas = components["schemas"];
 
-const getLiveIdeaCard = cache(async (roomId: number, cardId: number) => {
-  const { init, query } = await getApiAccountContext();
+export const getLiveIdeaCard = cache(async (roomId: number, cardId: number) => {
   try {
-    return await api<Schemas["IdeaCardDetailResponse"]>(
-      `/api/v1/rooms/${roomId}/idea-cards/${cardId}?${query}`,
-      init,
-    );
+    return await ideaApi<Schemas["IdeaCardDetailResponse"]>(roomId, `/idea-cards/${cardId}`);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) return null;
     throw error;
@@ -46,67 +53,6 @@ export async function getLiveIdeaBriefingTarget(roomId: number, cardId: number) 
   if (!card) return null;
   const query = card.sessionClosed && card.sessionId ? `?session=${card.sessionId}` : "";
   return { href: `/rooms/${roomId}/boards/idea${query}`, focus: cardId };
-}
-
-async function getLiveIdeaBoard(roomId: number, requestedSessionId?: number) {
-  const { init, query } = await getApiAccountContext();
-  const root = `/api/v1/rooms/${roomId}`;
-  const empty = { active: null, history: [], cards: [] };
-  const sessionPath = requestedSessionId ?? "current";
-  const session = await api<Schemas["SessionResponse"] | null>(
-    `${root}/sessions/${sessionPath}?${query}`,
-    init,
-  ).catch((error: unknown) => {
-    if (error instanceof ApiError && error.status === 404) return null;
-    throw error;
-  });
-  const expectedStatus = requestedSessionId === undefined ? "IN_PROGRESS" : "CLOSED";
-  if (!session?.sessionId || session.status !== expectedStatus || !session.startedAt) return empty;
-  const sessionId = session.sessionId;
-  const entries = await api<Schemas["IdeaCardSummaryResponse"][]>(
-    `${root}/idea-cards?${query}&sessionId=${sessionId}`,
-    init,
-  );
-  const details = await Promise.all(
-    entries.flatMap(({ cardId }) => (cardId ? [getLiveIdeaCard(roomId, cardId)] : [])),
-  );
-  const cards: IdeaCard[] = details.flatMap((item) => {
-    if (!item?.cardId || !item.cardType || !item.createdAt || item.sessionId !== sessionId)
-      return [];
-    return [
-      {
-        id: item.cardId,
-        roomId,
-        sessionId,
-        cardType: item.cardType,
-        title: item.title ?? "",
-        content: item.content ?? "",
-        createdAt: item.createdAt,
-        sortOrder: item.sortOrder ?? 0,
-        commentCount: item.commentCount ?? 0,
-        convertedTaskId: item.convertedTask?.taskId ?? null,
-        reactionCount:
-          item.reactions?.reduce((sum, reaction) => sum + (reaction.count ?? 0), 0) ?? 0,
-        author: {
-          accountId: item.writer?.accountId ?? 0,
-          displayName: item.writer?.displayName ?? "알 수 없는 사용자",
-          profileImageUrl: item.writer?.profileImageUrl ?? null,
-          memberStatus: item.writer?.memberStatus ?? "LEFT",
-        },
-      },
-    ];
-  });
-  const selected: BoardSession = {
-    id: sessionId,
-    roomId,
-    title: session.title ?? "회차",
-    state: session.status === "CLOSED" ? "CLOSED" : "ACTIVE",
-    startsAt: session.startedAt,
-    endsAt: session.closedAt ?? session.deadlineAt ?? null,
-  };
-  return selected.state === "CLOSED"
-    ? { active: null, history: [selected], cards }
-    : { active: selected, history: [], cards };
 }
 
 export function getMockIdeaSnapshot(roomId: number) {
@@ -125,11 +71,11 @@ export function getIdeaDiscussions(
     "팀이 기준을 함께 정하면 더 쉽게 진행할 수 있을 것 같아요.",
     "다음 회차에서 결과도 공유해 주세요.",
   ];
-  const emoji = ["👍", "👏", "💡"];
+  const emoji = ["THUMBS_UP", "CLAP", "THINKING"];
   return Object.fromEntries(
     cards.map((card) => [
       card.id,
-      {
+      readMockDiscussion(card, () => ({
         comments: comments.slice(0, card.commentCount).map((text, index) => {
           const author = members[(card.id + index) % members.length] ?? card.author;
           return { id: card.id * 10 + index + 1, text, author: author.displayName, authorId: author.accountId };
@@ -142,31 +88,7 @@ export function getIdeaDiscussions(
               Number(index < card.reactionCount % emoji.length),
           }))
           .filter(({ count }) => count > 0),
-      },
+      })),
     ]),
   );
-}
-
-export async function loadIdeaDiscussions(cards: IdeaCard[], members: MemberRef[]) {
-  if (isMock) return getIdeaDiscussions(cards, members);
-  const entries = await Promise.all(cards.filter((card) => card.commentCount > 0).map(async (card) => {
-    const discussion: IdeaDiscussion = { comments: [], reactions: [] };
-    try {
-      const comments = await api<Schemas["CommentResponse"][]>(
-        `/api/v1/rooms/${card.roomId}/idea-cards/${card.id}/comments`, { cache: "no-store" },
-      );
-      discussion.comments = comments.flatMap((comment) => comment.commentId == null ? [] : [{
-        id: comment.commentId,
-        authorId: comment.writer?.accountId ?? 0,
-        author: comment.writer?.displayName ?? "알 수 없는 사용자",
-        text: comment.deleted ? "삭제된 댓글입니다." : comment.content ?? "",
-        deleted: comment.deleted,
-      }]);
-    } catch (error) {
-      unstable_rethrow(error);
-      discussion.commentsUnavailable = true;
-    }
-    return [card.id, discussion] as const;
-  }));
-  return Object.fromEntries(entries);
 }

@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { api, ApiError } from "@/lib/api";
 import { isMock } from "@/mocks/config";
-import { accounts, roomMembers, votes } from "@/mocks/db";
+import { accounts, ideaCards, roomMembers, votes } from "@/mocks/db";
 import type { MemberRef, VoteDetail, VoteType } from "@/types/db";
 
 const submitBallotSchema = z.object({
@@ -150,6 +150,12 @@ export async function createVoteAction(
   const normalizedMax = voteType === "MULTIPLE" ? maxSelectCount : 1;
 
   if (isMock) {
+    const source = sourceCardId === undefined ? undefined : ideaCards.find(({ id, roomId: room, cardType }) =>
+      id === sourceCardId && room === roomId && cardType === "AGENDA",
+    );
+    if (sourceCardId !== undefined && (!source || source.linkedVote)) {
+      return { kind: "error", message: "투표에 연결할 안건 카드를 확인해 주세요." };
+    }
     const me = accounts[0];
     if (!me) {
       return { kind: "error", message: "현재 계정을 확인하지 못했습니다." };
@@ -183,7 +189,7 @@ export async function createVoteAction(
       deadlineAt,
       closeReason: null,
       creator,
-      sourceCard: null,
+      sourceCard: source ? { cardId: source.id, title: source.title } : null,
       parentVoteId: null,
       version: 1,
       participantCount: 0,
@@ -198,6 +204,10 @@ export async function createVoteAction(
       tied: false,
     };
     votes.push({ ...detail, roomId, createdAt: new Date().toISOString() });
+    if (source) {
+      source.linkedVote = { id: newVoteId, status: "OPEN" };
+      revalidatePath(`/rooms/${roomId}/boards/idea`);
+    }
     revalidatePath(`/rooms/${roomId}/votes`, "page");
     return { kind: "ok", vote: detail };
   }
@@ -215,6 +225,7 @@ export async function createVoteAction(
         ...(sourceCardId !== undefined && { sourceCardId }),
       },
     });
+    if (sourceCardId !== undefined) revalidatePath(`/rooms/${roomId}/boards/idea`);
     revalidatePath(`/rooms/${roomId}/votes`, "page");
     return { kind: "ok", vote: res };
   } catch (e) {
@@ -429,13 +440,17 @@ export async function deleteVoteAction(
       return { kind: "error", message: "투표 작성자만 삭제할 수 있어요." };
     }
     votes.splice(idx, 1);
+    const source = ideaCards.find((card) => card.roomId === roomId && card.linkedVote?.id === voteId);
+    if (source) source.linkedVote = undefined;
     revalidatePath(`/rooms/${roomId}/votes`, "page");
+    revalidatePath(`/rooms/${roomId}/boards/idea`);
     return { kind: "ok" };
   }
 
   try {
     await api(`/api/v1/rooms/${roomId}/votes/${voteId}`, { method: "DELETE" });
     revalidatePath(`/rooms/${roomId}/votes`, "page");
+    revalidatePath(`/rooms/${roomId}/boards/idea`);
     return { kind: "ok" };
   } catch (e) {
     if (e instanceof ApiError) return { kind: "error", message: e.message };

@@ -1,7 +1,7 @@
 "use client";
 
 import { EyeOff, Plus, X } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +21,7 @@ import { createVoteAction } from "../actions";
 
 interface Props {
   roomId: number;
+  sourceCard?: { id: number; title: string };
   open: boolean;
   onOpenChange(open: boolean): void;
   /** 생성 성공 시 신규 상세를 부모에 올려 보낸다 — 상세 Sheet 자동 오픈용. */
@@ -54,11 +55,12 @@ const DEFAULT_DEADLINE_OFFSET_MS = 24 * 60 * 60 * 1000;
  */
 export function VoteCreateDialog({
   roomId,
+  sourceCard,
   open,
   onOpenChange,
   onCreated,
 }: Props) {
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(sourceCard?.title ?? "");
   const [voteType, setVoteType] = useState<VoteType>("SINGLE");
   const [options, setOptions] = useState<string[]>(["", ""]);
   const [maxSelectCount, setMaxSelectCount] = useState(2);
@@ -76,8 +78,8 @@ export function VoteCreateDialog({
   const optionRefs = useRef<Array<HTMLInputElement | null>>([]);
   const focusNextOption = useRef(false);
 
-  const resetState = () => {
-    setTitle("");
+  const resetState = useCallback(() => {
+    setTitle(sourceCard?.title ?? "");
     setVoteType("SINGLE");
     setOptions(["", ""]);
     setMaxSelectCount(2);
@@ -85,12 +87,12 @@ export function VoteCreateDialog({
     setAnonymous(false);
     setError(null);
     setFieldErrors({});
-  };
+  }, [sourceCard?.title]);
 
   // Dialog 를 닫으면 상태 초기화. 열 때는 기존 입력을 유지하지 않도록 매번 리셋.
   useEffect(() => {
     if (!open) resetState();
-  }, [open]);
+  }, [open, resetState]);
 
   useEffect(() => {
     if (!focusNextOption.current) return;
@@ -158,6 +160,7 @@ export function VoteCreateDialog({
       try {
         result = await createVoteAction({
           roomId,
+          sourceCardId: sourceCard?.id,
           title: title.trim(),
           voteType,
           options: trimmedOptions,

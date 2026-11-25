@@ -1,25 +1,35 @@
+"use client";
+
 import { GitCompareArrows, MessageCircle, SmilePlus } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { ReportMenu } from "@/features/report/ReportMenu";
 import type { IdeaCard } from "@/types/db";
 
-import { DeleteIdeaDialog, IdeaCardDialog } from "./IdeaDialogs";
-import { IDEA_COLUMNS, ideaDateTime, type IdeaDiscussion, type IdeaSourceLink } from "./model";
+import { IdeaCardPanel } from "./IdeaCardPanel";
+import { IDEA_COLUMNS, ideaDateTime, type IdeaSourceLink } from "./model";
 
-export function IdeaCardDetails({ card, accountId, canEdit, canReport = false, discussion, conflictId, sources = [] }: { card: IdeaCard; accountId: number; canEdit: boolean; canReport?: boolean; discussion?: IdeaDiscussion; conflictId?: number; sources?: IdeaSourceLink[] }) {
+export function IdeaCardDetails({ card, accountId, canEdit, canReport = false, canUpload, conflictId, sources = [] }: { card: IdeaCard; accountId: number; canEdit: boolean; canReport?: boolean; canUpload: boolean; conflictId?: number; sources?: IdeaSourceLink[] }) {
+  const [open, setOpen] = useState(false);
   const label = IDEA_COLUMNS.find(({ type }) => type === card.cardType)?.title;
   return (
     <div className="relative">
-    <Sheet>
+    <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
         <button type="button" className="bg-card border-border rounded-control hover:border-primary/40 focus-visible:ring-ring block w-full space-y-2 border p-3 text-left focus-visible:ring-2">
           <span className="flex h-6 items-center"><span className="bg-secondary text-primary rounded px-1.5 py-0.5 text-xs">{label}</span></span>
           <span className="line-clamp-2 block text-sm font-semibold">{card.title}</span>
           {card.aiSuggested && <span className="text-primary block text-xs">인공지능 제안</span>}
           {card.content && <span className="text-muted-foreground line-clamp-2 block text-xs">{card.content}</span>}
+          {(!!card.fileCount || !!card.convertedTaskId || !!card.linkedVote) && (
+            <span className="text-muted-foreground block text-xs">
+              {!!card.fileCount && `첨부 ${card.fileCount}개 `}
+              {!!card.convertedTaskId && "업무 연결 "}
+              {card.linkedVote && (card.linkedVote.status === "OPEN" ? "투표 진행 중" : "투표 마감")}
+            </span>
+          )}
           <span className="text-muted-foreground border-border flex items-center gap-2 border-t pt-2 text-xs">
             <span className="min-w-0 flex-1 truncate">{card.author.displayName}</span>
             <span aria-label={`댓글 ${card.commentCount}개`} className="flex items-center gap-1"><MessageCircle aria-hidden="true" className="size-3" />{card.commentCount}</span>
@@ -34,7 +44,7 @@ export function IdeaCardDetails({ card, accountId, canEdit, canReport = false, d
           <SheetDescription>{card.author.displayName} · {ideaDateTime.format(new Date(card.createdAt))}</SheetDescription>
         </SheetHeader>
         <div className="space-y-5 px-4 pb-5">
-          <p className="text-sm break-words whitespace-pre-wrap">{card.content || "등록된 내용이 없어요."}</p>
+          {open && <IdeaCardPanel card={card} accountId={accountId} canUpload={canUpload} canEdit={canEdit}>
           {sources.length > 0 && (
             <section className="border-border space-y-2 border-t pt-4">
               <h3 className="text-sm font-semibold">절충안 원본 카드</h3>
@@ -47,39 +57,14 @@ export function IdeaCardDetails({ card, accountId, canEdit, canReport = false, d
               </ul>
             </section>
           )}
-          {canEdit && (
-            <div className="flex flex-wrap gap-2">
-              <IdeaCardDialog roomId={card.roomId} sessionId={card.sessionId} card={card} trigger={<Button variant="outline">카드 수정</Button>} />
-              <DeleteIdeaDialog roomId={card.roomId} cardId={card.id} trigger={<Button variant="destructive">카드 삭제</Button>} />
-            </div>
-          )}
-          <section aria-label="리액션" className="border-border space-y-2 border-t pt-4">
-            <h3 className="text-sm font-semibold">리액션 {card.reactionCount}개</h3>
-            <div className="flex flex-wrap gap-2">
-              {discussion?.reactions.map(({ emoji, count }) => (
-                <span key={emoji} className="bg-secondary rounded-full px-2 py-1 text-xs">{emoji} {count}</span>
-              ))}
-            </div>
-            {card.reactionCount > 0 && !discussion?.reactions.length && <p className="text-muted-foreground text-xs">리액션별 내역은 현재 제공되지 않아요.</p>}
-          </section>
-          <section aria-label="댓글" className="border-border space-y-2 border-t pt-4">
-            <h3 className="text-sm font-semibold">댓글 {card.commentCount}개</h3>
-            {discussion?.comments.length ? discussion.comments.map(({ id, author, authorId, text, deleted }) => (
-              <div key={id} className="bg-muted rounded-control flex items-start justify-between gap-2 p-2.5 text-xs">
-                <div><p className="font-semibold">{author}</p><p className="mt-1">{text}</p></div>
-                {accountId > 0 && authorId > 0 && authorId !== accountId && !deleted && (
-                  <ReportMenu target={{ roomId: card.roomId, id, type: "COMMENT", author, content: text }} />
-                )}
-              </div>
-            )) : <p className="text-muted-foreground text-xs">{discussion?.commentsUnavailable ? "댓글을 불러오지 못했어요. 새로고침해 주세요." : "남겨진 댓글이 없어요."}</p>}
-          </section>
+          </IdeaCardPanel>}
         </div>
       </SheetContent>
     </Sheet>
     {canReport && <div className="absolute top-3 right-3"><ReportMenu target={{ roomId: card.roomId, id: card.id, type: "CARD", author: card.author.displayName, content: `${card.title}\n${card.content}` }} /></div>}
-    {conflictId && (
+    {(conflictId || !!card.conflictCount) && (
       <Link
-        href={`/rooms/${card.roomId}/mediation?conflict=${conflictId}`}
+        href={`/rooms/${card.roomId}/mediation${conflictId ? `?conflict=${conflictId}` : ""}`}
         aria-label={`${card.title} 충돌 의견 비교`}
         className={`bg-warning/15 hover:bg-warning/25 border-warning/30 focus-visible:ring-ring absolute top-[13px] ${canReport ? "right-12" : "right-[13px]"} inline-flex h-6 items-center gap-1 rounded-full border px-2 text-xs font-medium focus-visible:ring-2`}
       >

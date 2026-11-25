@@ -122,6 +122,8 @@ export type IdeaCardType = "AGENDA" | "KEEP" | "PROBLEM" | "TRY";
 export type BoardSessionState = "ACTIVE" | "CLOSED";
 
 export interface BoardSession {
+  cardCount?: number;
+  participantCount?: number;
   id: number;
   roomId: number;
   title: string;
@@ -131,6 +133,11 @@ export interface BoardSession {
 }
 
 export interface IdeaCard {
+  version?: number;
+  fileCount?: number;
+  conflictCount?: number;
+  linkedVote?: { id: number; status: "OPEN" | "CLOSED" };
+  reactions?: { emoji?: string; count?: number; reactedByMe?: boolean }[];
   aiSuggested?: boolean;
   sourceCardIds?: number[];
   id: number;

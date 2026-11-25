@@ -1,0 +1,16 @@
+.chrome {
+  display: contents;
+}
+
+.shell:has([data-page-error]) .chrome {
+  display: none;
+}
+
+.shell:has([data-page-error]) .frame,
+.shell:has([data-page-error]) .main {
+  padding: 0;
+}
+
+.main [data-page-error] {
+  min-block-size: 100dvh;
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Grip, MoveDiagonal } from "lucide-react";
+import { ArrowUpRight, Grip, MoveDiagonal } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type CSSProperties, type ReactNode, useEffect } from "react";
@@ -139,11 +139,6 @@ export function DashboardGrid({
                     편집 중
                   </span>
                 )}
-                {href && (
-                  <Link href={href} className="text-primary text-xs hover:underline">
-                    전체 보기
-                  </Link>
-                )}
                 <WidgetRemovalControls
                   roomId={roomId}
                   widgetId={widget.id}
@@ -153,29 +148,41 @@ export function DashboardGrid({
                   onChanged={applySnapshot}
                 />
               </header>
-              <div className={`${styles.preview} min-h-0 flex-1 px-3 pt-2 pb-3 sm:overflow-clip`}>
+              <div className={`${styles.preview} min-h-0 flex-1 px-3 pt-2 sm:overflow-clip`}>
                 {bodies[widget.id] ?? (
                   <p role="status" className="text-muted-foreground text-sm">
                     위젯 데이터를 불러오는 중…
                   </p>
                 )}
               </div>
-              <button
-                type="button"
-                aria-label={`${title} 크기 조절`}
-                aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown"
-                title="방향키로 위젯 크기 조절"
-                className="bg-card text-muted-foreground absolute right-1 bottom-1 hidden size-7 touch-none place-items-center rounded enabled:cursor-nwse-resize sm:grid"
-                onPointerDown={(event) => {
-                  if (!pending) start(event, widget, "resize");
-                }}
-                onKeyDown={(event) => {
-                  if (!pending) keyDown(event, widget, "resize");
-                }}
-                {...handlers}
-              >
-                <MoveDiagonal aria-hidden="true" className="size-4" />
-              </button>
+              <div className="flex min-h-8 shrink-0 items-center gap-1 px-1 pb-1">
+                <button
+                  type="button"
+                  aria-label={`${title} 크기 조절`}
+                  aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown"
+                  title="방향키로 위젯 크기 조절"
+                  className="bg-card text-muted-foreground hidden size-7 touch-none place-items-center rounded enabled:cursor-nwse-resize sm:grid"
+                  onPointerDown={(event) => {
+                    if (!pending) start(event, widget, "resize");
+                  }}
+                  onKeyDown={(event) => {
+                    if (!pending) keyDown(event, widget, "resize");
+                  }}
+                  {...handlers}
+                >
+                  <MoveDiagonal aria-hidden="true" className="size-4" />
+                </button>
+                {href && (
+                  <Link
+                    href={href}
+                    aria-label={`${title} 상세로 이동`}
+                    title={`${title} 상세로 이동`}
+                    className="bg-card text-primary hover:bg-secondary focus-visible:ring-ring ml-auto grid size-7 place-items-center rounded focus-visible:ring-2 focus-visible:outline-none"
+                  >
+                    <ArrowUpRight aria-hidden="true" className="size-4" />
+                  </Link>
+                )}
+              </div>
             </article>
           );
         })}

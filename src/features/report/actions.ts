@@ -119,7 +119,7 @@ async function getMockReportTarget(roomId: number, type: z.infer<typeof schema>[
     const members = await listRoomMembers(roomId);
     const comment = Object.values(getIdeaDiscussions(cards, members)).flatMap(({ comments }) => comments)
       .find(({ id }) => id === targetId);
-    if (!comment) return;
+    if (!comment || comment.deleted) return;
     const author = members.find(({ accountId }) => accountId === comment.authorId)
       ?? cards.find(({ author }) => author.accountId === comment.authorId)?.author;
     return author && { author, snapshot: comment.text };

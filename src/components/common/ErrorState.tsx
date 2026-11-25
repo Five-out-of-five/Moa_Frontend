@@ -27,6 +27,7 @@ export function ErrorState({
   return (
     <section
       className={`${styles.state} ${fullPage ? styles.fullPage : ""}`}
+      data-page-error={code === "500" ? true : undefined}
       aria-label={`${code} 오류 안내`}
     >
       <div className={styles.content}>
