@@ -50,7 +50,9 @@ export type DeleteSlackIntegrationResult =
   | { kind: "error"; message: string };
 
 function revalidateSlackScope(roomId: number) {
-  revalidatePath(`/rooms/${roomId}/settings/integrations`, "page");
+  // ⚠️ 연동 설정은 `/workspaces/manage?room={roomId}&tab=integrations` 경로. 쿼리 무관하게
+  //    page 전체를 flush.
+  revalidatePath("/workspaces/manage", "page");
   revalidatePath(`/rooms/${roomId}`, "layout");
 }
 

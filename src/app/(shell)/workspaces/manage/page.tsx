@@ -1,27 +1,68 @@
-import { ArrowLeft } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Info } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { RoomFormDialog } from "@/features/room/management/RoomFormDialog";
+import type { ManagementTab } from "@/features/room/management/RoomManagementDetails";
 import { RoomManagementDetails } from "@/features/room/management/RoomManagementDetails";
 import { getRoomManagement } from "@/features/room/management/server";
 import { JOIN_REQUEST_STATUSES } from "@/features/room/management/types";
 import { listMyRoomsForSettings } from "@/features/room/server";
 import { ApiError } from "@/lib/api";
 
+/**
+ * BE 노션 OAuth 콜백이 돌려주는 쿼리를 사용자 안내로 변환.
+ * `/workspaces/manage?...&notion=connected|cancelled|error&code=...`
+ * - connected · cancelled · error 세 값. error 는 code 로 세부 사유 구분.
+ * - 탭이 integrations 가 아니어도 error 는 노출 (승재님 2026-11-25).
+ */
+function notionBannerFor(status: string | undefined, code: string | undefined) {
+  if (status === "connected") {
+    return { tone: "success" as const, message: "노션 연결이 완료되었어요." };
+  }
+  if (status === "cancelled") {
+    return { tone: "info" as const, message: "노션 연결이 취소되었어요." };
+  }
+  if (status === "error") {
+    const map: Record<string, string> = {
+      INTEGRATION_NOTION_AUTH_EXPIRED: "노션 인증이 만료됐어요. 다시 연결해 주세요.",
+      INTEGRATION_NOTION_STATE_INVALID: "요청이 만료됐거나 유효하지 않아요. 연결을 다시 시도해 주세요.",
+      ROOM_OWNER_ONLY: "방장만 외부 연동을 설정할 수 있어요.",
+    };
+    return {
+      tone: "error" as const,
+      message: code && map[code] ? map[code] : "노션 연결에 실패했어요. 잠시 뒤 다시 시도해 주세요.",
+    };
+  }
+  return null;
+}
+
 export default async function WorkspaceManagementPage({
   searchParams,
 }: {
-  searchParams: Promise<{ room?: string; tab?: string; create?: string; status?: string; page?: string }>;
+  searchParams: Promise<{
+    room?: string;
+    tab?: string;
+    create?: string;
+    status?: string;
+    page?: string;
+    notion?: string;
+    code?: string;
+  }>;
 }) {
   const query = await searchParams;
   const rooms = await listMyRoomsForSettings();
   const selected = rooms.find(({ id }) => String(id) === query.room) ?? rooms[0];
   const status = JOIN_REQUEST_STATUSES.find((item) => item === query.status) ?? "PENDING";
   const page = Number(query.page ?? 0);
-  const showMembers = query.tab === "members";
+  const tab: ManagementTab =
+    query.tab === "members" ? "members"
+      : query.tab === "integrations" ? "integrations"
+      : "settings";
+  // 멤버·연동 탭에서만 멤버 상세 데이터가 필요. 기본 설정은 가벼운 shape 로 로드.
+  const showMembers = tab === "members";
   const management = selected && selected.status !== "INACTIVE"
     ? await getRoomManagement(selected.id, status, Number.isSafeInteger(page) && page >= 0 && page <= 2147483647 ? page : 0, showMembers).catch((error: unknown) => {
         if (error instanceof ApiError) {
@@ -53,6 +94,26 @@ export default async function WorkspaceManagementPage({
           initiallyOpen={query.create === "1"}
         />
       </header>
+      {(() => {
+        const banner = notionBannerFor(query.notion, query.code);
+        if (!banner) return null;
+        const Icon = banner.tone === "success" ? CheckCircle2 : banner.tone === "error" ? AlertTriangle : Info;
+        return (
+          <div
+            role="status"
+            className={
+              banner.tone === "success"
+                ? "bg-emerald-50 text-emerald-900 flex items-center gap-2 rounded-md border border-emerald-200 px-3 py-2 text-sm"
+                : banner.tone === "error"
+                ? "bg-destructive/10 text-destructive border-destructive/30 flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+                : "bg-muted text-foreground border-border flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+            }
+          >
+            <Icon aria-hidden="true" className="size-4 shrink-0" />
+            <span>{banner.message}</span>
+          </div>
+        );
+      })()}
       <div className="bg-card rounded-card grid min-h-0 flex-1 overflow-hidden border lg:grid-cols-[14rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
         <nav
           aria-label="참여 중인 워크스페이스"
@@ -106,7 +167,7 @@ export default async function WorkspaceManagementPage({
             <RoomManagementDetails
               key={management.room.id}
               management={management}
-              showMembers={showMembers}
+              tab={tab}
             />
           </div>
         ) : (
