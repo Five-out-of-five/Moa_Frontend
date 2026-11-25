@@ -74,14 +74,24 @@ jobs:
           fi
 
           observed_fingerprints=()
-          while IFS= read -r host_key; do
-            fingerprint=$(printf '%s\n' "$host_key" | ssh-keygen -E sha256 -lf - | awk '{print $2}')
+          while read -r host key_type key_data _; do
+            [[ "$key_type" == ssh-ed25519 && -n "$key_data" ]] || continue
+            printf '%s %s\n' "$key_type" "$key_data" > "$ssh_dir/host.pub"
+            if ! key_details=$(ssh-keygen -E sha256 -lf "$ssh_dir/host.pub"); then
+              continue
+            fi
+            fingerprint=$(awk '{print $2}' <<< "$key_details")
             observed_fingerprints+=("$fingerprint")
             if [[ "$fingerprint" == "$expected_fingerprint" ]]; then
-              printf '%s\n' "$host_key" > "$ssh_dir/known_hosts"
+              printf '%s %s %s\n' "$host" "$key_type" "$key_data" > "$ssh_dir/known_hosts"
               break
             fi
           done < "$ssh_dir/host_keys"
+
+          if (( ${#observed_fingerprints[@]} == 0 )); then
+            echo 'EC2 did not provide a readable ED25519 host key.' >&2
+            exit 1
+          fi
 
           if [[ ! -s "$ssh_dir/known_hosts" ]]; then
             echo 'EC2 SSH host fingerprint does not match.' >&2
