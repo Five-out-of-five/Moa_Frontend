@@ -2,6 +2,7 @@ import { ArrowRight } from "lucide-react";
 
 import { MoaLogo } from "@/components/common/MoaLogo";
 import { Button } from "@/components/ui/button";
+import { SessionExpiredDialog } from "@/features/auth/components/SessionExpiredDialog";
 import { getLoginErrorMessage } from "@/features/auth/errors";
 import { SOCIAL_PROVIDER_NAMES } from "@/features/auth/providers";
 import { getAuthReturnPath } from "@/features/auth/return-path";
@@ -16,9 +17,13 @@ const SOCIAL_LOGIN_OPTIONS = [
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; returnPath?: string; error?: string; until?: string; traceId?: string }> }) {
   const query = await searchParams;
   const next = getAuthReturnPath(query.returnPath ?? query.next);
-  const errorMessage = getLoginErrorMessage(query.error, query.until);
+  const isSessionExpired = query.error === "session" || query.error === "AUTH_REFRESH_TOKEN_INVALID";
+  const errorMessage = isSessionExpired ? null : getLoginErrorMessage(query.error, query.until);
   return (
     <main className="bg-login-surface grid min-h-dvh place-items-center px-5 py-10 sm:py-14">
+      {isSessionExpired && (
+        <SessionExpiredDialog loginHref={next ? `/login?returnPath=${encodeURIComponent(next)}` : "/login"} />
+      )}
       <section aria-labelledby="login-title" className="w-full max-w-md text-center">
         <MoaLogo />
 
