@@ -35,11 +35,17 @@ export interface ChatMessageAuthor {
   online?: boolean;
 }
 
+/** BE `MessageType` — 일반·파일·시스템 알림. */
+export type MessageType = "TEXT" | "FILE" | "SYSTEM";
+
 /**
  * 채팅 메시지 — 채널/DM 공통 shape.
  *
  * ⚠️ `pending` 은 전송 낙관적 추가용 — WS 가 붙기 전엔 로컬 state 로만 토글. 서버 왕복이
  *    시작되면 `kind: "sent" | "pending" | "failed"` 로 확장 가능.
+ * ⚠️ `clientMessageId` 는 전송 요청 때 FE 가 발급(crypto.randomUUID)한 idempotency 키.
+ *    서버가 그대로 echo 해 주므로 낙관적 추가한 로컬 메시지를 서버 응답과 매칭할 때 쓴다.
+ * ⚠️ `edited` 는 서버가 수정 여부를 돌려준 플래그. UI 는 "(수정됨)" 라벨.
  */
 export interface ChatMessage {
   id: number;
@@ -50,4 +56,7 @@ export interface ChatMessage {
   pending?: boolean;
   deleted?: boolean;
   isSystem?: boolean;
+  edited?: boolean;
+  clientMessageId?: string;
+  messageType?: MessageType;
 }

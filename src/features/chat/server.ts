@@ -160,15 +160,32 @@ export async function getChannel(
  * ⚠️ 명세 확정 전까지 페이지네이션 파라미터는 빼고 "최근 100건" 상한만 가정. WS 가 붙으면
  *    이 리턴 값은 초기 로드 1회 분으로 쓰고, 그 이후는 소켓 스트림이 밀어 넣는다.
  */
+/**
+ * 채널 메시지 목록 — 명세 `GET /api/v1/rooms/{roomId}/channels/{channelId}/messages` (커서).
+ *
+ * ⚠️ 커서 파라미터는 선택:
+ *    - 아무것도 안 주면 BE 가 **최신 50건** 돌려줌 (초기 로드 흐름)
+ *    - `before=<messageId>` 로 **그보다 이전** 메시지, `after=<messageId>` 로 **그 이후** 메시지
+ *    - `size` 는 1..100, 생략 시 50
+ * ⚠️ `nextCursor`/`hasNext` 는 UI 가 "더 불러오기" 를 붙일 때까지는 쓰지 않는다. 현재는
+ *    배열만 반환해 호출부 하위 호환을 유지. 페이지네이션 UX 는 Phase 2.
+ */
 export async function getChannelMessages(
   roomId: number,
   channelId: number,
+  params: { before?: number; after?: number; size?: number } = {},
 ): Promise<ChatMessage[]> {
   if (isMock) {
     return CHANNEL_MESSAGES[channelId] ?? [];
   }
+  const query = new URLSearchParams();
+  if (params.before != null) query.set("before", String(params.before));
+  if (params.after != null) query.set("after", String(params.after));
+  if (params.size != null) query.set("size", String(params.size));
+  const queryString = query.toString();
   const response = await api<components["schemas"]["CursorResponseMessageResponse"]>(
-    `/api/v1/rooms/${roomId}/channels/${channelId}/messages`, { cache: "no-store" },
+    `/api/v1/rooms/${roomId}/channels/${channelId}/messages${queryString ? `?${queryString}` : ""}`,
+    { cache: "no-store" },
   );
   return (response.items ?? []).flatMap((message) => message.messageId == null || !message.createdAt ? [] : [{
     id: message.messageId,
@@ -177,6 +194,9 @@ export async function getChannelMessages(
     content: message.deleted ? "삭제된 메시지입니다." : message.content ?? "",
     deleted: message.deleted,
     isSystem: message.messageType === "SYSTEM",
+    edited: message.edited ?? undefined,
+    clientMessageId: message.clientMessageId ?? undefined,
+    messageType: message.messageType as ChatMessage["messageType"] | undefined,
   }]).sort((first, second) => Date.parse(first.createdAt) - Date.parse(second.createdAt) || first.id - second.id);
 }
 
