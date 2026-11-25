@@ -17,7 +17,10 @@ import {
   DM_THREADS,
 } from "./mock-seed";
 import type {
+  ChannelMemberStatus,
+  ChannelType,
   ChatChannel,
+  ChatChannelMember,
   ChatMessage,
   DirectMessageThread,
 } from "./types";
@@ -45,13 +48,63 @@ const listApiChannels = cache(async () => {
 
 function toChatChannel(channel: ChannelResponse, roomId: number): ChatChannel | null {
   if (channel.channelId == null || !channel.channelType) return null;
+  const channelType = channel.channelType as ChannelType;
   return {
     id: channel.channelId,
     roomId,
-    kind: channel.channelType === "PUBLIC" ? "PUBLIC" : "PRIVATE",
-    name: (channel.channelType === "DIRECT" ? channel.peer?.displayName : channel.name) ?? "이름 없는 채널",
+    // `kind` 는 사이드바 PUBLIC/PRIVATE 분기용. DIRECT 는 DM 리스트로 빠지므로 여기 매핑은
+    // "PUBLIC 아니면 PRIVATE" 로 좁혀도 충분. 원본 channelType 은 `channelType` 필드로 유지.
+    kind: channelType === "PUBLIC" ? "PUBLIC" : "PRIVATE",
+    channelType,
+    name: (channelType === "DIRECT" ? channel.peer?.displayName : channel.name) ?? "이름 없는 채널",
     unreadCount: channel.unreadCount ?? 0,
+    isDefault: channel.isDefault ?? undefined,
+    creatorAccountId: channel.creatorAccountId ?? undefined,
+    myStatus: (channel.myStatus as ChannelMemberStatus | undefined) ?? undefined,
   };
+}
+
+type ChannelMemberResponse = components["schemas"]["ChannelMemberResponse"];
+
+/**
+ * 채널 참여자 목록 — 명세 `GET /api/v1/rooms/{roomId}/channels/{channelId}/members`.
+ *
+ * ⚠️ 목 모드는 채널별 멤버 추적을 안 하므로 **해당 방의 활성 roomMembers 를 JOINED 로** 전부
+ *    돌려준다. 멤버 추가/내보내기 액션의 mock 분기도 reader 결과를 그대로 반영하진 않지만
+ *    UI 흐름 (목록 → 다이얼로그 → 확인) 은 깨지지 않는다.
+ */
+export async function listChannelMembers(
+  roomId: number,
+  channelId: number,
+): Promise<ChatChannelMember[]> {
+  if (isMock) {
+    const inRoom = roomMembers.filter((m) => m.roomId === roomId && isActiveMember(m));
+    return inRoom.flatMap((m) => {
+      const acc = accounts.find((a) => a.id === m.accountId);
+      if (!acc) return [];
+      return [{
+        accountId: acc.id,
+        displayName: m.nickname ?? acc.name,
+        profileImageUrl: null,
+        status: "JOINED" as ChannelMemberStatus,
+        online: false,
+      }];
+    });
+  }
+  const list = await api<ChannelMemberResponse[]>(
+    `/api/v1/rooms/${roomId}/channels/${channelId}/members`,
+    { cache: "no-store" },
+  );
+  return list.flatMap((m) => {
+    if (m.accountId == null || !m.status) return [];
+    return [{
+      accountId: m.accountId,
+      displayName: m.displayName ?? `사용자 ${m.accountId}`,
+      profileImageUrl: m.profileImageUrl ?? null,
+      status: m.status as ChannelMemberStatus,
+      online: m.online ?? false,
+    }];
+  });
 }
 
 function listMockDmThreads(viewerId: number) {

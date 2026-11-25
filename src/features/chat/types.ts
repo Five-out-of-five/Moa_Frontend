@@ -2,18 +2,42 @@
  * 채팅 도메인 FE 임시 타입 — BE 채널/DM 스펙이 확정되면 `src/types/db.ts` 로 승격한다.
  */
 
+/** BE `ChannelType` 과 1:1. PUBLIC·PRIVATE 은 사이드바 채널로, DIRECT 는 DM 스레드로 분기. */
+export type ChannelType = "PUBLIC" | "PRIVATE" | "DIRECT";
+
+/** BE `ChannelMemberStatus` — 초대·참여·나감·내보내짐. */
+export type ChannelMemberStatus = "INVITED" | "JOINED" | "LEFT" | "KICKED";
+
+/** 기존 UI 호환용 좁은 kind. `channelType` 가 DIRECT 인 채널은 사이드바에 등장하지 않는다. */
 export type ChatChannelKind = "PUBLIC" | "PRIVATE";
 
 export interface ChatChannel {
   id: number;
   roomId: number;
   kind: ChatChannelKind;
+  /** BE `channelType` 원본. 분기 로직이 DIRECT 를 함께 쓰려면 이걸 본다. */
+  channelType: ChannelType;
   name: string;
   /** 채널 설명 — 헤더 상단에 보조 라벨로 노출. */
   topic?: string;
   /** 활성 참여자 수 — 헤더 우측 멤버 뱃지에 쓴다. */
   memberCount?: number;
   unreadCount: number;
+  /** 방 기본 채널 여부 (삭제 불가 뱃지·안내). BE `isDefault`. */
+  isDefault?: boolean;
+  /** 생성자 accountId — 삭제·수정 권한 판정에 쓴다. */
+  creatorAccountId?: number;
+  /** 내 참여 상태 — INVITED 면 수락 버튼 노출 등. BE `myStatus` 가 enum 문자열로 떨어짐. */
+  myStatus?: ChannelMemberStatus;
+}
+
+/** 채널 참여자 — 멤버 조회/추가/내보내기 UI 공통. BE `ChannelMemberResponse` 그대로. */
+export interface ChatChannelMember {
+  accountId: number;
+  displayName: string;
+  profileImageUrl: string | null;
+  status: ChannelMemberStatus;
+  online: boolean;
 }
 
 export interface DirectMessageThread {
