@@ -1,23 +1,19 @@
 import "server-only";
 
+import { unstable_rethrow } from "next/navigation";
+
 import { getLiveIdeaBriefingTarget } from "@/features/idea/server";
 import { api } from "@/lib/api";
-import { getApiAccountContext } from "@/lib/api-account";
 import type { components } from "@/types/api";
 
-import type { BriefingNews, BriefingTarget, BriefingTodo, NewsKind } from "./model";
+import { type Briefing, type BriefingEventType, type BriefingNews, type BriefingTarget, type BriefingTodo, isBriefingEventType, type NewsKind, TEAM_NEWS_KINDS } from "./model";
 
 type Schemas = components["schemas"];
-const LIVE_NEWS: Partial<Record<NonNullable<Schemas["TeamNews"]["eventType"]>, NewsKind>> = {
-  CARD_CREATED: "IDEA_CARD_CREATED",
-  CARD_COMMENTED: "IDEA_CARD_COMMENTED",
-  CARD_CONVERTED: "IDEA_CARD_CONVERTED",
-  TASK_CREATED: "TASK_CREATED",
-  TASK_COMPLETED: "TASK_COMPLETED",
-  VOTE_CREATED: "VOTE_OPENED",
-  VOTE_CLOSED: "VOTE_CLOSED",
-  SESSION_CLOSED: "SESSION_CLOSED",
-  MEMBER_JOINED: "MEMBER_JOINED",
+const NEWS_SENTENCES: Record<NewsKind, string> = {
+  IDEA_CARD_CREATED: "새 아이디어를 추가했어요.", IDEA_CARD_COMMENTED: "내 카드에 댓글을 달았어요.",
+  IDEA_CARD_CONVERTED: "내 카드를 업무로 전환했어요.", TASK_CREATED: "새 업무를 등록했어요.",
+  TASK_COMPLETED: "업무를 완료했어요.", VOTE_OPENED: "새 투표를 열었어요.", VOTE_CLOSED: "투표를 마감했어요.",
+  SESSION_CLOSED: "회차를 마감했어요.", MEMBER_JOINED: "방에 합류했어요.",
 };
 
 async function getNewsTarget(
@@ -29,11 +25,14 @@ async function getNewsTarget(
   const root = `/rooms/${roomId}`;
   switch (type) {
     case "CARD":
-      return getLiveIdeaBriefingTarget(roomId, id).catch(() => null);
+      return getLiveIdeaBriefingTarget(roomId, id).catch((error: unknown) => {
+        unstable_rethrow(error);
+        return null;
+      });
     case "TASK":
-      return { href: `${root}/boards/task`, focus: id };
+      return { href: `${root}/boards/task?open=${id}`, focus: id };
     case "VOTE":
-      return { href: `${root}/votes`, focus: id };
+      return { href: `${root}/votes?open=${id}`, focus: id };
     case "SESSION":
       return { href: `${root}/boards/idea?session=${id}` };
     case "MEMBER":
@@ -43,12 +42,8 @@ async function getNewsTarget(
   }
 }
 
-export async function getLiveRoomBriefing(roomId: number) {
-  const { init, query } = await getApiAccountContext();
-  const response = await api<Schemas["BriefingResponse"]>(
-    `/api/v1/rooms/${roomId}/briefing?${query}`,
-    init,
-  );
+export async function getLiveRoomBriefing(roomId: number, withTargets: boolean): Promise<Briefing> {
+  const response = await api<Schemas["BriefingResponse"]>(`/api/v1/rooms/${roomId}/briefing`);
   const root = `/rooms/${roomId}`;
   const todos = new Map<string, BriefingTodo>();
   function addTodos(
@@ -72,7 +67,7 @@ export async function getLiveRoomBriefing(roomId: number) {
       });
     }
   }
-  if (response.visible === false) return { pending: [], news: [], canConfirm: false };
+  if (response.visible === false) return { visible: false, pending: [], news: [], counts: {}, hasHighlights: false };
 
   // 실서버는 업무 이력을 기준으로 반려·미담당 항목을 분류한다.
   addTodos(response.myTodos?.returnedTasks, "반려된 업무", "수정하기");
@@ -80,37 +75,36 @@ export async function getLiveRoomBriefing(roomId: number) {
   addTodos(response.myTodos?.assignedTasks, "배정된 업무", "업무 보기");
   addTodos(response.myTodos?.unvotedVotes, "미참여 투표", "투표하기", "vote");
 
-  const entries = new Map<
-    number,
-    { item: Schemas["NewsItem"]; kind: NewsKind; emphasized: boolean }
-  >();
-  function addNews(items: Schemas["NewsItem"][] | undefined, kind: NewsKind, emphasized: boolean) {
+  const counts: Briefing["counts"] = {};
+  const news: BriefingNews[] = [];
+  const targets = new Map<string, Promise<BriefingTarget | null>>();
+  const targetUpdates: Promise<void>[] = [];
+  function addNews(items: Schemas["NewsItem"][] | undefined, kind: NewsKind, eventType?: BriefingEventType) {
     for (const item of items ?? []) {
       if (!item.eventId || !item.createdAt || !Number.isFinite(Date.parse(item.createdAt)))
         continue;
-      if (!entries.has(item.eventId)) entries.set(item.eventId, { item, kind, emphasized });
+      const key = `${item.targetType}:${item.targetId}`;
+      if (withTargets && !targets.has(key)) targets.set(key, getNewsTarget(roomId, item.targetType, item.targetId));
+      const entry: BriefingNews = { key: `${kind}:${item.eventId}`, kind, eventType, emphasized: !eventType, target: null,
+        title: item.title, summary: `${item.actorName ? `${item.actorName}님이 ` : ""}${NEWS_SENTENCES[kind]}`,
+        createdAt: item.createdAt };
+      news.push(entry);
+      const target = targets.get(key);
+      if (target) targetUpdates.push(target.then((value) => { entry.target = value; }));
     }
   }
-  addNews(response.highlights?.commentsOnMyCards, "IDEA_CARD_COMMENTED", true);
-  addNews(response.highlights?.myCardsConverted, "IDEA_CARD_CONVERTED", true);
-  for (const { eventType, items } of response.teamNews ?? []) {
-    const kind = eventType && LIVE_NEWS[eventType];
-    if (kind) addNews(items, kind, false);
+  addNews(response.highlights?.commentsOnMyCards, "IDEA_CARD_COMMENTED");
+  addNews(response.highlights?.myCardsConverted, "IDEA_CARD_CONVERTED");
+  for (const { eventType, items, count } of response.teamNews ?? []) {
+    if (!isBriefingEventType(eventType)) continue;
+    counts[eventType] = (counts[eventType] ?? 0) + (count ?? items?.length ?? 0);
+    addNews(items, TEAM_NEWS_KINDS[eventType], eventType);
   }
-
-  const news = await Promise.all(
-    [...entries.values()].map(async ({ item, kind, emphasized }): Promise<BriefingNews> => ({
-      key: `event:${item.eventId}`,
-      kind,
-      summary: item.title ?? "",
-      createdAt: item.createdAt!,
-      emphasized,
-      target: await getNewsTarget(roomId, item.targetType, item.targetId),
-    })),
-  );
+  await Promise.all(targetUpdates);
   return {
+    visible: true, counts,
     pending: [...todos.values()],
     news: news.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
-    canConfirm: false,
+    hasHighlights: Boolean(response.highlights?.commentsOnMyCards?.length || response.highlights?.myCardsConverted?.length),
   };
 }

@@ -12,10 +12,11 @@ import { IdeaCardDialog } from "./IdeaDialogs";
 import { IdeaDraggableCard, IdeaDropColumn } from "./IdeaDrag";
 import { IDEA_COLUMNS, type IdeaMovedCard, type IdeaSourceLink } from "./model";
 
-export function IdeaBoard({ session, cards, accountId, editable, canUpload, conflictByCard = {}, sources = new Map() }: {
+export function IdeaBoard({ session, cards, accountId, editable, canUpload, conflictByCard = {}, sources = new Map(), openCardId }: {
   session: BoardSession; cards: IdeaCard[]; accountId: number; editable: boolean; canUpload: boolean;
   conflictByCard?: Record<number, number>;
   sources?: ReadonlyMap<number, IdeaSourceLink>;
+  openCardId?: number;
 }) {
   const canCreate = editable && session.state === "ACTIVE";
   const [position, setPosition] = useState<{ base: IdeaCard[]; cards: IdeaMovedCard[] }>({ base: cards, cards: [] });
@@ -56,7 +57,7 @@ export function IdeaBoard({ session, cards, accountId, editable, canUpload, conf
               {column.length ? (
                 <ul className="space-y-2">
                   {column.map((card, index) => (
-                    <IdeaDraggableCard key={card.id} card={card} index={index} onMoved={applyMoved}><IdeaCardDetails card={card} accountId={accountId} canUpload={canUpload} canReport={accountId > 0 && card.author.accountId > 0 && !isAuthor({ id: accountId }, card.author)} canEdit={canCreate && isAuthor({ id: accountId }, card.author)} conflictId={conflictByCard[card.id]} sources={(card.sourceCardIds ?? []).flatMap((id) => {
+                    <IdeaDraggableCard key={card.id} card={card} index={index} onMoved={applyMoved}><IdeaCardDetails key={card.id === openCardId ? "linked" : "board"} defaultOpen={card.id === openCardId} card={card} accountId={accountId} canUpload={canUpload} canReport={accountId > 0 && card.author.accountId > 0 && !isAuthor({ id: accountId }, card.author)} canEdit={canCreate && isAuthor({ id: accountId }, card.author)} conflictId={conflictByCard[card.id]} sources={(card.sourceCardIds ?? []).flatMap((id) => {
                       const source = sources.get(id);
                       return source ? [source] : [];
                     })} /></IdeaDraggableCard>

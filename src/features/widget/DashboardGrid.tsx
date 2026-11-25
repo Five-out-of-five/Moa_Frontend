@@ -95,7 +95,7 @@ export function DashboardGrid({
             <article
               key={widget.id}
               aria-labelledby={`widget-title-${widget.id}`}
-              className="bg-card text-card-foreground border-border rounded-card relative flex min-h-32 min-w-0 flex-col border sm:col-[var(--widget-column)] sm:row-[var(--widget-grid-row)]"
+              className="bg-card text-card-foreground border-border rounded-card relative flex min-h-32 min-w-0 flex-col border has-[[data-briefing-hidden]]:hidden sm:col-[var(--widget-column)] sm:row-[var(--widget-grid-row)]"
               style={
                 {
                   "--widget-column": `${placement.x + 1} / span ${placement.width}`,

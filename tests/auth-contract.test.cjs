@@ -677,3 +677,112 @@ test("목 보드는 댓글과 리액션을 저장하고 마감 후에도 카드 
   assert.equal((await changeIdeaComment(room.id, card.id, "add", null, "차단")).saved, undefined);
   assert.equal((await moveIdeaCard(room.id, card.id, { cardType: "TRY", toIndex: 0, version: 0 })).saved, true);
 });
+
+test("브리핑은 소식 전체 건수를 유지하며 확인과 유형별 소거를 구분한다", async () => {
+  const calls = [];
+  const root = "/api/v1/rooms/7/briefing";
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    const { pathname, search } = new URL(url);
+    assert.equal(search, "");
+    assert.equal(new Headers(init.headers).get("authorization"), "Bearer fixture-access");
+    calls.push([init.method ?? "GET", pathname, init.body]);
+    return ok({ visible: true, teamNews: [{ eventType: "TASK_CREATED", count: 25, items: [
+      { eventId: 1, targetType: "TASK", targetId: 31, title: "회고 준비", actorName: "서윤", createdAt: "2026-11-22T18:00:00+09:00" },
+    ] }] });
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const briefing = await f.load("@/features/briefing/server").getRoomBriefing(7);
+  const { briefingTargetHref } = f.load("@/features/briefing/model");
+  assert.equal(briefing.counts.TASK_CREATED, 25);
+  assert.equal(briefing.news[0].summary, "서윤님이 새 업무를 등록했어요.");
+  assert.equal(briefing.news[0].title, "회고 준비");
+  assert.equal(briefingTargetHref(briefing.news[0].target), "/rooms/7/boards/task?open=31&briefingFocus=31");
+  const { confirmBriefingAction } = f.load("@/features/briefing/actions");
+  assert.equal((await confirmBriefingAction(7, "CARD_CONVERTED")).ok, false);
+  assert.equal((await confirmBriefingAction(7, "TASK_CREATED")).ok, true);
+  assert.equal((await confirmBriefingAction(7)).ok, true);
+  assert.deepEqual(calls, [
+    ["GET", root, undefined],
+    ["POST", root + "/dismiss", JSON.stringify({ eventType: "TASK_CREATED" })],
+    ["POST", root + "/check", undefined],
+  ]);
+});
+
+test("중재는 상태 필터와 목록 정렬을 적용하고 해제된 충돌의 열린 초안을 보여 준다", async () => {
+  const root = "/api/v1/rooms/7/conflicts";
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    assert.equal(new Headers(init.headers).get("authorization"), "Bearer fixture-access");
+    const { pathname, search } = new URL(url);
+    if (pathname === root + "/9") return ok({
+      status: "DISMISSED", cardA: { cardId: 41, sessionId: 3, sessionClosed: true },
+      myDraft: { draftId: 12, cardType: "AGENDA", title: "절충", status: "DRAFT" },
+    });
+    assert.equal(pathname, root);
+    if (search === "?status=PROPOSED") return ok([
+      { conflictId: 7, status: "PROPOSED", detectedAt: "2026-11-22T17:00:00+09:00", adoptedCardId: 31 },
+      { conflictId: 8, status: "PROPOSED", detectedAt: "2026-11-22T18:00:00+09:00" },
+    ]);
+    return Response.json({ success: false, error: { code: "MEDIATION_WIDGET_REQUIRED", message: "중재 위젯을 추가하세요." } }, { status: 409 });
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const { getMediationBoard, getMediationDetail } = f.load("@/features/mediation/server");
+  const { needsMediation } = f.load("@/features/mediation/model");
+  const board = await getMediationBoard(7, "PROPOSED");
+  assert.deepEqual(Array.from(board.items, ({ id }) => id), [8, 7]);
+  assert.equal(board.items.filter(needsMediation).length, 1);
+  assert.equal((await getMediationBoard(7)).enabled, false);
+  const detail = await getMediationDetail(7, 9);
+  assert.equal(detail.status, "DISMISSED");
+  assert.equal(detail.draft.title, "절충");
+  assert.equal(detail.left.href, "/rooms/7/boards/idea?session=3&open=41&briefingFocus=41");
+});
+
+test("중재 변경은 명세의 POST 경로와 본문을 사용하고 AI 한도 오류를 전달한다", async () => {
+  const root = "/api/v1/rooms/7/conflicts/9";
+  const calls = [];
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    const pathname = new URL(url).pathname;
+    assert.equal(new Headers(init.headers).get("authorization"), "Bearer fixture-access");
+    calls.push([init.method, pathname, init.body ? JSON.parse(init.body) : undefined]);
+    if (pathname.endsWith("/compromise-drafts")) {
+      return Response.json({ success: false, error: { code: "AI_QUOTA_EXCEEDED", message: "오늘 한도를 초과했어요." } }, { status: 429 });
+    }
+    return ok(null);
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const actions = f.load("@/features/mediation/actions");
+  assert.equal((await actions.generateCompromise(7, 9)).error, "오늘 한도를 초과했어요.");
+  assert.equal((await actions.dismissConflict(7, 9)).saved, true);
+  assert.equal((await actions.discardCompromise(7, 9, 12)).saved, true);
+  const form = new FormData();
+  form.set("title", "새 제목");
+  assert.equal((await actions.adoptCompromise(7, 9, 12, {}, form)).saved, true);
+  assert.deepEqual(calls, [
+    ["POST", root + "/compromise-drafts", undefined],
+    ["POST", root + "/dismiss", undefined],
+    ["POST", root + "/compromise-drafts/12/discard", undefined],
+    ["POST", root + "/compromise-drafts/12/adopt", { title: "새 제목", content: "" }],
+  ]);
+});
+
+test("목 중재는 초안 폐기 후 재감지되고 해제한 충돌의 열린 초안을 채택한다", async () => {
+  const f = fixture({ env: { AUTH_USE_MOCK: "true", NEXT_PUBLIC_USE_MOCK: "true" } });
+  const [room] = await f.load("@/features/room/server").listMyRooms();
+  const { getMediationBoard, getMediationDetail } = f.load("@/features/mediation/server");
+  const { generateCompromise, discardCompromise, dismissConflict, adoptCompromise } = f.load("@/features/mediation/actions");
+  const [conflict] = (await getMediationBoard(room.id)).items;
+  const detail = () => getMediationDetail(room.id, conflict.id);
+  assert.equal((await generateCompromise(room.id, conflict.id)).saved, true);
+  assert.equal((await detail()).status, "PROPOSED");
+  assert.equal((await discardCompromise(room.id, conflict.id, (await detail()).draft.id)).saved, true);
+  assert.equal((await detail()).status, "REDETECTED");
+  assert.equal((await generateCompromise(room.id, conflict.id)).saved, true);
+  assert.equal((await dismissConflict(room.id, conflict.id)).saved, true);
+  assert.ok((await generateCompromise(room.id, conflict.id)).error);
+  const form = new FormData();
+  form.set("title", "목 절충안");
+  assert.equal((await adoptCompromise(room.id, conflict.id, (await detail()).draft.id, {}, form)).saved, true);
+  assert.equal((await detail()).status, "DISMISSED");
+  assert.match((await detail()).adoptedHref, /open=\d+/);
+  assert.equal((await detail()).draft, null);
+});

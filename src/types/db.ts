@@ -411,6 +411,7 @@ export interface CardConflict {
   leftCardTitle: string;
   rightCardTitle: string;
   state: ConflictState;
+  redetected?: boolean;
   summary: string; // AI 가 낸 "왜 충돌이라 보는가"
   detectedAt: string;
 }
