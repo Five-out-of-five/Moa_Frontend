@@ -35,9 +35,8 @@ function parseSnapshot(data: string) {
   }
 }
 
-export function useDashboardLayout(roomId: number, initialWidgets: RoomWidget[], editable: boolean) {
-  const [layout, setLayout] = useState({ revision: -1, widgets: initialWidgets });
-  const [editors, setEditors] = useState<DashboardSnapshot["editors"]>([]);
+export function useDashboardLayout(roomId: number, initialSnapshot: DashboardSnapshot, shouldOpenMockStream: boolean) {
+  const [layout, setLayout] = useState(initialSnapshot);
   const [pending, setPending] = useState<{ id: number; placement: WidgetPlacement } | null>(null);
   const session = useRef<string | null>(null);
   const heartbeat = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
@@ -46,20 +45,23 @@ export function useDashboardLayout(roomId: number, initialWidgets: RoomWidget[],
   }, []);
 
   useEffect(() => {
-    if (!editable) return;
+    applySnapshot(initialSnapshot);
+  }, [applySnapshot, initialSnapshot]);
+
+  useEffect(() => {
+    if (!shouldOpenMockStream) return;
     session.current ??= crypto.randomUUID();
     const stream = new EventSource(`/api/rooms/${roomId}/dashboard/events`);
     stream.onmessage = ({ data }: MessageEvent<string>) => {
       const snapshot = parseSnapshot(data);
       if (!snapshot) return;
       applySnapshot(snapshot);
-      setEditors(snapshot.editors.filter(({ sessionId }) => sessionId !== session.current));
     };
     return () => {
       stream.close();
       clearInterval(heartbeat.current);
     };
-  }, [applySnapshot, editable, roomId]);
+  }, [applySnapshot, shouldOpenMockStream, roomId]);
 
   function setEditing(widgetId: number | null) {
     clearInterval(heartbeat.current);
@@ -76,8 +78,8 @@ export function useDashboardLayout(roomId: number, initialWidgets: RoomWidget[],
     setPending({ id, placement });
     try {
       const result = await saveWidgetPlacementAction(roomId, id, placement);
+      if (result.snapshot) applySnapshot(result.snapshot);
       if (!result.ok) toast.error(result.message);
-      else applySnapshot(result.snapshot);
     } catch {
       toast.error("위젯 배치를 저장하지 못했습니다. 다시 시도해 주세요.");
     } finally {
@@ -86,8 +88,8 @@ export function useDashboardLayout(roomId: number, initialWidgets: RoomWidget[],
   }
 
   return {
-    widgets: editable ? layout.widgets : initialWidgets,
-    editors,
+    widgets: layout.widgets,
+    editors: session.current ? layout.editors.filter(({ sessionId }) => sessionId !== session.current) : [],
     pending,
     setEditing,
     save,

@@ -3,18 +3,18 @@ import "server-only";
 import { getManagedRoom } from "@/features/room/management/server";
 import { api } from "@/lib/api";
 import { isMock } from "@/mocks/config";
-import { roomWidgets } from "@/mocks/db";
-import type { RoomWidget } from "@/types/db";
 
 import { getMockDashboardSnapshot } from "./mock-layout";
+import { toDashboardSnapshot } from "./snapshot";
 
 /** 방 대시보드의 위젯 배치 조회. 대시보드 진입 시 가장 먼저 부른다. */
-export async function listRoomWidgets(roomId: number): Promise<RoomWidget[]> {
-  if (isMock) return roomWidgets.filter((w) => w.roomId === roomId);
-  return api<RoomWidget[]>(`/api/v1/rooms/${roomId}/dashboard/widgets`, { cache: "no-store" });
+export async function getDashboardSnapshot(roomId: number) {
+  if (isMock) return getMockDashboardSnapshot(roomId);
+  const response = await api<unknown>(`/api/v1/rooms/${roomId}/dashboard`, { cache: "no-store" });
+  return toDashboardSnapshot(roomId, response);
 }
 
-export function canEditDashboard() {
+export function usesMockDashboardEvents() {
   return isMock;
 }
 

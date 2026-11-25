@@ -59,13 +59,13 @@ export function AddWidgetDialog({
     setIsPending(true);
     try {
       const result = await addWidgetAction(roomId, selected);
+      if (result.snapshot) onAdded(result.snapshot);
       if (!result.ok) {
         toast.error(result.message);
         return;
       }
       setIsOpen(false);
       setSelected(null);
-      onAdded(result.snapshot);
       toast.success("위젯을 추가했습니다.");
     } catch {
       toast.error("위젯을 추가하지 못했습니다. 다시 시도해 주세요.");
