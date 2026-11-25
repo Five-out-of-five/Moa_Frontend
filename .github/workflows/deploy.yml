@@ -1,0 +1,81 @@
+name: Deploy frontend
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy to production. Leave unchecked to test SSH only."
+        type: boolean
+        default: false
+
+permissions:
+  actions: read
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: deploy-frontend-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Connect or deploy frontend
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Verify CI passed for this commit
+        if: inputs.deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh run list --workflow ci.yml --branch main --event push --commit "$GITHUB_SHA" \
+            --limit 1 --json status,conclusion > ci-runs.json
+          if ! jq -e '.[0] | .status == "completed" and .conclusion == "success"' ci-runs.json >/dev/null; then
+            echo 'Frontend CI has not passed for this main commit.' >&2
+            exit 1
+          fi
+
+      - name: Check out deployment script
+        if: inputs.deploy
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Connect to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST_FINGERPRINT: ${{ vars.EC2_HOST_FINGERPRINT }}
+          DEPLOY: ${{ inputs.deploy }}
+        run: |
+          : "${EC2_HOST:?Missing EC2_HOST}" "${EC2_USER:?Missing EC2_USER}"
+          : "${EC2_SSH_KEY:?Missing EC2_SSH_KEY}" "${EC2_HOST_FINGERPRINT:?Missing EC2_HOST_FINGERPRINT}"
+
+          ssh_dir=$(mktemp -d)
+          trap 'rm -rf "$ssh_dir"' EXIT
+          umask 077
+          printf '%s\n' "$EC2_SSH_KEY" | tr -d '\r' > "$ssh_dir/key"
+          ssh-keyscan -T 10 -t ed25519 -- "$EC2_HOST" > "$ssh_dir/known_hosts"
+          fingerprint=$(ssh-keygen -lf "$ssh_dir/known_hosts" | awk '{print $2}')
+          if [[ "$fingerprint" != "$EC2_HOST_FINGERPRINT" ]]; then
+            echo 'EC2 SSH host fingerprint does not match.' >&2
+            exit 1
+          fi
+
+          ssh_args=(-i "$ssh_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_dir/known_hosts"
+            -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+          if [[ "$DEPLOY" == true ]]; then
+            [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+            ssh "${ssh_args[@]}" -- "$EC2_USER@$EC2_HOST" "bash -s -- $GITHUB_SHA" \
+              < .github/scripts/deploy-frontend.sh
+          else
+            ssh "${ssh_args[@]}" -- "$EC2_USER@$EC2_HOST" hostname
+          fi
