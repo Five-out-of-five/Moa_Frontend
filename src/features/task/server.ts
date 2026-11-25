@@ -1,6 +1,7 @@
 import "server-only";
 
 import { api, ApiError } from "@/lib/api";
+import { getApiAccountContext } from "@/lib/api-account";
 import { isMock } from "@/mocks/config";
 import { accounts, roomMembers, sprints, tasks } from "@/mocks/db";
 import type {
@@ -222,8 +223,12 @@ export async function getRoomProgress(roomId: number): Promise<RoomProgress> {
       dueSoonCount,
     };
   }
+  // ⚠️ BE 가 OpenAPI 생성 스펙에 `accountId` 를 쿼리 필수로 선언한다 (`@LoginAccount` 가
+  //    Swagger 쪽에서 param 으로 노출). 다른 계정 범위 서버 호출과 같은 convention 으로
+  //    `getApiAccountContext()` 의 query 를 붙여야 안전하게 통과한다.
+  const { query } = await getApiAccountContext();
   return api<RoomProgress>(
-    `/api/v1/rooms/${roomId}/tasks/progress`,
+    `/api/v1/rooms/${roomId}/tasks/progress?${query}`,
     { cache: "no-store" },
   );
 }
@@ -284,8 +289,9 @@ export async function getRoomWorkload(roomId: number): Promise<RoomWorkload> {
     }
     return { members, averageScore, warnings };
   }
+  const { query } = await getApiAccountContext();
   return api<RoomWorkload>(
-    `/api/v1/rooms/${roomId}/tasks/workload`,
+    `/api/v1/rooms/${roomId}/tasks/workload?${query}`,
     { cache: "no-store" },
   );
 }
