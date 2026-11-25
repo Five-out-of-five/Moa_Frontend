@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, Database, Link2, Loader2, MessageSquare } from "lucide-react";
+import { AlertTriangle, Database, Link2, Loader2, MessageSquare, RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -73,6 +74,10 @@ interface Props {
   initialSlack: SlackIntegration | null;
   initialNotion: NotionIntegration | null;
   notionDatabases: NotionDatabase[];
+  /** Panel 쪽에서 Slack 조회가 실패했는지. 폼은 미연결과 구분해 에러 안내를 켠다. */
+  slackLoadError?: boolean;
+  notionLoadError?: boolean;
+  databasesLoadError?: boolean;
 }
 
 export function IntegrationsForm({
@@ -81,68 +86,72 @@ export function IntegrationsForm({
   initialSlack,
   initialNotion,
   notionDatabases,
+  slackLoadError = false,
+  notionLoadError = false,
+  databasesLoadError = false,
 }: Props) {
-  // --- Slack 섹션 state ---
-  const [slackWebhook, setSlackWebhook] = useState(
-    initialSlack?.webhookUrlMasked ?? "",
-  );
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+
+  // --- Slack baseline — 저장 성공 시 교체해 dirty 비교 기준을 최신값으로 재바인딩 (CodeRabbit).
+  //     useState 초기값은 props 가 새로 와도 재적용 안 되므로 성공 응답으로 직접 갱신한다.
+  const [slackBaseline, setSlackBaseline] = useState<SlackIntegration | null>(initialSlack);
+  // ⚠️ 폼 확장 상태 — Notion 과 UX 통일. **연동 전엔 "Slack 연결하기" 버튼만** 노출하고,
+  //    사용자가 눌러야 웹훅 입력·이벤트 체크박스가 펼쳐진다. 연결된 상태라면 자동 펼침.
+  const [slackExpanded, setSlackExpanded] = useState<boolean>(initialSlack?.connected === true);
+  const [slackWebhook, setSlackWebhook] = useState(slackBaseline?.webhookUrlMasked ?? "");
   const [slackEvents, setSlackEvents] = useState<Set<SlackEventType>>(
-    new Set(initialSlack?.eventTypes ?? []),
+    new Set(slackBaseline?.eventTypes ?? []),
   );
   const [slackError, setSlackError] = useState<string | null>(null);
   const [slackTestState, setSlackTestState] = useState<"idle" | "sent" | "failed">("idle");
 
-  // --- Notion 섹션 state ---
+  // --- Notion baseline — 마찬가지. savedDbId·savedDbInList 가 전부 baseline 기반.
+  const [notionBaseline, setNotionBaseline] = useState<NotionIntegration | null>(initialNotion);
   const notionConnected = Boolean(
-    initialNotion?.connected && !initialNotion.tokenExpired,
+    notionBaseline?.connected && !notionBaseline.tokenExpired,
   );
-  // 저장된 DB id — 목록 안에 있는지 체크용. 없으면 "다시 선택" 안내.
-  const savedDbId = initialNotion?.targetDatabase?.id ?? null;
+  const savedDbId = notionBaseline?.targetDatabase?.id ?? null;
   const savedDbInList =
     savedDbId != null && notionDatabases.some((db) => db.id === savedDbId);
-  // 저장된 DB 이름 — BE 가 null 로 돌려주면 목록에서 fallback.
   const savedDbTitle = useMemo(() => {
-    if (initialNotion?.targetDatabase?.title) {
-      return displayDbTitle(initialNotion.targetDatabase.title);
+    if (notionBaseline?.targetDatabase?.title) {
+      return displayDbTitle(notionBaseline.targetDatabase.title);
     }
     if (savedDbId) {
       const found = notionDatabases.find((db) => db.id === savedDbId);
       return found ? displayDbTitle(found.title) : null;
     }
     return null;
-  }, [initialNotion, notionDatabases, savedDbId]);
-  const [notionDbId, setNotionDbId] = useState<string>(
-    savedDbInList ? (savedDbId as string) : "",
-  );
+  }, [notionBaseline, notionDatabases, savedDbId]);
+  const [notionDbId, setNotionDbId] = useState<string>(savedDbInList ? (savedDbId as string) : "");
   const [notionMode, setNotionMode] = useState<NotionExportMode>(
-    initialNotion?.exportMode ?? "MANUAL",
+    notionBaseline?.exportMode ?? "MANUAL",
   );
   const [notionError, setNotionError] = useState<string | null>(null);
 
-  const [pending, startTransition] = useTransition();
-
-  // --- 변경 감지 — 변경된 섹션만 저장 ---
-  // Slack 은 BE 가 자동 비활성(enabled=false) 시킨 상태면 변경 없어도 저장으로 재활성화 가능해야
-  // 한다 (승재님). 따라서 `slackDirty` 외 "복구 필요" 조건을 추가해 저장 버튼 활성화 가능.
-  const needsSlackReenable = initialSlack?.connected === true && initialSlack.enabled === false;
+  // --- 변경 감지 ---
+  const needsSlackReenable = slackBaseline?.connected === true && slackBaseline.enabled === false;
   const slackDirty = useMemo(() => {
-    const initialEvents = new Set(initialSlack?.eventTypes ?? []);
+    const initialEvents = new Set(slackBaseline?.eventTypes ?? []);
     if (slackEvents.size !== initialEvents.size) return true;
     for (const ev of slackEvents) if (!initialEvents.has(ev)) return true;
     if (isWebhookEditable(slackWebhook)) return true;
     return false;
-  }, [initialSlack, slackEvents, slackWebhook]);
+  }, [slackBaseline, slackEvents, slackWebhook]);
   const slackCanSave = slackDirty || needsSlackReenable;
 
   const notionDirty = useMemo(() => {
     if (!notionConnected) return false;
     if (!notionDbId) return false;
     if (notionDbId !== savedDbId) return true;
-    if (notionMode !== (initialNotion?.exportMode ?? "MANUAL")) return true;
+    if (notionMode !== (notionBaseline?.exportMode ?? "MANUAL")) return true;
     return false;
-  }, [notionConnected, notionDbId, savedDbId, notionMode, initialNotion]);
+  }, [notionConnected, notionDbId, savedDbId, notionMode, notionBaseline]);
 
-  const canSubmit = !pending && isOwner && (slackCanSave || notionDirty);
+  // 폼이 접힌 상태에서는 Slack 저장이 일어나지 않아야 한다 (사용자 미인지 저장 방지).
+  const slackSavable = slackExpanded && slackCanSave;
+  const canSubmit = !pending && isOwner && (slackSavable || notionDirty);
 
   // 비방장 — 저장·OAuth 전부 BE 가 거절. UI 는 안내 패널만 노출.
   if (!isOwner) {
@@ -220,7 +229,7 @@ export function IntegrationsForm({
     setSlackError(null);
     setNotionError(null);
     startTransition(async () => {
-      if (slackCanSave) {
+      if (slackSavable) {
         const result = await upsertSlackIntegrationAction({
           roomId,
           webhookUrl: isWebhookEditable(slackWebhook) ? slackWebhook.trim() : undefined,
@@ -230,6 +239,11 @@ export function IntegrationsForm({
           setSlackError(result.message);
           return;
         }
+        // 저장 성공: baseline 과 입력값을 응답 기준으로 리셋 → dirty=false, 저장 버튼 비활성화.
+        setSlackBaseline(result.integration);
+        setSlackWebhook(result.integration.webhookUrlMasked ?? "");
+        setSlackEvents(new Set(result.integration.eventTypes));
+        setSlackTestState("idle");
       }
       if (notionDirty) {
         const result = await updateNotionIntegrationAction({
@@ -247,7 +261,10 @@ export function IntegrationsForm({
         }
         if (result.kind === "error") {
           setNotionError(result.message);
+          return;
         }
+        setNotionBaseline(result.integration);
+        setNotionMode(result.integration.exportMode);
       }
     });
   };
@@ -271,98 +288,109 @@ export function IntegrationsForm({
               </p>
             </div>
           </div>
-          {initialSlack?.connected && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={handleDisconnectSlack}
-              disabled={pending}
-            >
+          {slackBaseline?.connected ? (
+            <Button type="button" variant="ghost" size="sm" onClick={handleDisconnectSlack} disabled={pending}>
               연결 해제
             </Button>
-          )}
-        </header>
-
-        {needsSlackReenable && (
-          <div className="bg-destructive/10 text-destructive mt-3 flex items-start gap-2 rounded-md p-2 text-xs">
-            <AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-            <p>
-              {initialSlack?.consecutiveFailCount}회 연속 실패로 비활성화됐어요.
-              {initialSlack?.disabledAt && ` (${formatDate(initialSlack.disabledAt)})`}
-              {" "}
-              <strong>저장하면 다시 켜져요.</strong>
-            </p>
-          </div>
-        )}
-
-        <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="slack-webhook" className="text-xs font-medium">
-              수신 웹훅 주소
-            </Label>
-            <Input
-              id="slack-webhook"
-              value={slackWebhook}
-              onChange={(e) => setSlackWebhook(e.target.value)}
-              placeholder="Slack 수신 웹훅 주소를 입력하세요"
-              disabled={pending}
-            />
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground text-xs">
-                {slackTestState === "sent" && "테스트 메시지를 보냈어요."}
-                {slackTestState === "failed" && "테스트 발송 실패"}
-              </span>
+          ) : (
+            !slackExpanded && !slackLoadError && (
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={handleTestSlack}
-                disabled={pending || !isWebhookEditable(slackWebhook)}
+                onClick={() => setSlackExpanded(true)}
+                disabled={pending}
               >
-                테스트 발송
+                <Link2 aria-hidden="true" className="size-4" />
+                Slack 연결하기
               </Button>
-            </div>
-          </div>
+            )
+          )}
+        </header>
 
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-xs font-medium">알림 이벤트</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {SLACK_EVENT_ORDER.map((event) => {
-                const checked = slackEvents.has(event);
-                return (
-                  <label
-                    key={event}
-                    className={cn(
-                      "flex items-center gap-2 rounded-md border px-2.5 py-2 text-sm",
-                      checked
-                        ? "border-primary bg-primary/5"
-                        : "border-border bg-background",
-                    )}
+        {slackLoadError ? (
+          <LoadErrorBanner
+            message="슬랙 연동 정보를 불러오지 못했어요."
+            onRetry={() => router.refresh()}
+            pending={pending}
+          />
+        ) : !slackExpanded ? null : (
+          <>
+            {needsSlackReenable && (
+              <div className="bg-destructive/10 text-destructive mt-3 flex items-start gap-2 rounded-md p-2 text-xs">
+                <AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+                <p>
+                  {slackBaseline?.consecutiveFailCount}회 연속 실패로 비활성화됐어요.
+                  {slackBaseline?.disabledAt && ` (${formatDate(slackBaseline.disabledAt)})`}
+                  {" "}
+                  <strong>저장하면 다시 켜져요.</strong>
+                </p>
+              </div>
+            )}
+
+            <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="slack-webhook" className="text-xs font-medium">수신 웹훅 주소</Label>
+                <Input
+                  id="slack-webhook"
+                  value={slackWebhook}
+                  onChange={(e) => setSlackWebhook(e.target.value)}
+                  placeholder="Slack 수신 웹훅 주소를 입력하세요"
+                  disabled={pending}
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground text-xs">
+                    {slackTestState === "sent" && "테스트 메시지를 보냈어요."}
+                    {slackTestState === "failed" && "테스트 발송 실패"}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTestSlack}
+                    disabled={pending || !isWebhookEditable(slackWebhook)}
                   >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => handleToggleEvent(event)}
-                      disabled={pending}
-                      className="accent-primary"
-                    />
-                    <span>{SLACK_EVENT_LABELS[event]}</span>
-                  </label>
-                );
-              })}
+                    테스트 발송
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-xs font-medium">알림 이벤트</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {SLACK_EVENT_ORDER.map((event) => {
+                    const checked = slackEvents.has(event);
+                    return (
+                      <label
+                        key={event}
+                        className={cn(
+                          "flex items-center gap-2 rounded-md border px-2.5 py-2 text-sm",
+                          checked ? "border-primary bg-primary/5" : "border-border bg-background",
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => handleToggleEvent(event)}
+                          disabled={pending}
+                          className="accent-primary"
+                        />
+                        <span>{SLACK_EVENT_LABELS[event]}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-        {slackError && (
-          <p className="text-destructive mt-3 text-sm" role="alert">
-            {slackError}
-          </p>
-        )}
-        {slackEvents.size === 0 && !needsSlackReenable && (
-          <p className="text-muted-foreground mt-2 text-xs">
-            알림 이벤트가 하나도 선택되지 않으면 Slack 발송이 일어나지 않아요.
-          </p>
+            {slackError && (
+              <p className="text-destructive mt-3 text-sm" role="alert">{slackError}</p>
+            )}
+            {slackEvents.size === 0 && !needsSlackReenable && (
+              <p className="text-muted-foreground mt-2 text-xs">
+                알림 이벤트가 하나도 선택되지 않으면 Slack 발송이 일어나지 않아요.
+              </p>
+            )}
+          </>
         )}
       </section>
 
@@ -381,12 +409,12 @@ export function IntegrationsForm({
               <p className="text-muted-foreground mt-0.5 text-sm">
                 세션 결과를 지정한 데이터베이스에 정리합니다.
               </p>
-              {notionConnected && initialNotion?.workspaceName && (
+              {notionConnected && notionBaseline?.workspaceName && (
                 <p className="text-muted-foreground mt-1 text-xs">
-                  연결된 워크스페이스 · {initialNotion.workspaceName}
+                  연결된 워크스페이스 · {notionBaseline.workspaceName}
                 </p>
               )}
-              {initialNotion?.tokenExpired && (
+              {notionBaseline?.tokenExpired && (
                 <p className="text-destructive mt-1 text-xs">
                   토큰이 만료되어 재연결이 필요해요.
                 </p>
@@ -394,13 +422,7 @@ export function IntegrationsForm({
             </div>
           </div>
           {notionConnected ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={handleDisconnectNotion}
-              disabled={pending}
-            >
+            <Button type="button" variant="ghost" size="sm" onClick={handleDisconnectNotion} disabled={pending}>
               연결 해제
             </Button>
           ) : (
@@ -409,7 +431,7 @@ export function IntegrationsForm({
               variant="outline"
               size="sm"
               onClick={handleAuthorizeNotion}
-              disabled={pending}
+              disabled={pending || notionLoadError}
             >
               <Link2 aria-hidden="true" className="size-4" />
               연결하기
@@ -417,80 +439,95 @@ export function IntegrationsForm({
           )}
         </header>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="notion-db" className="text-xs font-medium">
-              Notion 데이터베이스
-            </Label>
-            <select
-              id="notion-db"
-              value={notionDbId}
-              onChange={(e) => setNotionDbId(e.target.value)}
-              disabled={!notionConnected || pending}
-              className="border-border bg-background text-foreground h-9 rounded-md border px-3 text-sm disabled:opacity-50"
-            >
-              <option value="">
-                {notionConnected ? "데이터베이스를 선택하세요" : "먼저 Notion 을 연결해 주세요"}
-              </option>
-              {notionDatabases.map((db) => (
-                <option key={db.id} value={db.id}>
-                  {displayDbTitle(db.title)}
+        {notionLoadError ? (
+          <LoadErrorBanner
+            message="노션 연동 정보를 불러오지 못했어요."
+            onRetry={() => router.refresh()}
+            pending={pending}
+          />
+        ) : (
+          <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="notion-db" className="text-xs font-medium">Notion 데이터베이스</Label>
+              <select
+                id="notion-db"
+                value={notionDbId}
+                onChange={(e) => setNotionDbId(e.target.value)}
+                disabled={!notionConnected || pending || databasesLoadError}
+                className="border-border bg-background text-foreground h-9 rounded-md border px-3 text-sm disabled:opacity-50"
+              >
+                <option value="">
+                  {notionConnected ? "데이터베이스를 선택하세요" : "먼저 Notion 을 연결해 주세요"}
                 </option>
-              ))}
-            </select>
-            {notionConnected && savedDbId && !savedDbInList && (
-              <p className="text-destructive text-xs">
-                기존에 저장된 DB{savedDbTitle ? ` (${savedDbTitle})` : ""} 가 목록에 없어요.
-                다시 선택해 주세요.
-              </p>
-            )}
-            {notionConnected && notionDatabases.length === 0 && (
-              <p className="text-muted-foreground text-xs">
-                연결된 워크스페이스에 접근 가능한 데이터베이스가 없어요.
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-xs font-medium">내보내기 방식</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {(Object.keys(NOTION_MODE_LABELS) as NotionExportMode[]).map((mode) => {
-                const checked = notionMode === mode;
-                return (
-                  <label
-                    key={mode}
-                    className={cn(
-                      "flex cursor-pointer flex-col gap-0.5 rounded-md border px-3 py-2 text-sm",
-                      checked
-                        ? "border-primary bg-primary/5"
-                        : "border-border bg-background",
-                      !notionConnected && "opacity-60",
-                    )}
+                {notionDatabases.map((db) => (
+                  <option key={db.id} value={db.id}>{displayDbTitle(db.title)}</option>
+                ))}
+              </select>
+              {databasesLoadError ? (
+                <p className="text-destructive text-xs">
+                  데이터베이스 목록을 불러오지 못했어요.{" "}
+                  <button
+                    type="button"
+                    onClick={() => router.refresh()}
+                    disabled={pending}
+                    className="underline"
                   >
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="notion-mode"
-                        checked={checked}
-                        onChange={() => setNotionMode(mode)}
-                        disabled={!notionConnected || pending}
-                        className="accent-primary"
-                      />
-                      <span className="font-medium">{NOTION_MODE_LABELS[mode].title}</span>
-                    </div>
-                    <span className="text-muted-foreground ml-6 text-xs">
-                      {NOTION_MODE_LABELS[mode].description}
-                    </span>
-                  </label>
-                );
-              })}
+                    새로고침
+                  </button>
+                </p>
+              ) : (
+                <>
+                  {notionConnected && savedDbId && !savedDbInList && (
+                    <p className="text-destructive text-xs">
+                      기존에 저장된 DB{savedDbTitle ? ` (${savedDbTitle})` : ""} 가 목록에 없어요. 다시 선택해 주세요.
+                    </p>
+                  )}
+                  {notionConnected && notionDatabases.length === 0 && (
+                    <p className="text-muted-foreground text-xs">
+                      연결된 워크스페이스에 접근 가능한 데이터베이스가 없어요.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs font-medium">내보내기 방식</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {(Object.keys(NOTION_MODE_LABELS) as NotionExportMode[]).map((mode) => {
+                  const checked = notionMode === mode;
+                  return (
+                    <label
+                      key={mode}
+                      className={cn(
+                        "flex cursor-pointer flex-col gap-0.5 rounded-md border px-3 py-2 text-sm",
+                        checked ? "border-primary bg-primary/5" : "border-border bg-background",
+                        !notionConnected && "opacity-60",
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="notion-mode"
+                          checked={checked}
+                          onChange={() => setNotionMode(mode)}
+                          disabled={!notionConnected || pending}
+                          className="accent-primary"
+                        />
+                        <span className="font-medium">{NOTION_MODE_LABELS[mode].title}</span>
+                      </div>
+                      <span className="text-muted-foreground ml-6 text-xs">
+                        {NOTION_MODE_LABELS[mode].description}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
           </div>
-        </div>
+        )}
         {notionError && (
-          <p className="text-destructive mt-3 text-sm" role="alert">
-            {notionError}
-          </p>
+          <p className="text-destructive mt-3 text-sm" role="alert">{notionError}</p>
         )}
       </section>
 
@@ -501,6 +538,37 @@ export function IntegrationsForm({
           연동 설정 저장
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** 섹션 조회 실패 안내 + 새로고침 버튼 — Slack·Notion 섹션 공용. */
+function LoadErrorBanner({
+  message,
+  onRetry,
+  pending,
+}: {
+  message: string;
+  onRetry: () => void;
+  pending: boolean;
+}) {
+  return (
+    <div className="bg-destructive/10 text-destructive mt-3 flex items-center justify-between gap-2 rounded-md p-2 text-sm">
+      <div className="flex items-center gap-2">
+        <AlertTriangle aria-hidden="true" className="size-4 shrink-0" />
+        <span>{message}</span>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={onRetry}
+        disabled={pending}
+        className="gap-1"
+      >
+        <RefreshCw aria-hidden="true" className="size-3.5" />
+        새로고침
+      </Button>
     </div>
   );
 }
