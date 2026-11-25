@@ -6,7 +6,7 @@ import { z } from "zod";
 import { api, ApiError } from "@/lib/api";
 import { isNextControlFlowError } from "@/lib/next-redirect";
 import { isMock } from "@/mocks/config";
-import { accounts, roomMembers, sprints, tasks } from "@/mocks/db";
+import { accounts, ideaCards, roomMembers, sprints, tasks } from "@/mocks/db";
 import type { MemberRef, TaskDetail, TaskStatus } from "@/types/db";
 
 import { computeDDay, computeOverdue } from "./lib/d-day";
@@ -46,6 +46,7 @@ const changeStatusSchema = z.object({
 const createTaskSchema = z
   .object({
     roomId: z.number().int().positive(),
+    sourceCardId: z.number().int().positive().optional(),
     title: z
       .string()
       .trim()
@@ -262,6 +263,7 @@ export async function createTaskAction(
   }
   const {
     roomId,
+    sourceCardId,
     title,
     description,
     status,
@@ -271,6 +273,10 @@ export async function createTaskAction(
   } = parsed.data;
 
   if (isMock) {
+    const source = sourceCardId === undefined ? undefined : ideaCards.find(({ id, roomId: room }) => id === sourceCardId && room === roomId);
+    if (sourceCardId !== undefined && (!source || source.convertedTaskId !== null)) {
+      return { kind: "error", message: "업무로 전환할 카드를 확인해 주세요." };
+    }
     const me = accounts[0];
     if (!me) {
       return { kind: "error", message: "현재 계정을 확인하지 못했습니다." };
@@ -336,7 +342,7 @@ export async function createTaskAction(
       version: 1,
       registrant,
       assignee,
-      source: { type: "NONE", id: null, title: null },
+      source: source ? { type: "CARD", id: source.id, title: source.title } : { type: "NONE", id: null, title: null },
       completedAt: status === "DONE" ? now : null,
       files: [],
       history: [
@@ -353,6 +359,10 @@ export async function createTaskAction(
       createdAt: now,
     };
     tasks.push(newTask);
+    if (source) {
+      source.convertedTaskId = newTaskId;
+      revalidatePath(`/rooms/${roomId}/boards/idea`);
+    }
     if (sprint) {
       sprint.totalTasks += 1;
       if (status === "DONE") sprint.doneTasks += 1;
@@ -373,9 +383,11 @@ export async function createTaskAction(
         priority,
         assigneeAccountId,
         dueDate,
+        sourceCardId,
       },
     });
     revalidatePath(`/rooms/${roomId}/boards/task`, "page");
+    if (sourceCardId !== undefined) revalidatePath(`/rooms/${roomId}/boards/idea`);
     return {
       kind: "ok",
       task: {
@@ -764,6 +776,8 @@ export async function deleteTaskAction(
     const wasDone = target.status === "DONE";
     const sprintId = target.sprintId;
     tasks.splice(idx, 1);
+    const source = ideaCards.find((card) => card.roomId === roomId && card.convertedTaskId === taskId);
+    if (source) source.convertedTaskId = null;
     if (sprintId !== null) {
       const sprint = sprints.find((s) => s.id === sprintId);
       if (sprint) {
@@ -772,12 +786,14 @@ export async function deleteTaskAction(
       }
     }
     revalidatePath(`/rooms/${roomId}/boards/task`, "page");
+    revalidatePath(`/rooms/${roomId}/boards/idea`);
     return { kind: "ok" };
   }
 
   try {
     await api(`/api/v1/rooms/${roomId}/tasks/${taskId}`, { method: "DELETE" });
     revalidatePath(`/rooms/${roomId}/boards/task`, "page");
+    revalidatePath(`/rooms/${roomId}/boards/idea`);
     return { kind: "ok" };
   } catch (e) {
     if (e instanceof ApiError) return { kind: "error", message: e.message };

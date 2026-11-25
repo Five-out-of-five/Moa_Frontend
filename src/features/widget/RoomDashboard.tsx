@@ -13,6 +13,7 @@ export async function RoomDashboard({ roomId }: { roomId: number }) {
     (error: unknown) => {
       unstable_rethrow(error);
       if (error instanceof ApiError) {
+        if (error.status >= 500) throw error;
         if (error.code === "ROOM_INACTIVE") redirect("/workspaces?roomStatus=inactive");
         if (error.code === "ROOM_NOT_FOUND" || error.code === "ROOM_NOT_MEMBER")
           redirect("/workspaces");

@@ -32,6 +32,7 @@ import {
 
 interface Props {
   roomId: number;
+  sourceCard?: { id: number; title: string; content: string };
   /** 담당자 셀렉터에 들어갈 활성 방 멤버 목록. 상위에서 선패치해 주입. */
   members: readonly MemberRef[];
   /** 기본 담당자 (보통 "나"). null 이면 "미담당" 이 기본값. */
@@ -71,6 +72,7 @@ const UNASSIGNED_VALUE = "__unassigned__";
  */
 export function TaskCreateDialog({
   roomId,
+  sourceCard,
   members,
   defaultAssigneeAccountId,
   activeSprint,
@@ -89,8 +91,8 @@ export function TaskCreateDialog({
       ? defaultAssigneeAccountId
       : null;
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const [title, setTitle] = useState(sourceCard?.title ?? "");
+  const [description, setDescription] = useState(sourceCard?.content ?? "");
   const [status, setStatus] = useState<TaskStatus>(defaultStatus);
   const [priority, setPriority] = useState<TaskPriority>("NORMAL");
   const [assigneeAccountId, setAssigneeAccountId] = useState<number | null>(
@@ -110,8 +112,8 @@ export function TaskCreateDialog({
   const sprintInputId = useId();
 
   const resetState = () => {
-    setTitle("");
-    setDescription("");
+    setTitle(sourceCard?.title ?? "");
+    setDescription(sourceCard?.content ?? "");
     setStatus(defaultStatus);
     setPriority("NORMAL");
     setAssigneeAccountId(safeDefaultAssignee);
@@ -154,6 +156,7 @@ export function TaskCreateDialog({
       try {
         result = await createTaskAction({
           roomId,
+          sourceCardId: sourceCard?.id,
           title: title.trim(),
           description,
           status,

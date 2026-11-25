@@ -1,4 +1,9 @@
+import type { components } from "@/types/api";
 import type { IdeaCardType } from "@/types/db";
+
+export const IDEA_REACTIONS = {
+  THUMBS_UP: "👍", CLAP: "👏", FIRE: "🔥", THINKING: "🤔", SAD: "😢",
+} as const;
 
 export const IDEA_COLUMNS = [
   { type: "AGENDA", title: "안건", description: "논의가 필요한 주제", color: "bg-primary" },
@@ -20,10 +25,11 @@ export function parseIdeaDeadline(value: string) {
 }
 
 export type IdeaFormResult = { saved?: boolean; error?: string };
+export type IdeaMovedCard = { id: number; cardType: IdeaCardType; sortOrder: number; version: number; title?: string; content?: string | null };
+export type IdeaMoveResult = IdeaFormResult & { cards?: IdeaMovedCard[] };
 
 export interface IdeaDiscussion {
-  comments: { id: number; authorId: number; author: string; text: string; deleted?: boolean }[];
-  commentsUnavailable?: boolean;
-  reactions: { emoji: string; count: number }[];
+  comments: { id: number; authorId: number; author: string; text: string; deleted?: boolean; edited?: boolean }[];
+  reactions: { emoji: string; count: number; users?: components["schemas"]["MemberRef"][] }[];
 }
 export type IdeaSourceLink = { id: number; href: string; title: string };

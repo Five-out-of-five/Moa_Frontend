@@ -10,15 +10,14 @@ import { IdeaBoard } from "@/features/idea/IdeaBoard";
 import { IdeaBoardLive } from "@/features/idea/IdeaBoardLive";
 import { CloseIdeaDialog, IdeaCardDialog, StartIdeaDialog } from "@/features/idea/IdeaDialogs";
 import { ideaDateTime } from "@/features/idea/model";
-import { getIdeaBoard, loadIdeaDiscussions } from "@/features/idea/server";
+import { getIdeaBoard } from "@/features/idea/server";
 import { listConflicts } from "@/features/mediation/server";
 import { getReportViewerAccountId } from "@/features/report/server";
 import { getFirstRoomProfile } from "@/features/room/first-profile/server";
-import { listRoomMembers } from "@/features/room/server";
 
 export default async function IdeaBoardPage({ params, searchParams }: {
   params: Promise<{ roomId: string }>;
-  searchParams: Promise<{ session?: string; briefingFocus?: string }>;
+  searchParams: Promise<{ session?: string; briefingFocus?: string; historyPage?: string }>;
 }) {
   const [{ roomId }, query] = await Promise.all([params, searchParams]);
   const entry = await getFirstRoomProfile(roomId);
@@ -26,23 +25,19 @@ export default async function IdeaBoardPage({ params, searchParams }: {
   const id = entry.room.id;
   const sessionId = query.session === undefined ? undefined : Number(query.session);
   if (sessionId !== undefined && (!Number.isSafeInteger(sessionId) || sessionId < 1)) notFound();
-  const board = await getIdeaBoard(id, sessionId);
+  const historyPage = query.historyPage && /^\d{1,8}$/.test(query.historyPage) ? Number(query.historyPage) : 0;
+  const board = await getIdeaBoard(id, sessionId, historyPage);
   const accountId = await getReportViewerAccountId();
-  const selected = query.session ? board.history.find((item) => String(item.id) === query.session) : board.active;
+  const selected = board.selected;
   if (query.session && !selected) notFound();
   const cards = selected ? board.cards.filter(({ sessionId }) => sessionId === selected.id) : [];
-  const roster = board.editable && cards.some(({ commentCount }) => commentCount > 0)
-    ? await listRoomMembers(id) : [];
-  const discussion = await loadIdeaDiscussions(cards, roster);
-  const conflicts = await listConflicts(id).catch(() => []);
+  const conflicts = board.usesMockStream ? await listConflicts(id).catch(() => []) : [];
   const conflictByCard = Object.fromEntries(conflicts.filter(({ state }) => state === "OPEN")
     .flatMap((conflict) => [[conflict.leftCardId, conflict.id], [conflict.rightCardId, conflict.id]]));
-  const participants = new Set([
-    ...cards.map(({ author }) => author.accountId),
-    ...Object.values(discussion).flatMap(({ comments }) => comments.map(({ authorId }) => authorId)),
-  ]).size;
+  const participants = selected?.participantCount ?? new Set(cards.map(({ author }) => author.accountId)).size;
   const isClosed = selected?.state === "CLOSED";
   const href = `/rooms/${id}/boards/idea`;
+  const historyHref = (page: number) => `${href}?${sessionId ? `session=${sessionId}&` : ""}historyPage=${page}`;
   const archivedSessions = new Set(board.history.map(({ id }) => id));
   const sources = new Map(board.cards.map((card) => [card.id, {
     id: card.id,
@@ -53,7 +48,7 @@ export default async function IdeaBoardPage({ params, searchParams }: {
   return (
     <section className="mx-auto max-w-7xl space-y-4">
       <BriefingFocus ids={readBriefingFocus(query.briefingFocus)} />
-      {board.editable && <IdeaBoardLive roomId={id} revision={board.revision} />}
+      {board.usesMockStream && <IdeaBoardLive roomId={id} revision={board.revision} />}
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-primary text-xs font-semibold">워크스페이스</p>
@@ -63,7 +58,7 @@ export default async function IdeaBoardPage({ params, searchParams }: {
               <span className="bg-secondary text-primary rounded px-1.5 py-0.5">{isClosed ? "마감" : "진행 중"}</span>
               <strong className="text-foreground">{selected.title}</strong>
               {selected.endsAt && <time dateTime={selected.endsAt}>{ideaDateTime.format(new Date(selected.endsAt))} 마감</time>}
-              {isClosed && <span>카드 {cards.length}개 · 참여 {participants}명</span>}
+              {isClosed && <span>카드 {selected.cardCount ?? cards.length}개 · 참여 {participants}명</span>}
             </div>
           )}
         </div>
@@ -74,29 +69,33 @@ export default async function IdeaBoardPage({ params, searchParams }: {
             <summary className="rounded-control bg-card border-border flex h-8 cursor-pointer list-none items-center gap-1.5 border px-3 text-xs font-medium [&::-webkit-details-marker]:hidden">
               <History aria-hidden="true" className="size-4" />회차 기록
             </summary>
-            <div className="bg-card border-border rounded-card absolute right-0 z-10 mt-1 w-60 space-y-1 border p-2 text-sm shadow-md">
+            <div className="bg-card border-border rounded-card absolute right-0 z-10 mt-1 max-h-80 w-60 space-y-1 overflow-auto border p-2 text-sm shadow-md">
               <Link href={href} aria-current={!isClosed ? "page" : undefined} className="hover:bg-muted aria-[current=page]:bg-secondary block rounded px-2 py-1.5">
                 {board.active?.title ?? "현재 회차"}{board.active && <span className="text-muted-foreground block text-xs">진행 중</span>}
               </Link>
               {board.history.length ? board.history.map((session) => (
-                <Link href={`${href}?session=${session.id}`} key={session.id}
+                <Link href={`${href}?session=${session.id}&historyPage=${historyPage}`} key={session.id}
                   aria-current={selected?.id === session.id ? "page" : undefined} className="hover:bg-muted aria-[current=page]:bg-secondary block rounded px-2 py-1.5">
                   {session.title}
                   {session.endsAt && <span className="text-muted-foreground block text-xs">{ideaDateTime.format(new Date(session.endsAt))} 마감</span>}
                 </Link>
               )) : <p className="text-muted-foreground px-2 py-1.5 text-xs">{board.editable ? "지난 회차가 없어요." : "지난 회차 기록은 현재 제공되지 않아요."}</p>}
+              <div className="flex gap-2 px-2 text-xs">
+                {historyPage > 0 && <Link className="underline" href={historyHref(historyPage - 1)}>이전 기록</Link>}
+                {board.hasNextHistory && <Link className="underline" href={historyHref(historyPage + 1)}>다음 기록</Link>}
+              </div>
             </div>
           </details>
           {board.editable && selected?.state === "ACTIVE" && (
             <>
-              <IdeaCardDialog roomId={id} sessionId={selected.id} trigger={<Button size="sm"><Plus aria-hidden="true" />새 카드</Button>} />
+              <IdeaCardDialog roomId={id} sessionId={selected.id} canUpload={!board.usesMockStream} trigger={<Button size="sm"><Plus aria-hidden="true" />새 카드</Button>} />
               <CloseIdeaDialog roomId={id} sessionId={selected.id} trigger={<Button size="sm" variant="outline" className="text-destructive"><Square aria-hidden="true" />회차 마감</Button>} />
             </>
           )}
           {board.editable && !selected && <StartIdeaDialog roomId={id} trigger={<Button size="sm"><Plus aria-hidden="true" />회차 시작</Button>} />}
         </div>
       </header>
-      {selected ? <IdeaBoard session={selected} cards={cards} accountId={accountId} editable={board.editable} discussion={discussion} conflictByCard={conflictByCard} sources={sources} />
+      {selected ? <IdeaBoard session={selected} cards={cards} accountId={accountId} editable={board.editable} canUpload={!board.usesMockStream} conflictByCard={conflictByCard} sources={sources} />
         : <p className="bg-card border-border rounded-card text-muted-foreground border p-5 text-sm">진행 중인 회차가 없어요.</p>}
     </section>
   );

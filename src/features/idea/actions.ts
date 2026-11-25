@@ -1,16 +1,20 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 
+import { isRoomId } from "@/features/room/management/api-server";
 import { getManagedRoom } from "@/features/room/management/server";
 import { listRoomMembers } from "@/features/room/server";
+import { ApiError } from "@/lib/api";
 import { isAuthor } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
 import { boardSessions, conflicts, ideaCards } from "@/mocks/db";
 
-import { closeExpiredIdeaSession, markIdeaChanged, scheduleIdeaClose } from "./mock-board";
+import { ideaApi, type IdeaSchemas } from "./api-board";
+import { closeExpiredIdeaSession, scheduleIdeaClose } from "./mock-board";
 import { type IdeaFormResult, parseIdeaDeadline } from "./model";
+import { refreshIdeaBoard } from "./server";
 
 const cardSchema = z.object({
   type: z.enum(["AGENDA", "KEEP", "PROBLEM", "TRY"]),
@@ -18,11 +22,14 @@ const cardSchema = z.object({
   content: z.string().trim().max(1000),
 });
 
-function refreshBoard(roomId: number): IdeaFormResult {
-  markIdeaChanged(roomId);
-  revalidatePath(`/rooms/${roomId}/boards/idea`);
-  revalidatePath(`/rooms/${roomId}`);
-  return { saved: true };
+async function mutateIdea(roomId: number, path: string, method: string, json?: unknown): Promise<IdeaFormResult> {
+  try {
+    await ideaApi(roomId, path, { method, json });
+    return refreshIdeaBoard(roomId);
+  } catch (error) {
+    unstable_rethrow(error);
+    return { error: error instanceof ApiError ? error.message : "변경 사항을 저장하지 못했어요." };
+  }
 }
 
 async function authorize(roomId: number) {
@@ -33,14 +40,16 @@ async function authorize(roomId: number) {
 }
 
 export async function startIdeaSession(roomId: number, _: IdeaFormResult, form: FormData): Promise<IdeaFormResult> {
-  if (!(await authorize(roomId))) return { error: "이 방의 회차를 시작할 수 없어요." };
-  const title = z.string().trim().min(1).max(100).safeParse(form.get("title"));
-  if (!title.success) return { error: "회차 이름을 1~100자로 입력해 주세요." };
+  if (!isRoomId(roomId)) return { error: "이 방의 회차를 시작할 수 없어요." };
+  const title = z.string().trim().min(1).max(50).safeParse(form.get("title"));
+  if (!title.success) return { error: "회차 이름을 1~50자로 입력해 주세요." };
   const deadline = String(form.get("endsAt") ?? "").trim();
   const endsAt = deadline ? parseIdeaDeadline(deadline) : null;
   if (deadline && (!endsAt || Date.parse(endsAt) <= Date.now())) {
     return { error: "마감 시각을 현재보다 나중으로 설정해 주세요." };
   }
+  if (!isMock) return mutateIdea(roomId, "/sessions", "POST", { title: title.data, deadlineAt: endsAt ?? undefined });
+  if (!(await authorize(roomId))) return { error: "이 방의 회차를 시작할 수 없어요." };
   if (boardSessions.some((item) => item.roomId === roomId && item.state === "ACTIVE")) {
     return { error: "이미 진행 중인 회차가 있어요." };
   }
@@ -48,10 +57,12 @@ export async function startIdeaSession(roomId: number, _: IdeaFormResult, form: 
   const session = { id, roomId, title: title.data, state: "ACTIVE" as const, startsAt: new Date().toISOString(), endsAt };
   boardSessions.push(session);
   scheduleIdeaClose(session);
-  return refreshBoard(roomId);
+  return refreshIdeaBoard(roomId);
 }
 
 export async function closeIdeaSession(roomId: number, sessionId: number): Promise<IdeaFormResult> {
+  if (!isRoomId(roomId) || !isRoomId(sessionId)) return { error: "회차를 확인해 주세요." };
+  if (!isMock) return mutateIdea(roomId, `/sessions/${sessionId}/close`, "POST");
   const context = await authorize(roomId);
   if (!context) return { error: "이 방의 회차를 마감할 수 없어요." };
   const session = boardSessions.find((item) => item.id === sessionId && item.roomId === roomId && item.state === "ACTIVE");
@@ -59,16 +70,36 @@ export async function closeIdeaSession(roomId: number, sessionId: number): Promi
   session.state = "CLOSED";
   session.closedBy = context.account.id;
   session.endsAt = new Date().toISOString();
-  return refreshBoard(roomId);
+  return refreshIdeaBoard(roomId);
 }
 
 export async function saveIdeaCard(
   roomId: number, sessionId: number, cardId: number | null, _: IdeaFormResult, form: FormData,
 ): Promise<IdeaFormResult> {
-  const context = await authorize(roomId);
-  if (!context) return { error: "이 방의 카드를 저장할 수 없어요." };
+  if (!isRoomId(roomId) || !isRoomId(sessionId) || (cardId !== null && !isRoomId(cardId))) return { error: "카드를 확인해 주세요." };
   const parsed = cardSchema.safeParse({ type: form.get("type"), title: form.get("title"), content: form.get("content") });
   if (!parsed.success) return { error: "유형을 선택하고 제목은 1~100자, 내용은 1,000자 이내로 입력해 주세요." };
+  if (!isMock) {
+    const { type: cardType, title, content } = parsed.data;
+    const fileIds = form.getAll("fileId").map(Number);
+    if (fileIds.length > 5 || !fileIds.every(isRoomId) || new Set(fileIds).size !== fileIds.length) {
+      return { error: "첨부 파일을 확인해 주세요. 최대 5개까지 추가할 수 있어요." };
+    }
+    if (cardId === null) {
+      try {
+        const current = await ideaApi<IdeaSchemas["SessionResponse"] | null>(roomId, "/sessions/current");
+        if (current?.sessionId !== sessionId) return { error: "회차가 바뀌었어요. 보드를 새로고침해 주세요." };
+      } catch (error) {
+        unstable_rethrow(error);
+        return { error: error instanceof ApiError ? error.message : "진행 중인 회차를 확인하지 못했어요." };
+      }
+    }
+    return cardId === null
+      ? mutateIdea(roomId, "/idea-cards", "POST", { cardType, title, content, fileIds })
+      : mutateIdea(roomId, `/idea-cards/${cardId}`, "PATCH", { title, content });
+  }
+  const context = await authorize(roomId);
+  if (!context) return { error: "이 방의 카드를 저장할 수 없어요." };
   const roster = cardId === null ? await listRoomMembers(roomId) : [];
   closeExpiredIdeaSession(roomId);
   if (!boardSessions.some((item) => item.roomId === roomId && item.id === sessionId && item.state === "ACTIVE")) {
@@ -90,10 +121,12 @@ export async function saveIdeaCard(
     if (!card || !isAuthor(context.account, card.author)) return { error: "본인 카드만 수정할 수 있어요." };
     Object.assign(card, { title, content, sortOrder: cardType === card.cardType ? card.sortOrder : sortOrder, cardType });
   }
-  return refreshBoard(roomId);
+  return refreshIdeaBoard(roomId);
 }
 
 export async function deleteIdeaCard(roomId: number, cardId: number): Promise<IdeaFormResult> {
+  if (!isRoomId(roomId) || !isRoomId(cardId)) return { error: "카드를 확인해 주세요." };
+  if (!isMock) return mutateIdea(roomId, `/idea-cards/${cardId}`, "DELETE");
   const context = await authorize(roomId);
   if (!context) return { error: "이 방의 카드를 삭제할 수 없어요." };
   const index = ideaCards.findIndex((item) => item.roomId === roomId && item.id === cardId);
@@ -111,5 +144,5 @@ export async function deleteIdeaCard(roomId: number, cardId: number): Promise<Id
   for (let i = conflicts.length - 1; i >= 0; i--) {
     if (conflicts[i].roomId === roomId && (conflicts[i].leftCardId === cardId || conflicts[i].rightCardId === cardId)) conflicts.splice(i, 1);
   }
-  return refreshBoard(roomId);
+  return refreshIdeaBoard(roomId);
 }
