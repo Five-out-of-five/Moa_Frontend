@@ -1,12 +1,12 @@
 import { getMyAccount } from "@/features/account/server";
 import { MOOD_OPTIONS, summarizeMoods } from "@/features/mood/model";
-import { listTodayMoods } from "@/features/mood/server";
+import { getTeamMood } from "@/features/mood/server";
 
 import { MoodPicker } from "./MoodPicker";
 
 export async function MoodSummary({ roomId }: { roomId: number }) {
-  const [moods, me] = await Promise.all([listTodayMoods(roomId), getMyAccount()]);
-  const { counts, total, average } = summarizeMoods(moods);
+  const [team, me] = await Promise.all([getTeamMood(roomId), getMyAccount()]);
+  const { counts, total, average } = summarizeMoods(team.distribution);
   let filled = 0;
   const stops = counts.filter(({ count }) => count > 0).map(({ color, count }) => {
     const start = filled;
@@ -34,7 +34,7 @@ export async function MoodSummary({ roomId }: { roomId: number }) {
           ))}
         </ul>
       </div>
-      <MoodPicker roomId={roomId} selected={moods.find(({ accountId }) => accountId === me.id)?.mood} options={MOOD_OPTIONS} />
+      <MoodPicker roomId={roomId} selected={team.members.find(({ id }) => id === me.id)?.mood ?? undefined} options={MOOD_OPTIONS} />
     </div>
   );
 }

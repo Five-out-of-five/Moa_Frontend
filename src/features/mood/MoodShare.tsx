@@ -7,16 +7,20 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
-import type { TeamMoodMember } from "./model";
+import type { MoodCounts, MoodPeriod, MoodTrendPoint, TeamMoodMember } from "./model";
 import { drawMoodImage, exportMoodImage } from "./share-image";
 
-export function MoodShare({ roomName, date, members }: { roomName: string; date: string; members: TeamMoodMember[] }) {
+export function MoodShare({ roomName, date, members, period, trend, distribution }: {
+  roomName: string; date: string; members: TeamMoodMember[];
+  period: MoodPeriod; trend: MoodTrendPoint[]; distribution: MoodCounts;
+}) {
   const [open, setOpen] = useState(false);
   const [includeNotes, setIncludeNotes] = useState(false);
   const [retry, setRetry] = useState(0);
   const previewHost = useRef<HTMLDivElement>(null);
   const [result, setResult] = useState<{
     members: TeamMoodMember[]; roomName: string; date: string; includeNotes: boolean;
+    period: MoodPeriod; trend: MoodTrendPoint[]; distribution: MoodCounts;
     content: HTMLDivElement; retry: number;
     preview: { blob: Blob; url: string } | null;
   } | null>(null);
@@ -26,11 +30,11 @@ export function MoodShare({ roomName, date, members }: { roomName: string; date:
     const host = previewHost.current;
     if (!open || !content || !host) return;
     const colors = getComputedStyle(content);
-    const input = { roomName, date, members, includeNotes, content, retry };
+    const input = { roomName, date, members, period, trend, distribution, includeNotes, content, retry };
     let active = true;
     let url: string | undefined;
     try {
-      const { canvas, previewAspectRatio } = drawMoodImage({ roomName, date, members, includeNotes, background: colors.backgroundColor, foreground: colors.color });
+      const { canvas, previewAspectRatio } = drawMoodImage({ roomName, date, members, period, trend, distribution, includeNotes, background: colors.backgroundColor, foreground: colors.color });
       // 미리보기는 그리기가 끝난 캔버스로 바로 교체하고, PNG 인코딩은 별도로 기다린다.
       host.style.aspectRatio = previewAspectRatio;
       host.replaceChildren(canvas);
@@ -47,10 +51,11 @@ export function MoodShare({ roomName, date, members }: { roomName: string; date:
       active = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [content, date, includeNotes, members, open, retry, roomName]);
+  }, [content, date, distribution, includeNotes, members, open, period, retry, roomName, trend]);
 
   const current = open && result && result.members === members && result.roomName === roomName &&
     result.date === date && result.includeNotes === includeNotes && result.content === content &&
+    result.period === period && result.trend === trend && result.distribution === distribution &&
     result.retry === retry ? result : null;
   const ready = current?.preview;
 

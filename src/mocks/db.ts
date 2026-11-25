@@ -202,7 +202,7 @@ export function addDefaultRoomWidgets(roomId: number) {
 
 // ===== 상태값 (MOOD) =====
 
-const MOODS: MoodLevel[] = ["GREAT", "GOOD", "SOSO", "TIRED", "BAD"];
+const MOODS: MoodLevel[] = ["VERY_GOOD", "GOOD", "NORMAL", "TIRED", "EXHAUSTED"];
 
 const moodSeedDate = todayMoodDate();
 const todayMoodSeeds = fixtureRooms.flatMap((room) =>

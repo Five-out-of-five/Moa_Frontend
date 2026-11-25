@@ -6,7 +6,7 @@ const vm = require("node:vm");
 const { test } = require("node:test");
 const ts = require("typescript");
 
-function fixture({ env = {}, fetch: backend = async () => { throw Error("예상하지 않은 BE 요청"); }, incoming = {}, signupAccount = async () => ({ provider: "GOOGLE", displayName: "테스트" }) } = {}) {
+function fixture({ env = {}, fetch: backend = async () => { throw Error("예상하지 않은 BE 요청"); }, incoming = {}, signupAccount = async () => ({ provider: "GOOGLE", displayName: "테스트" }), document } = {}) {
   const values = new Map();
   const options = new Map();
   const jar = {
@@ -36,7 +36,7 @@ function fixture({ env = {}, fetch: backend = async () => { throw Error("예상�
     const record = { exports: {} };
     modules.set(file, record);
     const output = ts.transpileModule(fs.readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
-    vm.runInNewContext(output, { module: record, exports: record.exports, require: (id) => load(id, path.dirname(file)), process: { env: { AUTH_USE_MOCK: "false", NODE_ENV: "test", ...env } }, fetch: backend, Headers, Request, Response, URL, URLSearchParams, FormData, Blob, File, Buffer, AbortController, setTimeout, clearTimeout }, { filename: file });
+    vm.runInNewContext(output, { module: record, exports: record.exports, require: (id) => load(id, path.dirname(file)), process: { env: { AUTH_USE_MOCK: "false", NODE_ENV: "test", ...env } }, fetch: backend, Headers, Request, Response, URL, URLSearchParams, FormData, Blob, File, Buffer, AbortController, setTimeout, clearTimeout, document }, { filename: file });
     return record.exports;
   }
   return { load, jar, values, options };
@@ -409,6 +409,8 @@ test("위젯 제거와 레이아웃 초기화는 서버가 반환한 새 ID를 �
   assert.equal((await actions.removeWidgetAction(3, 12)).snapshot.widgets[0].id, 11);
   assert.equal((await actions.resetWidgetLayoutAction(3)).snapshot.widgets[0].id, 21);
   assert.deepEqual(calls, [["DELETE", "/api/v1/rooms/3/dashboard/widgets/12"], ["POST", "/api/v1/rooms/3/dashboard/reset"]]);
+});
+
 test("다운로드는 매번 새 서명 URL을 발급받아 302로 이동한다", async () => {
   let calls = 0;
   const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
@@ -462,4 +464,97 @@ test("허용되지 않은 첨부 확장자와 20MB 초과 파일은 백엔드 �
   const { uploadRoomFile } = f.load("@/features/room-files/upload-server");
   await assert.rejects(uploadRoomFile(3, "CARD_ATTACHMENT", new File(["content"], "sample.exe")), { code: "FILE_TYPE_NOT_ALLOWED" });
   await assert.rejects(uploadRoomFile(3, "CHAT_ATTACHMENT", new File([new Uint8Array(20 * 1024 ** 2 + 1)], "sample.pdf")), { code: "FILE_SIZE_EXCEEDED" });
+});
+
+test("팀 상태는 선택한 기간의 오늘 현황과 날짜별 평균을 한 요청으로 조회한다", async () => {
+  const queries = [];
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    const target = new URL(url);
+    assert.equal(target.pathname, "/api/v1/rooms/3/moods");
+    assert.equal(new Headers(init.headers).get("Authorization"), "Bearer fixture-access");
+    const period = target.searchParams.get("period");
+    queries.push(period);
+    const length = period === "DAYS_30" ? 30 : 7;
+    return ok({
+      distribution: { VERY_GOOD: 1, NORMAL: 1 },
+      members: [{ accountId: 7, displayName: "모아", profileImageUrl: null, mood: null, comment: null }],
+      trend: Array.from({ length }, (_, index) => ({
+        date: "2026-11-" + String(index + 1).padStart(2, "0"),
+        counts: index === 1 ? { VERY_GOOD: 1, NORMAL: 1 } : {},
+      })),
+    });
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const { getTeamMood } = f.load("@/features/mood/server");
+  for (const period of [7, 30]) {
+    const data = await getTeamMood(3, period);
+    assert.equal(data.distribution.VERY_GOOD, 1);
+    assert.equal(data.members[0].mood, null);
+    assert.equal(data.trend.length, period);
+    assert.equal(data.trend[0].average, null);
+    assert.equal(data.trend[1].average, 4);
+  }
+  assert.deepEqual(queries, ["DAYS_7", "DAYS_30"]);
+});
+
+test("위젯 기분 변경은 내 한마디를 유지하고 상세 화면에서는 지울 수 있다", async () => {
+  const writes = [];
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    const target = new URL(url);
+    if (target.pathname === "/api/v1/accounts/me") return ok({
+      accountId: 7, name: "모아", email: "", provider: "GOOGLE", role: "USER",
+      toneMode: "OFF", createdAt: "2026-11-01T00:00:00+09:00",
+    });
+    if (target.pathname === "/api/v1/rooms/3/moods") {
+      assert.equal(target.search, "?period=TODAY");
+      return ok({ members: [{ accountId: 8, comment: "다른 멤버" }, { accountId: 7, comment: "기존 한마디" }] });
+    }
+    assert.equal(target.pathname, "/api/v1/rooms/3/moods/me");
+    assert.equal(init.method, "PUT");
+    assert.equal(new Headers(init.headers).get("Authorization"), "Bearer fixture-access");
+    writes.push(JSON.parse(init.body));
+    return ok(null);
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const { submitMoodAction, saveMoodFormAction } = f.load("@/features/mood/actions");
+  assert.equal((await submitMoodAction({ roomId: 3, mood: "VERY_GOOD" })).saved, true);
+  const form = new FormData();
+  form.set("mood", "NORMAL");
+  form.set("note", " ");
+  assert.equal((await saveMoodFormAction(3, {}, form)).saved, true);
+  form.set("note", "가".repeat(51));
+  assert.equal((await saveMoodFormAction(3, {}, form)).saved, undefined);
+  assert.deepEqual(writes, [{ mood: "VERY_GOOD", comment: "기존 한마디" }, { mood: "NORMAL", comment: null }]);
+});
+
+test("목 상태값 저장은 같은 방의 오늘 기록을 갱신하고 한마디를 보존한다", async () => {
+  const f = fixture({ env: { AUTH_USE_MOCK: "true", NEXT_PUBLIC_USE_MOCK: "true" } });
+  const { submitMoodAction } = f.load("@/features/mood/actions");
+  const { getTeamMood } = f.load("@/features/mood/server");
+  const { getMyAccount } = f.load("@/features/account/server");
+  const me = await getMyAccount();
+  const { listMyRooms } = f.load("@/features/room/server");
+  const [room] = await listMyRooms();
+  assert.equal((await submitMoodAction({ roomId: room.id, mood: "GOOD", comment: "한마디" })).saved, true);
+  assert.equal((await submitMoodAction({ roomId: room.id, mood: "EXHAUSTED" })).saved, true);
+  const data = await getTeamMood(room.id, 7);
+  assert.equal(data.members.find(({ id }) => id === me.id).note, "한마디");
+  assert.equal(data.members.find(({ id }) => id === me.id).mood, "EXHAUSTED");
+  assert.equal(data.trend.length, 7);
+});
+
+test("공유 이미지에는 선택한 기간의 추이와 기록 없는 날도 표시한다", () => {
+  const labels = [];
+  const context = { scale() {}, fillRect() {}, fillText(text) { labels.push(text); } };
+  const f = fixture({ document: { createElement: () => ({ getContext: () => context }) } });
+  const { drawMoodImage } = f.load("@/features/mood/share-image");
+  drawMoodImage({
+    roomName: "모아", date: "2026-11-25", period: 7,
+    trend: [{ date: "2026-11-24", average: null }, { date: "2026-11-25", average: 4 }],
+    distribution: { GOOD: 1 }, members: [], includeNotes: false, background: "white", foreground: "black",
+  });
+  assert.ok(labels.includes("오늘 1명 참여 · 평균 4.0"));
+  assert.ok(labels.includes("최근 7일 평균 추이"));
+  assert.ok(labels.includes("11-24  —"));
+  assert.ok(labels.includes("11-25  4.0"));
 });

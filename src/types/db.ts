@@ -105,7 +105,7 @@ export interface RoomWidget {
 
 // ===== 위젯 · 상태값 (MOOD) =====
 
-export type MoodLevel = "GREAT" | "GOOD" | "SOSO" | "TIRED" | "BAD";
+export type MoodLevel = "VERY_GOOD" | "GOOD" | "NORMAL" | "TIRED" | "EXHAUSTED";
 
 export interface MoodStatus {
   id: number;

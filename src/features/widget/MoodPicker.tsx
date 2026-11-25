@@ -31,8 +31,9 @@ export function MoodPicker({
             className="border-border bg-muted hover:bg-secondary focus-visible:ring-ring aria-pressed:border-primary aria-pressed:text-primary h-6 min-w-0 max-w-6 flex-1 rounded-full border text-xs focus-visible:ring-2 disabled:opacity-60"
             onClick={() => startTransition(async () => {
               try {
-                await submitMoodAction({ roomId, mood });
-                toast.success("오늘의 기분을 저장했어요.");
+                const result = await submitMoodAction({ roomId, mood });
+                if (result.saved) toast.success("오늘의 기분을 저장했어요.");
+                else if (result.error) toast.error(result.error);
               } catch {
                 toast.error("기분을 저장하지 못했어요. 다시 시도해 주세요.");
               }

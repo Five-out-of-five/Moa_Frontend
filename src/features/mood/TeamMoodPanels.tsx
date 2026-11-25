@@ -1,11 +1,10 @@
 import { CalendarDays, MessageSquare, Users } from "lucide-react";
+import Image from "next/image";
 
-import type { MoodStatus } from "@/types/db";
+import { getMoodOption, type MoodCounts, type MoodTrendPoint, summarizeMoods, type TeamMoodMember } from "./model";
 
-import { getMoodOption, summarizeMoods, type TeamMoodMember } from "./model";
-
-export function MoodDistribution({ moods }: { moods: MoodStatus[] }) {
-  const { counts, total, average } = summarizeMoods(moods);
+export function MoodDistribution({ distribution }: { distribution: MoodCounts }) {
+  const { counts, total, average } = summarizeMoods(distribution);
   return (
     <section aria-labelledby="mood-distribution" className="bg-card border-border rounded-card space-y-4 border p-4">
       <header className="flex items-center justify-between gap-2">
@@ -34,14 +33,14 @@ export function MoodDistribution({ moods }: { moods: MoodStatus[] }) {
   );
 }
 
-export function MoodTrend({ trend, period }: { trend: { date: string; average: number | null }[] | null; period: number }) {
+export function MoodTrend({ trend, period }: { trend: MoodTrendPoint[]; period: number }) {
   return (
     <section aria-labelledby="mood-trend" className="bg-card border-border rounded-card space-y-4 border p-4">
       <header className="flex items-center justify-between gap-2">
         <h2 id="mood-trend" className="flex items-center gap-2 text-sm font-semibold"><CalendarDays aria-hidden="true" className="text-primary size-4" />일별 기분 추이</h2>
         <span className="text-muted-foreground text-xs">최근 {period}일</span>
       </header>
-      {trend?.some(({ average }) => average !== null) ? (
+      {trend.length ? (
         <ul className="grid gap-x-5 gap-y-2 sm:grid-cols-2 xl:grid-cols-3">
           {trend.map(({ date, average }) => (
             <li key={date} className="grid grid-cols-[3.5rem_minmax(0,1fr)_2rem] items-center gap-2 text-xs">
@@ -49,11 +48,11 @@ export function MoodTrend({ trend, period }: { trend: { date: string; average: n
               <span aria-hidden="true" className="bg-muted h-1.5 overflow-hidden rounded-full">
                 <span className="bg-primary block h-full rounded-full" style={{ width: `${(average ?? 0) * 20}%` }} />
               </span>
-              <span className="text-right font-semibold tabular-nums" aria-label={average === null ? "미입력" : undefined}>{average?.toFixed(1) ?? "—"}</span>
+              <span className="text-right font-semibold tabular-nums" aria-label={average === null ? "평균 없음" : undefined}>{average?.toFixed(1) ?? "—"}</span>
             </li>
           ))}
         </ul>
-      ) : <p className="text-muted-foreground text-sm">{trend ? "이 기간에 기록된 기분이 없어요." : "기간별 기분 기록은 현재 제공되지 않아요."}</p>}
+      ) : <p className="text-muted-foreground text-sm">이 기간에 기록된 기분이 없어요.</p>}
     </section>
   );
 }
@@ -71,7 +70,11 @@ export function TeamMoodList({ members }: { members: TeamMoodMember[] }) {
             const option = getMoodOption(member.mood);
             return (
               <li key={member.id} className={`border-border rounded-control flex items-start gap-2 border p-2.5 ${option ? "bg-card" : "bg-muted/55"}`}>
-                <span aria-hidden="true" className="bg-secondary text-primary grid size-8 shrink-0 place-items-center rounded-full text-xs font-semibold">{Array.from(member.name)[0]}</span>
+                {member.imageUrl ? (
+                  <Image src={member.imageUrl} alt="" width={32} height={32} unoptimized className="size-8 shrink-0 rounded-full object-cover" />
+                ) : (
+                  <span aria-hidden="true" className="bg-secondary text-primary grid size-8 shrink-0 place-items-center rounded-full text-xs font-semibold">{Array.from(member.name)[0]}</span>
+                )}
                 <div className="min-w-0 flex-1">
                   <p className="break-words text-xs font-semibold">{member.name}</p>
                   <p className="text-muted-foreground mt-1 break-words text-xs">{member.note ?? "남긴 코멘트가 없어요."}</p>
