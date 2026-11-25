@@ -1,0 +1,48 @@
+name: Frontend CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          HUSKY: "0"
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: |
+          npm exec -- next typegen
+          npm run typecheck
+
+      - name: Test authentication
+        run: npm run test:auth
+
+      - name: Build in mock mode
+        run: npm run build
+        env:
+          NEXT_PUBLIC_USE_MOCK: "true"
+          AUTH_USE_MOCK: "true"

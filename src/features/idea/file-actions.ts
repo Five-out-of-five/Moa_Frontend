@@ -15,7 +15,10 @@ function failure(error: unknown) {
   return { error: error instanceof ApiError ? error.message : "첨부 파일을 변경하지 못했어요." };
 }
 
-export async function stageIdeaFile(roomId: number, data: FormData) {
+export async function stageIdeaFile(
+  roomId: number,
+  data: FormData,
+): Promise<{ fileId: number; error?: never } | { fileId?: never; error: string }> {
   const file = data.get("file");
   if (isMock || !isRoomId(roomId) || !(file instanceof File)) return { error: "첨부 파일을 확인해 주세요." };
   try {
