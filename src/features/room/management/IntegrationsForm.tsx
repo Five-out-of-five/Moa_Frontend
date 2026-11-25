@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, Database, Link2, Loader2, MessageSquare, RefreshCw } from "lucide-react";
+import { AlertTriangle, Link2, Loader2, RefreshCw } from "lucide-react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 
@@ -277,9 +278,9 @@ export function IntegrationsForm({
           <div className="flex items-start gap-2.5">
             <span
               aria-hidden="true"
-              className="bg-secondary text-secondary-foreground grid size-8 place-items-center rounded-md"
+              className="bg-secondary grid size-8 place-items-center rounded-md"
             >
-              <MessageSquare className="size-4" />
+              <Image src="/icons/slack.svg" alt="" width={18} height={18} />
             </span>
             <div>
               <h3 className="font-semibold">Slack 알림</h3>
@@ -400,9 +401,9 @@ export function IntegrationsForm({
           <div className="flex items-start gap-2.5">
             <span
               aria-hidden="true"
-              className="bg-secondary text-secondary-foreground grid size-8 place-items-center rounded-md"
+              className="bg-secondary grid size-8 place-items-center rounded-md"
             >
-              <Database className="size-4" />
+              <Image src="/icons/notion.svg" alt="" width={18} height={18} />
             </span>
             <div>
               <h3 className="font-semibold">Notion 내보내기</h3>
