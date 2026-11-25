@@ -16,6 +16,7 @@ import { IntegrationsForm } from "./IntegrationsForm";
  */
 export async function IntegrationsPanel({
   roomId,
+  isOwner,
 }: {
   roomId: number;
   isOwner: boolean;
@@ -35,6 +36,7 @@ export async function IntegrationsPanel({
   return (
     <IntegrationsForm
       roomId={roomId}
+      isOwner={isOwner}
       initialSlack={slack}
       initialNotion={notion}
       notionDatabases={notionDatabases}

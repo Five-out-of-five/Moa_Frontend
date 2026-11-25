@@ -28,17 +28,14 @@ import type {
 import { cn } from "@/lib/utils";
 
 /**
- * Slack 이벤트 라벨 — BE enum 그대로 사용하고 한글 라벨은 사용자 시각 어구로.
- *
- * ⚠️ Figma Make 에 그려진 라벨 ("새 안건 배정 / 댓글 및 멘션") 2개는 BE enum 에 없어 **노출
- *    불가**. 승재님 쪽 BE 지원 여부 확정 뒤 라벨·enum 모두 조정 예정. 지금은 BE 가 실제로
- *    발송 가능한 4개만 체크박스로 노출해 저장 성공·실패와 UI 가 일치하도록 한다.
+ * Slack 이벤트 라벨 — BE enum 그대로 (승재님 2026-11-25 합의, A안).
+ * `SESSION_SUMMARY` 는 "요약" 이 아니라 **마감 알림**만 가는 상태라 "세션 종료" 로 표기.
  */
 const SLACK_EVENT_LABELS: Record<SlackEventType, string> = {
   VOTE_CREATED: "투표 시작",
   VOTE_CLOSED: "투표 마감",
   TASK_DUE_SOON: "업무 마감 임박",
-  SESSION_SUMMARY: "세션 종료 요약",
+  SESSION_SUMMARY: "세션 종료",
 };
 const SLACK_EVENT_ORDER: SlackEventType[] = [
   "VOTE_CREATED",
@@ -63,8 +60,16 @@ function isWebhookEditable(url: string): boolean {
   return url.length > 0 && !url.includes("****");
 }
 
+/** BE 가 빈 title 을 그대로 넘겨 올 수 있어 UI 표시용 fallback. 승재님 2026-11-25 요청. */
+function displayDbTitle(title: string | null | undefined): string {
+  if (title == null) return "제목 없음";
+  const trimmed = title.trim();
+  return trimmed.length > 0 ? trimmed : "제목 없음";
+}
+
 interface Props {
   roomId: number;
+  isOwner: boolean;
   initialSlack: SlackIntegration | null;
   initialNotion: NotionIntegration | null;
   notionDatabases: NotionDatabase[];
@@ -72,13 +77,12 @@ interface Props {
 
 export function IntegrationsForm({
   roomId,
+  isOwner,
   initialSlack,
   initialNotion,
   notionDatabases,
 }: Props) {
   // --- Slack 섹션 state ---
-  // connected 여부는 initialSlack 에서 직접 읽어 표시용으로만 쓴다.
-  const slackEnabled = initialSlack?.connected ?? false;
   const [slackWebhook, setSlackWebhook] = useState(
     initialSlack?.webhookUrlMasked ?? "",
   );
@@ -92,8 +96,23 @@ export function IntegrationsForm({
   const notionConnected = Boolean(
     initialNotion?.connected && !initialNotion.tokenExpired,
   );
-  const [notionDatabaseInput, setNotionDatabaseInput] = useState(
-    initialNotion?.targetDatabase?.title ?? "",
+  // 저장된 DB id — 목록 안에 있는지 체크용. 없으면 "다시 선택" 안내.
+  const savedDbId = initialNotion?.targetDatabase?.id ?? null;
+  const savedDbInList =
+    savedDbId != null && notionDatabases.some((db) => db.id === savedDbId);
+  // 저장된 DB 이름 — BE 가 null 로 돌려주면 목록에서 fallback.
+  const savedDbTitle = useMemo(() => {
+    if (initialNotion?.targetDatabase?.title) {
+      return displayDbTitle(initialNotion.targetDatabase.title);
+    }
+    if (savedDbId) {
+      const found = notionDatabases.find((db) => db.id === savedDbId);
+      return found ? displayDbTitle(found.title) : null;
+    }
+    return null;
+  }, [initialNotion, notionDatabases, savedDbId]);
+  const [notionDbId, setNotionDbId] = useState<string>(
+    savedDbInList ? (savedDbId as string) : "",
   );
   const [notionMode, setNotionMode] = useState<NotionExportMode>(
     initialNotion?.exportMode ?? "MANUAL",
@@ -102,7 +121,10 @@ export function IntegrationsForm({
 
   const [pending, startTransition] = useTransition();
 
-  // --- 변경 감지 — "변경된 섹션만 저장" 하도록 ---
+  // --- 변경 감지 — 변경된 섹션만 저장 ---
+  // Slack 은 BE 가 자동 비활성(enabled=false) 시킨 상태면 변경 없어도 저장으로 재활성화 가능해야
+  // 한다 (승재님). 따라서 `slackDirty` 외 "복구 필요" 조건을 추가해 저장 버튼 활성화 가능.
+  const needsSlackReenable = initialSlack?.connected === true && initialSlack.enabled === false;
   const slackDirty = useMemo(() => {
     const initialEvents = new Set(initialSlack?.eventTypes ?? []);
     if (slackEvents.size !== initialEvents.size) return true;
@@ -110,17 +132,36 @@ export function IntegrationsForm({
     if (isWebhookEditable(slackWebhook)) return true;
     return false;
   }, [initialSlack, slackEvents, slackWebhook]);
+  const slackCanSave = slackDirty || needsSlackReenable;
 
   const notionDirty = useMemo(() => {
     if (!notionConnected) return false;
-    const matched = matchDatabase(notionDatabaseInput, notionDatabases);
-    const initialId = initialNotion?.targetDatabase?.id ?? null;
-    if ((matched?.id ?? null) !== initialId) return true;
+    if (!notionDbId) return false;
+    if (notionDbId !== savedDbId) return true;
     if (notionMode !== (initialNotion?.exportMode ?? "MANUAL")) return true;
     return false;
-  }, [notionConnected, notionDatabaseInput, notionMode, initialNotion, notionDatabases]);
+  }, [notionConnected, notionDbId, savedDbId, notionMode, initialNotion]);
 
-  const canSubmit = !pending && (slackDirty || notionDirty);
+  const canSubmit = !pending && isOwner && (slackCanSave || notionDirty);
+
+  // 비방장 — 저장·OAuth 전부 BE 가 거절. UI 는 안내 패널만 노출.
+  if (!isOwner) {
+    return (
+      <div className="p-5">
+        <section className="rounded-card border p-4">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle aria-hidden="true" className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+            <div>
+              <h3 className="font-semibold">방장만 외부 연동을 설정할 수 있어요</h3>
+              <p className="text-muted-foreground mt-1 text-sm">
+                Slack 알림·Notion 내보내기 설정은 방장 권한이 필요합니다. 방장에게 요청해 주세요.
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   const handleToggleEvent = (event: SlackEventType) => {
     setSlackEvents((prev) => {
@@ -164,7 +205,6 @@ export function IntegrationsForm({
     startTransition(async () => {
       const result = await deleteNotionIntegrationAction({ roomId });
       if (result.kind === "error") setNotionError(result.message);
-      // 성공 시 revalidatePath 로 서버 상태 refresh 됨 → 다음 렌더에서 initialNotion 재주입.
     });
   };
 
@@ -180,7 +220,7 @@ export function IntegrationsForm({
     setSlackError(null);
     setNotionError(null);
     startTransition(async () => {
-      if (slackDirty) {
+      if (slackCanSave) {
         const result = await upsertSlackIntegrationAction({
           roomId,
           webhookUrl: isWebhookEditable(slackWebhook) ? slackWebhook.trim() : undefined,
@@ -192,17 +232,22 @@ export function IntegrationsForm({
         }
       }
       if (notionDirty) {
-        const matched = matchDatabase(notionDatabaseInput, notionDatabases);
-        if (!matched) {
-          setNotionError("Notion 데이터베이스 목록에서 찾을 수 없어요.");
-          return;
-        }
         const result = await updateNotionIntegrationAction({
           roomId,
-          targetDatabaseId: matched.id,
+          targetDatabaseId: notionDbId,
           exportMode: notionMode,
         });
-        if (result.kind === "error") setNotionError(result.message);
+        if (result.kind === "database_not_found") {
+          setNotionError("선택한 노션 DB 에 접근할 수 없어요. 목록에서 다시 선택해 주세요.");
+          return;
+        }
+        if (result.kind === "auth_expired") {
+          setNotionError("노션 토큰이 만료됐어요. 재연결 후 다시 저장해 주세요.");
+          return;
+        }
+        if (result.kind === "error") {
+          setNotionError(result.message);
+        }
       }
     });
   };
@@ -239,12 +284,14 @@ export function IntegrationsForm({
           )}
         </header>
 
-        {initialSlack && !initialSlack.enabled && (
+        {needsSlackReenable && (
           <div className="bg-destructive/10 text-destructive mt-3 flex items-start gap-2 rounded-md p-2 text-xs">
             <AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
             <p>
-              {initialSlack.consecutiveFailCount}회 연속 실패로 비활성화됐어요.
-              {initialSlack.disabledAt && ` (${formatDate(initialSlack.disabledAt)})`}
+              {initialSlack?.consecutiveFailCount}회 연속 실패로 비활성화됐어요.
+              {initialSlack?.disabledAt && ` (${formatDate(initialSlack.disabledAt)})`}
+              {" "}
+              <strong>저장하면 다시 켜져요.</strong>
             </p>
           </div>
         )}
@@ -312,7 +359,11 @@ export function IntegrationsForm({
             {slackError}
           </p>
         )}
-        <SlackEnabledHint enabled={slackEnabled} />
+        {slackEvents.size === 0 && !needsSlackReenable && (
+          <p className="text-muted-foreground mt-2 text-xs">
+            알림 이벤트가 하나도 선택되지 않으면 Slack 발송이 일어나지 않아요.
+          </p>
+        )}
       </section>
 
       {/* Notion 내보내기 카드 */}
@@ -371,22 +422,29 @@ export function IntegrationsForm({
             <Label htmlFor="notion-db" className="text-xs font-medium">
               Notion 데이터베이스
             </Label>
-            <Input
+            <select
               id="notion-db"
-              list="notion-db-options"
-              value={notionDatabaseInput}
-              onChange={(e) => setNotionDatabaseInput(e.target.value)}
-              placeholder={notionConnected ? "데이터베이스 이름 또는 링크" : "먼저 Notion 을 연결해 주세요"}
+              value={notionDbId}
+              onChange={(e) => setNotionDbId(e.target.value)}
               disabled={!notionConnected || pending}
-            />
-            {notionDatabases.length > 0 && (
-              <datalist id="notion-db-options">
-                {notionDatabases.map((db) => (
-                  <option key={db.id} value={db.title} />
-                ))}
-              </datalist>
+              className="border-border bg-background text-foreground h-9 rounded-md border px-3 text-sm disabled:opacity-50"
+            >
+              <option value="">
+                {notionConnected ? "데이터베이스를 선택하세요" : "먼저 Notion 을 연결해 주세요"}
+              </option>
+              {notionDatabases.map((db) => (
+                <option key={db.id} value={db.id}>
+                  {displayDbTitle(db.title)}
+                </option>
+              ))}
+            </select>
+            {notionConnected && savedDbId && !savedDbInList && (
+              <p className="text-destructive text-xs">
+                기존에 저장된 DB{savedDbTitle ? ` (${savedDbTitle})` : ""} 가 목록에 없어요.
+                다시 선택해 주세요.
+              </p>
             )}
-            {notionDatabases.length === 0 && notionConnected && (
+            {notionConnected && notionDatabases.length === 0 && (
               <p className="text-muted-foreground text-xs">
                 연결된 워크스페이스에 접근 가능한 데이터베이스가 없어요.
               </p>
@@ -444,34 +502,6 @@ export function IntegrationsForm({
         </Button>
       </div>
     </div>
-  );
-}
-
-/**
- * Slack 전체 토글은 BE 에 "비활성화 전용 API" 가 없어서 현재는 UI 힌트로만 노출. 체크박스 전체
- * 해제 + 저장 = "아무 이벤트도 보내지 않음" 과 사실상 같다.
- */
-function SlackEnabledHint({ enabled }: { enabled: boolean }) {
-  if (enabled) return null;
-  return (
-    <p className="text-muted-foreground mt-2 text-xs">
-      알림 이벤트가 하나도 선택되지 않으면 Slack 발송이 일어나지 않아요.
-    </p>
-  );
-}
-
-function matchDatabase(
-  input: string,
-  databases: readonly NotionDatabase[],
-): NotionDatabase | null {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-  // 정확 일치 우선 → id 포함 → 제목 포함.
-  return (
-    databases.find((db) => db.title === trimmed) ??
-    databases.find((db) => trimmed.includes(db.id)) ??
-    databases.find((db) => db.title.includes(trimmed)) ??
-    null
   );
 }
 

@@ -30,6 +30,11 @@ export type AuthorizeNotionResult =
 
 export type UpdateNotionIntegrationResult =
   | { kind: "ok"; integration: NotionIntegration }
+  // BE 가 설정 저장 시 DB 접근 확인 (INTEGRATION_NOTION_DATABASE_NOT_FOUND) 또는 토큰 만료
+  // (INTEGRATION_NOTION_AUTH_EXPIRED) 를 409 로 돌려줄 수 있다. UI 가 각 케이스별로 입력창
+  // 안내 vs 재연결 유도로 분기하도록 kind 를 쪼갠다.
+  | { kind: "database_not_found"; message: string }
+  | { kind: "auth_expired"; message: string }
   | { kind: "error"; message: string; fieldErrors?: Record<string, string> };
 
 export type ExportNotionResult =
@@ -41,7 +46,8 @@ export type DeleteNotionIntegrationResult =
   | { kind: "error"; message: string };
 
 function revalidateNotionScope(roomId: number) {
-  revalidatePath(`/rooms/${roomId}/settings/integrations`, "page");
+  // ⚠️ 연동 설정은 `/workspaces/manage?room={roomId}&tab=integrations` 경로.
+  revalidatePath("/workspaces/manage", "page");
   revalidatePath(`/rooms/${roomId}`, "layout");
 }
 
@@ -127,7 +133,15 @@ export async function updateNotionIntegrationAction(
     return { kind: "ok", integration: res };
   } catch (e) {
     if (isNextControlFlowError(e)) throw e;
-    if (e instanceof ApiError) return { kind: "error", message: e.message };
+    if (e instanceof ApiError) {
+      if (e.code === "INTEGRATION_NOTION_DATABASE_NOT_FOUND") {
+        return { kind: "database_not_found", message: e.message };
+      }
+      if (e.code === "INTEGRATION_NOTION_AUTH_EXPIRED") {
+        return { kind: "auth_expired", message: e.message };
+      }
+      return { kind: "error", message: e.message };
+    }
     return { kind: "error", message: "노션 설정 저장에 실패했습니다. 잠시 뒤 다시 시도해 주세요." };
   }
 }
