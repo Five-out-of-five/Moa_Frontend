@@ -1,9 +1,11 @@
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 import { MemberProfileLink } from "../profile/MemberProfileLink";
 import { deleteManagedRoomAction, updateManagedMemberAction } from "./actions";
+import { IntegrationsPanel } from "./IntegrationsPanel";
 import { InviteCopyButton } from "./InviteCopyButton";
 import { RoomCommand } from "./RoomCommand";
 import { RoomFormDialog } from "./RoomFormDialog";
@@ -12,15 +14,28 @@ import type { getRoomManagement } from "./server";
 
 type Management = NonNullable<Awaited<ReturnType<typeof getRoomManagement>>>;
 
+export type ManagementTab = "settings" | "members" | "integrations";
+
 export function RoomManagementDetails({
   management,
-  showMembers,
+  tab,
 }: {
   management: Management;
-  showMembers: boolean;
+  tab: ManagementTab;
 }) {
   const { room, isOwner } = management;
   const path = `/workspaces/manage?room=${room.id}`;
+
+  // ⚠️ nav Link 3개는 같은 밑줄 스타일 공유 — active 조건만 다르다. 활성 클래스는 CodeRabbit 가
+  //    세 탭을 보면서 한 눈에 비교 가능하도록 inline ternary 대신 함수로 분리.
+  const tabClass = (self: ManagementTab) =>
+    cn(
+      "pb-2",
+      tab === self
+        ? "border-primary border-b-2 font-medium"
+        : "text-muted-foreground",
+    );
+
   return (
     <div className="min-w-0">
       <header className="border-border space-y-3 border-b px-5 pt-4">
@@ -37,34 +52,33 @@ export function RoomManagementDetails({
         </div>
         <nav aria-label="관리 메뉴" className="flex gap-4 text-sm">
           <Link
-            className={
-              showMembers
-                ? "text-muted-foreground pb-2"
-                : "border-primary border-b-2 pb-2 font-medium"
-            }
+            className={tabClass("settings")}
             href={path}
-            aria-current={!showMembers ? "page" : undefined}
+            aria-current={tab === "settings" ? "page" : undefined}
           >
             기본 설정
           </Link>
           <Link
-            className={
-              showMembers
-                ? "border-primary border-b-2 pb-2 font-medium"
-                : "text-muted-foreground pb-2"
-            }
+            className={tabClass("members")}
             href={`${path}&tab=members`}
-            aria-current={showMembers ? "page" : undefined}
+            aria-current={tab === "members" ? "page" : undefined}
           >
             멤버 · {management.members.length}
           </Link>
+          <Link
+            className={tabClass("integrations")}
+            href={`${path}&tab=integrations`}
+            aria-current={tab === "integrations" ? "page" : undefined}
+          >
+            연동
+          </Link>
         </nav>
       </header>
-      {showMembers ? (
-        <MembersPanel management={management} />
-      ) : (
-        <SettingsPanel management={management} />
+      {tab === "members" && <MembersPanel management={management} />}
+      {tab === "integrations" && (
+        <IntegrationsPanel roomId={room.id} isOwner={isOwner} />
       )}
+      {tab === "settings" && <SettingsPanel management={management} />}
     </div>
   );
 }

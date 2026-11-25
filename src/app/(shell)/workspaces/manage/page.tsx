@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { RoomFormDialog } from "@/features/room/management/RoomFormDialog";
+import type { ManagementTab } from "@/features/room/management/RoomManagementDetails";
 import { RoomManagementDetails } from "@/features/room/management/RoomManagementDetails";
 import { getRoomManagement } from "@/features/room/management/server";
 import { JOIN_REQUEST_STATUSES } from "@/features/room/management/types";
@@ -21,7 +22,12 @@ export default async function WorkspaceManagementPage({
   const selected = rooms.find(({ id }) => String(id) === query.room) ?? rooms[0];
   const status = JOIN_REQUEST_STATUSES.find((item) => item === query.status) ?? "PENDING";
   const page = Number(query.page ?? 0);
-  const showMembers = query.tab === "members";
+  const tab: ManagementTab =
+    query.tab === "members" ? "members"
+      : query.tab === "integrations" ? "integrations"
+      : "settings";
+  // 멤버·연동 탭에서만 멤버 상세 데이터가 필요. 기본 설정은 가벼운 shape 로 로드.
+  const showMembers = tab === "members";
   const management = selected && selected.status !== "INACTIVE"
     ? await getRoomManagement(selected.id, status, Number.isSafeInteger(page) && page >= 0 && page <= 2147483647 ? page : 0, showMembers).catch((error: unknown) => {
         if (error instanceof ApiError) {
@@ -106,7 +112,7 @@ export default async function WorkspaceManagementPage({
             <RoomManagementDetails
               key={management.room.id}
               management={management}
-              showMembers={showMembers}
+              tab={tab}
             />
           </div>
         ) : (
