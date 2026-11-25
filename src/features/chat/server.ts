@@ -256,6 +256,11 @@ export async function getChannelMessages(
 /**
  * 1:1 스레드 상세 — DM 페이지 헤더에 쓸 상대 정보. `ChatSidebar` 가 넘기는 thread id 와
  * 짝을 이룬다.
+ *
+ * ⚠️ BE 는 DM 도 **채널** 로 다룬다 (ChannelType=DIRECT) — 전용 `/accounts/me/dms` 엔드포인트가
+ *    없다. DM URL `/dms/[dmId]` 에 roomId 가 없으므로 `listApiChannels` 가 내려준 모든
+ *    DIRECT 채널에서 channelId=threadId 를 찾아 소속 roomId 와 peer 를 함께 꺼낸다.
+ *    여기서 돌려주는 `roomId` 는 send·hide 액션이 그대로 쓴다.
  */
 export async function getDmThread(
   threadId: number,
@@ -263,18 +268,25 @@ export async function getDmThread(
   if (isMock) {
     return (await listMyDmThreads()).find((t) => t.id === threadId) ?? null;
   }
-  // 404 만 null, 나머지는 throw (getChannel 과 같은 이유).
-  try {
-    return await api<DirectMessageThread>(
-      `/api/v1/accounts/me/dms/${threadId}`,
-    );
-  } catch (e) {
-    if (e instanceof ApiError && e.status === 404) return null;
-    throw e;
-  }
+  const channels = await listApiChannels();
+  const match = channels.find(
+    (c) => c.channelType === "DIRECT" && c.channelId === threadId,
+  );
+  if (!match || match.peer?.accountId == null) return null;
+  return {
+    id: threadId,
+    roomId: match.roomId,
+    accountId: match.peer.accountId,
+    displayName: match.peer.displayName ?? "이름 없는 멤버",
+    online: false,
+    unreadCount: match.unreadCount ?? 0,
+  };
 }
 
-/** 1:1 스레드의 최근 메시지 묶음 — 채널 쪽과 같은 가정. */
+/**
+ * 1:1 스레드의 최근 메시지 묶음 — 채널 메시지 조회 재사용. 실 API 는 DM 전용 경로가
+ * 없으므로 thread 에서 roomId 를 꺼내 `/rooms/{roomId}/channels/{threadId}/messages` 로 간다.
+ */
 export async function getDmMessages(
   threadId: number,
 ): Promise<ChatMessage[]> {
@@ -282,7 +294,7 @@ export async function getDmMessages(
     if (!(await getDmThread(threadId))) return [];
     return DM_MESSAGES[threadId] ?? [];
   }
-  return api<ChatMessage[]>(
-    `/api/v1/accounts/me/dms/${threadId}/messages?limit=100`,
-  );
+  const thread = await getDmThread(threadId);
+  if (!thread || thread.roomId == null) return [];
+  return getChannelMessages(thread.roomId, threadId);
 }
