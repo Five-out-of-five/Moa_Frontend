@@ -11,13 +11,13 @@ import { IdeaBoardLive } from "@/features/idea/IdeaBoardLive";
 import { CloseIdeaDialog, IdeaCardDialog, StartIdeaDialog } from "@/features/idea/IdeaDialogs";
 import { ideaDateTime } from "@/features/idea/model";
 import { getIdeaBoard } from "@/features/idea/server";
-import { listConflicts } from "@/features/mediation/server";
+import { listMockConflicts } from "@/features/mediation/server";
 import { getReportViewerAccountId } from "@/features/report/server";
 import { getFirstRoomProfile } from "@/features/room/first-profile/server";
 
 export default async function IdeaBoardPage({ params, searchParams }: {
   params: Promise<{ roomId: string }>;
-  searchParams: Promise<{ session?: string; briefingFocus?: string; historyPage?: string }>;
+  searchParams: Promise<{ session?: string; briefingFocus?: string; historyPage?: string; open?: string }>;
 }) {
   const [{ roomId }, query] = await Promise.all([params, searchParams]);
   const entry = await getFirstRoomProfile(roomId);
@@ -31,7 +31,8 @@ export default async function IdeaBoardPage({ params, searchParams }: {
   const selected = board.selected;
   if (query.session && !selected) notFound();
   const cards = selected ? board.cards.filter(({ sessionId }) => sessionId === selected.id) : [];
-  const conflicts = board.usesMockStream ? await listConflicts(id).catch(() => []) : [];
+  const openCardId = cards.find(({ id }) => String(id) === query.open)?.id;
+  const conflicts = board.usesMockStream ? listMockConflicts(id) : [];
   const conflictByCard = Object.fromEntries(conflicts.filter(({ state }) => state === "OPEN")
     .flatMap((conflict) => [[conflict.leftCardId, conflict.id], [conflict.rightCardId, conflict.id]]));
   const participants = selected?.participantCount ?? new Set(cards.map(({ author }) => author.accountId)).size;
@@ -95,7 +96,7 @@ export default async function IdeaBoardPage({ params, searchParams }: {
           {board.editable && !selected && <StartIdeaDialog roomId={id} trigger={<Button size="sm"><Plus aria-hidden="true" />회차 시작</Button>} />}
         </div>
       </header>
-      {selected ? <IdeaBoard session={selected} cards={cards} accountId={accountId} editable={board.editable} canUpload={!board.usesMockStream} conflictByCard={conflictByCard} sources={sources} />
+      {selected ? <IdeaBoard session={selected} cards={cards} accountId={accountId} editable={board.editable} canUpload={!board.usesMockStream} conflictByCard={conflictByCard} sources={sources} openCardId={openCardId} />
         : <p className="bg-card border-border rounded-card text-muted-foreground border p-5 text-sm">진행 중인 회차가 없어요.</p>}
     </section>
   );

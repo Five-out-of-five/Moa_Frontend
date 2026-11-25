@@ -58,19 +58,40 @@ jobs:
           : "${EC2_HOST:?Missing EC2_HOST}" "${EC2_USER:?Missing EC2_USER}"
           : "${EC2_SSH_KEY:?Missing EC2_SSH_KEY}" "${EC2_HOST_FINGERPRINT:?Missing EC2_HOST_FINGERPRINT}"
 
+          expected_fingerprint=$(printf '%s' "$EC2_HOST_FINGERPRINT" | tr -d '[:space:]')
+          if [[ ! "$expected_fingerprint" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]; then
+            echo 'EC2_HOST_FINGERPRINT must contain the SHA256 fingerprint only.' >&2
+            exit 1
+          fi
+
           ssh_dir=$(mktemp -d)
           trap 'rm -rf "$ssh_dir"' EXIT
           umask 077
           printf '%s\n' "$EC2_SSH_KEY" | tr -d '\r' > "$ssh_dir/key"
-          ssh-keyscan -T 10 -t ed25519 -- "$EC2_HOST" > "$ssh_dir/known_hosts"
-          fingerprint=$(ssh-keygen -lf "$ssh_dir/known_hosts" | awk '{print $2}')
-          if [[ "$fingerprint" != "$EC2_HOST_FINGERPRINT" ]]; then
+          if ! ssh-keyscan -T 10 -t ed25519 -- "$EC2_HOST" > "$ssh_dir/host_keys"; then
+            echo 'Unable to read an ED25519 host key from EC2.' >&2
+            exit 1
+          fi
+
+          observed_fingerprints=()
+          while IFS= read -r host_key; do
+            fingerprint=$(printf '%s\n' "$host_key" | ssh-keygen -E sha256 -lf - | awk '{print $2}')
+            observed_fingerprints+=("$fingerprint")
+            if [[ "$fingerprint" == "$expected_fingerprint" ]]; then
+              printf '%s\n' "$host_key" > "$ssh_dir/known_hosts"
+              break
+            fi
+          done < "$ssh_dir/host_keys"
+
+          if [[ ! -s "$ssh_dir/known_hosts" ]]; then
             echo 'EC2 SSH host fingerprint does not match.' >&2
+            printf 'Server fingerprint observed by GitHub: %s\n' "${observed_fingerprints[@]}" >&2
             exit 1
           fi
 
           ssh_args=(-i "$ssh_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes
             -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_dir/known_hosts"
+            -o GlobalKnownHostsFile=/dev/null -o HostKeyAlgorithms=ssh-ed25519
             -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
           if [[ "$DEPLOY" == true ]]; then
             [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]

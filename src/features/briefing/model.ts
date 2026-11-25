@@ -18,6 +18,17 @@ export const BRIEFING_NEWS = {
 } as const satisfies Partial<Record<BoardEventKind, { category: string; label: string; action: string }>>;
 
 export type NewsKind = keyof typeof BRIEFING_NEWS;
+export const TEAM_NEWS_KINDS = {
+  CARD_CREATED: "IDEA_CARD_CREATED", TASK_CREATED: "TASK_CREATED", TASK_COMPLETED: "TASK_COMPLETED",
+  VOTE_CREATED: "VOTE_OPENED", VOTE_CLOSED: "VOTE_CLOSED", SESSION_CLOSED: "SESSION_CLOSED", MEMBER_JOINED: "MEMBER_JOINED",
+} as const satisfies Record<string, NewsKind>;
+export type BriefingEventType = keyof typeof TEAM_NEWS_KINDS;
+export function isBriefingEventType(value: unknown): value is BriefingEventType {
+  return typeof value === "string" && Object.hasOwn(TEAM_NEWS_KINDS, value);
+}
+export function teamNewsType(kind: NewsKind): BriefingEventType | undefined {
+  return (Object.keys(TEAM_NEWS_KINDS) as BriefingEventType[]).find((type) => TEAM_NEWS_KINDS[type] === kind);
+}
 export type BriefingFilter = (typeof BRIEFING_FILTERS)[number]["key"];
 export const isNewsKind = (kind: BoardEventKind): kind is NewsKind => Object.hasOwn(BRIEFING_NEWS, kind);
 
@@ -25,13 +36,18 @@ export type BriefingTarget = { href: string; focus?: number };
 export type BriefingTodo = { key: string; title: string; label: string; date: string | null; action: string; href: string };
 export type BriefingNews = {
   key: string; kind: NewsKind; summary: string; createdAt: string; emphasized: boolean; target: BriefingTarget | null;
+  eventType?: BriefingEventType; title?: string;
+};
+export type Briefing = {
+  visible: boolean; pending: BriefingTodo[]; news: BriefingNews[];
+  counts: Partial<Record<BriefingEventType, number>>; hasHighlights: boolean;
 };
 export type BriefingGroup = { key: string; kind: NewsKind; items: BriefingNews[] };
 
 export function groupBriefingNews(items: BriefingNews[]): BriefingGroup[] {
   const groups = new Map<string, BriefingGroup>();
   for (const item of items) {
-    const key = item.emphasized ? item.key : `${item.kind}:${item.target?.href ?? item.key}`;
+    const key = item.eventType ?? item.key;
     const group = groups.get(key);
     if (group) group.items.push(item);
     else groups.set(key, { key, kind: item.kind, items: [item] });

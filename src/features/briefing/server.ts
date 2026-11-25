@@ -2,7 +2,6 @@ import "server-only";
 
 import { roomManagementMock } from "@/features/room/management/mock-state";
 import { getManagedRoom } from "@/features/room/management/server";
-import { listMyRooms } from "@/features/room/server";
 import { listTasksInRoom } from "@/features/task/server";
 import { listOpenVotesInRoom } from "@/features/vote/server";
 import { isActiveMember } from "@/lib/permission";
@@ -11,7 +10,7 @@ import { boardSessions, ideaCards, roomMembers, tasks, votes } from "@/mocks/db"
 
 import { getLiveRoomBriefing } from "./live";
 import { type BriefingEvent, readMockBriefingEvents } from "./mock-events";
-import { type BriefingNews, type BriefingTarget, briefingTargetHref, type BriefingTodo, isNewsKind, type NewsKind } from "./model";
+import { type Briefing, type BriefingEventType, type BriefingNews, type BriefingTarget, type BriefingTodo, isNewsKind, type NewsKind, teamNewsType } from "./model";
 
 const NEWS_WINDOW = 30 * 24 * 3600_000;
 const runtime = globalThis as typeof globalThis & { moaBriefingRead?: Map<string, Set<string>> };
@@ -28,10 +27,10 @@ function resolveTarget(roomId: number, event: BriefingEvent): BriefingTarget | n
     }
     case "TASK":
       return tasks.some((item) => item.roomId === roomId && item.taskId === focus)
-        ? { href: `${root}/boards/task`, focus } : null;
+        ? { href: `${root}/boards/task?open=${focus}`, focus } : null;
     case "VOTE":
       return votes.some((item) => item.roomId === roomId && item.voteId === focus)
-        ? { href: `${root}/votes`, focus } : null;
+        ? { href: `${root}/votes?open=${focus}`, focus } : null;
     case "SESSION":
       return boardSessions.some((item) => item.roomId === roomId && item.id === focus && item.state === "CLOSED")
         ? { href: `${root}/boards/idea?session=${focus}` } : null;
@@ -52,8 +51,9 @@ function selectNews(events: BriefingEvent[], roomId: number, accountId: number, 
       : tasks.find((item) => item.roomId === roomId && item.taskId === event.targetId)?.source.id;
     const emphasized = (event.kind === "IDEA_CARD_COMMENTED" || event.kind === "IDEA_CARD_CONVERTED") &&
       ideaCards.some((card) => card.roomId === roomId && card.id === cardId && card.author.accountId === accountId);
-    if (event.kind === "IDEA_CARD_COMMENTED" && !emphasized) continue;
-    unseen.push({ key: event.key, kind: event.kind, summary: event.summary, createdAt: event.createdAt, emphasized, target: resolveTarget(roomId, event) });
+    const eventType = teamNewsType(event.kind);
+    if (!eventType && !emphasized) continue;
+    unseen.push({ key: event.key, kind: event.kind, eventType, summary: event.summary, createdAt: event.createdAt, emphasized, target: resolveTarget(roomId, event) });
   }
   return unseen;
 }
@@ -80,18 +80,16 @@ async function mockReadState(roomId: number, member: NonNullable<Awaited<ReturnT
   return { read, joined, unseen: selectNews(events, roomId, member.accountId, sinceChecked, read) };
 }
 
-export async function getRoomBriefing(roomId: number) {
-  if (!isMock) {
-    if (!(await listMyRooms()).some(({ id }) => id === roomId)) return null;
-    const briefing = await getLiveRoomBriefing(roomId);
-    return { ...briefing, news: limitNews(briefing.news) };
-  }
+export async function getRoomBriefing(roomId: number, withTargets = true): Promise<Briefing | null> {
+  if (!isMock) return getLiveRoomBriefing(roomId, withTargets);
   const room = await getManagedRoom(roomId);
   if (!room) return null;
   const { account } = room;
   const [state, roomTasks, openVotes] = await Promise.all([
     mockReadState(roomId, room.membership), listTasksInRoom(roomId), listOpenVotesInRoom(roomId),
   ]);
+  if (!room.membership.lastBriefingCheckedAt && Date.now() - state.joined < 60_000)
+    return { visible: false, pending: [], news: [], counts: {}, hasHighlights: false };
   const pending: BriefingTodo[] = roomTasks.flatMap((task) => {
     if (task.status === "DONE") return [];
     const history = tasks.find((item) => item.roomId === roomId && item.taskId === task.taskId)?.history;
@@ -112,22 +110,25 @@ export async function getRoomBriefing(roomId: number) {
     pending.push({ key: `vote:${vote.voteId}`, title: vote.title, date: vote.deadlineAt, label: "미참여 투표", action: "투표하기",
       href: `/rooms/${roomId}/votes?open=${vote.voteId}&briefingFocus=${vote.voteId}` });
   }
-  return { pending: pending.sort((a, b) => (a.date ?? "\uffff").localeCompare(b.date ?? "\uffff")), news: limitNews(state.unseen), canConfirm: true };
+  const counts: Briefing["counts"] = {};
+  for (const { eventType } of state.unseen) {
+    if (eventType) counts[eventType] = (counts[eventType] ?? 0) + 1;
+  }
+  return { visible: true, pending: pending.sort((a, b) => (a.date ?? "\uffff").localeCompare(b.date ?? "\uffff")),
+    news: limitNews(state.unseen), counts, hasHighlights: state.unseen.some(({ emphasized }) => emphasized) };
 }
 
-export async function confirmMockBriefing(roomId: number, keys?: string[]) {
-  if (!isMock) return null;
+export async function confirmMockBriefing(roomId: number, eventType?: BriefingEventType) {
+  if (!isMock) return false;
   const room = await getManagedRoom(roomId);
-  if (!room) return null;
+  if (!room) return false;
   const { unseen, read } = await mockReadState(roomId, room.membership);
-  const selected = keys ? unseen.filter(({ key }) => keys.includes(key)) : unseen;
-  if (keys && !selected.length) return null;
+  const selected = eventType ? unseen.filter((item) => item.eventType === eventType) : unseen;
+  if (eventType && !selected.length) return true;
   for (const item of selected) read.add(item.key);
-  if (!keys || unseen.every(({ key }) => read.has(key))) {
+  if (!eventType || unseen.every((item) => !item.eventType || read.has(item.key))) {
     room.membership.lastBriefingCheckedAt = new Date().toISOString();
     read.clear();
   }
-  const target = selected.find(({ target }) => target)?.target;
-  const grouped = target ? selected.flatMap((item) => item.target?.href === target.href && item.target.focus !== undefined ? [item.target.focus] : []) : [];
-  return { href: keys && target ? briefingTargetHref(target, grouped) : null };
+  return true;
 }

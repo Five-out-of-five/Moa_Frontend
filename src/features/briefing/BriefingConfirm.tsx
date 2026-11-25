@@ -8,22 +8,23 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
 import { confirmBriefingAction } from "./actions";
+import type { BriefingEventType } from "./model";
 
-export function BriefingConfirm({ roomId, keys, label }: { roomId: number; keys?: string[]; label: string }) {
+export function BriefingConfirm({ roomId, eventType, href, label }: { roomId: number; eventType?: BriefingEventType; href?: string; label: string }) {
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   return (
-    <Button type="button" size="sm" variant={keys ? "ghost" : "outline"} disabled={pending}
-      className={keys ? "text-primary h-auto justify-start px-0 py-1 text-xs" : undefined}
+    <Button type="button" size="sm" variant={eventType ? "ghost" : "outline"} disabled={pending}
+      className={eventType ? "text-primary h-auto justify-start px-0 py-1 text-xs" : undefined}
       onClick={() => startTransition(async () => {
         try {
-          const result = await confirmBriefingAction(roomId, keys);
+          const result = await confirmBriefingAction(roomId, eventType);
           if (!result.ok) {
-            toast.error("이 소식을 확인할 수 없어요. 목록을 새로고침해 주세요.");
-          } else if (result.href) {
-            router.push(result.href);
-          } else if (keys) {
-            toast.info("이미 삭제됐거나 접근할 수 없는 항목이에요.");
+            toast.error(result.error);
+          } else if (href) {
+            router.push(href);
+          } else if (eventType) {
+            toast.success("이 소식 묶음을 확인했어요.");
           } else {
             toast.success("팀 소식을 모두 확인했어요.");
           }
@@ -31,9 +32,9 @@ export function BriefingConfirm({ roomId, keys, label }: { roomId: number; keys?
           toast.error("확인 상태를 저장하지 못했어요. 다시 시도해 주세요.");
         }
       })}>
-      {!keys && <Check aria-hidden="true" className="size-4" />}
+      {!eventType && <Check aria-hidden="true" className="size-4" />}
       {pending ? "처리 중…" : label}
-      {keys && <ChevronRight aria-hidden="true" className="size-3" />}
+      {href && <ChevronRight aria-hidden="true" className="size-3" />}
     </Button>
   );
 }

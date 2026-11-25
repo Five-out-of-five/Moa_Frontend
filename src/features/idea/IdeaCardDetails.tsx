@@ -11,8 +11,8 @@ import type { IdeaCard } from "@/types/db";
 import { IdeaCardPanel } from "./IdeaCardPanel";
 import { IDEA_COLUMNS, ideaDateTime, type IdeaSourceLink } from "./model";
 
-export function IdeaCardDetails({ card, accountId, canEdit, canReport = false, canUpload, conflictId, sources = [] }: { card: IdeaCard; accountId: number; canEdit: boolean; canReport?: boolean; canUpload: boolean; conflictId?: number; sources?: IdeaSourceLink[] }) {
-  const [open, setOpen] = useState(false);
+export function IdeaCardDetails({ card, accountId, canEdit, canReport = false, canUpload, conflictId, sources = [], defaultOpen = false }: { card: IdeaCard; accountId: number; canEdit: boolean; canReport?: boolean; canUpload: boolean; conflictId?: number; sources?: IdeaSourceLink[]; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
   const label = IDEA_COLUMNS.find(({ type }) => type === card.cardType)?.title;
   return (
     <div className="relative">

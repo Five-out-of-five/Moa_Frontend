@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { BriefingConfirm } from "@/features/briefing/BriefingConfirm";
+import { BriefingRefresh } from "@/features/briefing/BriefingRefresh";
 import { BRIEFING_FILTERS, BRIEFING_NEWS, briefingTargetHref, groupBriefingNews } from "@/features/briefing/model";
 import { getRoomBriefing } from "@/features/briefing/server";
 
@@ -21,9 +22,13 @@ export default async function BriefingPage({ params, searchParams }: {
   const filter = BRIEFING_FILTERS.find(({ key }) => key === category)?.key ?? "all";
   const base = `/rooms/${id}/briefing`;
   const groups = groupBriefingNews(briefing.news.filter(({ kind }) => filter === "all" || BRIEFING_NEWS[kind].category === filter));
+  const teamGroups = groups.filter(({ items }) => !items[0].emphasized);
+  const highlightedGroups = groups.filter(({ items }) => items[0].emphasized);
+  const newsCount = Object.values(briefing.counts).reduce((total, count) => total + count, 0);
 
   return (
     <section className="mx-auto max-w-6xl space-y-4">
+      <BriefingRefresh />
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-primary text-xs font-semibold">워크스페이스</p>
@@ -32,10 +37,10 @@ export default async function BriefingPage({ params, searchParams }: {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" asChild><Link href={`/rooms/${id}`}><ArrowLeft aria-hidden="true" />대시보드로 돌아가기</Link></Button>
-          <span className="text-muted-foreground text-xs">확인할 팀 소식 {briefing.news.length}개</span>
+          {briefing.visible && <span className="text-muted-foreground text-xs">확인할 팀 소식 {newsCount}개</span>}
         </div>
       </header>
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+      {briefing.visible ? <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         <section aria-labelledby="briefing-todo" className="bg-card border-border rounded-card space-y-3 border p-4">
           <header className="flex items-center gap-2"><ClipboardList aria-hidden="true" className="text-primary size-4" />
             <div><h2 id="briefing-todo" className="text-sm font-semibold">내가 할 일</h2><p className="text-muted-foreground text-xs">확인이 필요한 항목 {briefing.pending.length}개</p></div>
@@ -54,36 +59,50 @@ export default async function BriefingPage({ params, searchParams }: {
         <section aria-labelledby="briefing-news" className="bg-card border-border rounded-card space-y-3 border p-4">
           <header className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2"><Newspaper aria-hidden="true" className="text-primary size-4" />
-              <div><h2 id="briefing-news" className="text-sm font-semibold">팀 소식</h2><p className="text-muted-foreground text-xs">새로운 업데이트 {briefing.news.length}개</p></div>
+              <div><h2 id="briefing-news" className="text-sm font-semibold">팀 소식</h2><p className="text-muted-foreground text-xs">새로운 업데이트 {newsCount}개</p></div>
             </div>
-            {briefing.canConfirm && briefing.news.length > 0 && <BriefingConfirm roomId={id} label="모두 확인" />}
+            {(newsCount > 0 || briefing.hasHighlights) && <BriefingConfirm roomId={id} label="모두 확인" />}
           </header>
           <nav aria-label="팀 소식 유형" className="flex flex-wrap gap-1.5">
             {BRIEFING_FILTERS.map(({ key, label }) => <Button key={key} asChild size="sm" variant={key === filter ? "secondary" : "outline"}>
               <Link href={key === "all" ? base : `${base}?category=${key}`} scroll={false} aria-current={filter === key ? "page" : undefined}>{label}</Link>
             </Button>)}
           </nav>
-          {groups.length ? <ul className="divide-border divide-y">{groups.map((group) => {
+          {!teamGroups.length && <p className="text-muted-foreground rounded-control bg-muted p-3 text-sm">
+            {newsCount ? "이 유형의 팀 소식이 없어요." : "새로운 변화 없음"}
+          </p>}
+          {[{ key: "team", groups: teamGroups }, { key: "personal", groups: highlightedGroups }].map(({ key, groups }) => groups.length > 0 && (
+          <div key={key}>
+          {key === "personal" && <h3 className="text-primary text-xs font-semibold">내 카드 소식</h3>}
+          <ul className="divide-border divide-y">{groups.map((group) => {
             const meta = BRIEFING_NEWS[group.kind];
             const [event] = group.items;
             const Icon = ICONS[meta.category];
-            const first = group.items.find(({ target }) => target)?.target;
-            const focus = group.items.flatMap(({ target }) => target?.focus === undefined ? [] : [target.focus]);
+            const count = event.eventType ? briefing.counts[event.eventType] : undefined;
             return <li key={group.key} className="flex gap-3 py-3">
               <span className="bg-secondary text-primary rounded-control grid size-8 shrink-0 place-items-center"><Icon aria-hidden="true" className="size-4" /></span>
               <div className="min-w-0 flex-1 space-y-0.5">
                 <div className="flex flex-wrap items-start justify-between gap-x-2">
-                  <p className={event.emphasized ? "text-primary text-sm font-semibold" : "text-sm font-semibold"}>{meta.label}{group.items.length > 1 && ` ${group.items.length}개`}</p>
-                  <time className="text-muted-foreground text-xs" dateTime={event.createdAt}>{format.format(new Date(event.createdAt))}</time>
+                  <p className={event.emphasized ? "text-primary text-sm font-semibold" : "text-sm font-semibold"}>{meta.label}{count !== undefined && ` ${count}개`}</p>
                 </div>
-                <p className="text-muted-foreground text-xs break-words">{event.summary}</p>
-                {briefing.canConfirm ? <BriefingConfirm roomId={id} keys={group.items.map(({ key }) => key)} label={first ? meta.action : "확인"} />
-                  : first && <Link className="text-primary text-xs underline" href={briefingTargetHref(first, focus)}>{meta.action}</Link>}
+                <ul className="divide-border divide-y">{group.items.map((item) => {
+                  const href = item.target ? briefingTargetHref(item.target) : undefined;
+                  return <li key={item.key} className="space-y-1 py-2">
+                    <div className="flex flex-wrap items-start justify-between gap-x-2">
+                      <p className="text-muted-foreground text-xs break-words">{item.summary}</p>
+                      <time className="text-muted-foreground text-xs" dateTime={item.createdAt}>{format.format(new Date(item.createdAt))}</time>
+                    </div>
+                    {item.title && <p className="text-xs font-medium break-words">{item.title}</p>}
+                    {item.eventType ? <BriefingConfirm roomId={id} eventType={item.eventType} href={href} label={href ? meta.action : "확인"} />
+                      : href && <Link className="text-primary text-xs underline" href={href}>{meta.action}</Link>}
+                  </li>;
+                })}</ul>
               </div>
             </li>;
-          })}</ul> : <p className="text-muted-foreground rounded-control bg-muted p-3 text-sm">{briefing.news.length ? "이 유형의 팀 소식이 없어요." : "새로운 변화 없음"}</p>}
+          })}</ul>
+          </div>))}
         </section>
-      </div>
+      </div> : <p className="text-muted-foreground text-sm">잠시 후 캐치업 브리핑을 확인할 수 있어요.</p>}
     </section>
   );
 }
