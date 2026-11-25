@@ -234,7 +234,11 @@ export function VoteDetailSheet({
 
       switch (result.kind) {
         case "ok":
+          // OPEN 투표는 결과가 가려져 있어 Sheet 안에 더 볼 게 없고, 리스트의 참여 뱃지·집계는
+          // revalidatePath 로 이미 갱신된다. 참여·변경 성공 뒤 Sheet 를 자동으로 닫아
+          // 사용자가 overlay/ESC 로 수동 닫는 수고를 없앤다.
           setLocal(result.vote);
+          onOpenChange(false);
           return;
         case "closed":
           // 서버가 "이미/방금 마감" 으로 전환됐음을 알린 상태. Sheet 도 CLOSED 결과 화면으로 전환.
