@@ -1,6 +1,5 @@
 import { ArrowLeft, Smile } from "lucide-react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { getMyAccount } from "@/features/account/server";
@@ -8,10 +7,9 @@ import { todayMoodDate } from "@/features/mood/date";
 import type { MoodPeriod } from "@/features/mood/model";
 import { MoodForm } from "@/features/mood/MoodForm";
 import { MoodShare } from "@/features/mood/MoodShare";
-import { listMoodTrend, listTodayMoods } from "@/features/mood/server";
+import { getTeamMood } from "@/features/mood/server";
 import { MoodDistribution, MoodTrend, TeamMoodList } from "@/features/mood/TeamMoodPanels";
-import { getFirstRoomProfile } from "@/features/room/first-profile/server";
-import { listRoomMembers } from "@/features/room/server";
+import { getRoomPageProfile } from "@/features/room/first-profile/server";
 
 const PERIODS = [{ days: 1, label: "오늘" }, { days: 7, label: "7일" }, { days: 30, label: "30일" }] as const;
 
@@ -20,23 +18,13 @@ export default async function TeamMoodPage({ params, searchParams }: {
   searchParams: Promise<{ period?: string | string[] }>;
 }) {
   const [{ roomId }, query] = await Promise.all([params, searchParams]);
-  const entry = await getFirstRoomProfile(roomId);
-  if (!entry) notFound();
-  const { room } = entry;
+  const { room } = await getRoomPageProfile(roomId);
   const period: MoodPeriod = query.period === "7" ? 7 : query.period === "30" ? 30 : 1;
   const date = todayMoodDate();
-  const [account, roster, recorded, trend] = await Promise.all([
-    getMyAccount(), listRoomMembers(room.id), listTodayMoods(room.id),
-    period === 1 ? null : listMoodTrend(room.id, period, date),
+  const [account, { members, distribution, trend }] = await Promise.all([
+    getMyAccount(), getTeamMood(room.id, period, date),
   ]);
-  const activeIds = new Set(roster.filter(({ memberStatus }) => memberStatus === "ACTIVE").map(({ accountId }) => accountId));
-  const moods = recorded.filter(({ accountId }) => activeIds.has(accountId));
-  const byMember = new Map(moods.map((mood) => [mood.accountId, mood]));
-  const me = byMember.get(account.id);
-  const members = roster.filter(({ accountId }) => activeIds.has(accountId)).map((member) => {
-    const mood = byMember.get(member.accountId);
-    return { id: member.accountId, name: member.displayName, mood: mood?.mood ?? null, note: mood?.note ?? null };
-  });
+  const me = members.find(({ id }) => id === account.id);
   const dashboard = `/rooms/${room.id}`;
   const detail = `${dashboard}/moods`;
 
@@ -50,7 +38,7 @@ export default async function TeamMoodPage({ params, searchParams }: {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" asChild><Link href={dashboard}><ArrowLeft aria-hidden="true" />대시보드로 돌아가기</Link></Button>
-          <MoodShare roomName={room.name} date={date} members={members} />
+          <MoodShare key={period} roomName={room.name} date={date} members={members} period={period} trend={trend} distribution={distribution} />
         </div>
       </header>
       <nav aria-label="조회 기간" className="bg-secondary rounded-control inline-flex gap-1 p-1">
@@ -65,10 +53,10 @@ export default async function TeamMoodPage({ params, searchParams }: {
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(14rem,18rem)_minmax(0,1fr)]">
         <section aria-labelledby="my-mood" className="bg-card border-border rounded-card space-y-4 border p-4">
           <h2 id="my-mood" className="flex items-center gap-2 text-sm font-semibold"><Smile aria-hidden="true" className="text-primary size-4" />오늘의 내 기분</h2>
-          <MoodForm key={`${room.id}:${date}`} roomId={room.id} mood={me?.mood} note={me?.note} />
+          <MoodForm key={`${room.id}:${date}`} roomId={room.id} mood={me?.mood ?? undefined} note={me?.note} />
         </section>
         <div className="space-y-4">
-          <MoodDistribution moods={moods} />
+          <MoodDistribution distribution={distribution} />
           {period !== 1 && <MoodTrend trend={trend} period={period} />}
           <TeamMoodList members={members} />
         </div>
