@@ -28,7 +28,7 @@ export function DashboardGrid({
   bodies: Record<number, ReactNode>;
 }) {
   const router = useRouter();
-  const { widgets, editors, pending, setEditing, save, applySnapshot } = useDashboardLayout(
+  const { revision, widgets, editors, pending, setEditing, save, applySnapshot } = useDashboardLayout(
     roomId,
     initialSnapshot,
     shouldOpenMockStream,
@@ -62,7 +62,7 @@ export function DashboardGrid({
           aria-label="대시보드 레이아웃"
           className="ml-auto flex w-max items-center gap-2"
         >
-          <LayoutRecommendation roomId={roomId} />
+          <LayoutRecommendation roomId={roomId} revision={revision} widgets={widgets} onChanged={applySnapshot} />
           <WidgetRemovalControls
             roomId={roomId}
             disabled={Boolean(projected)}

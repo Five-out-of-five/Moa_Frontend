@@ -36,7 +36,7 @@ function fixture({ env = {}, fetch: backend = async () => { throw Error("예상�
     const record = { exports: {} };
     modules.set(file, record);
     const output = ts.transpileModule(fs.readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
-    vm.runInNewContext(output, { module: record, exports: record.exports, require: (id) => load(id, path.dirname(file)), process: { env: { AUTH_USE_MOCK: "false", NODE_ENV: "test", ...env } }, fetch: backend, Headers, Request, Response, URL, URLSearchParams, FormData, Blob, File, Buffer, AbortController, setTimeout, clearTimeout, document }, { filename: file });
+    vm.runInNewContext(output, { module: record, exports: record.exports, require: (id) => load(id, path.dirname(file)), process: { env: { AUTH_USE_MOCK: "false", NODE_ENV: "test", ...env } }, fetch: backend, Headers, Request, Response, URL, URLSearchParams, FormData, Blob, File, Buffer, AbortController, AbortSignal, ReadableStream, TextEncoder, TextDecoder, setTimeout, clearTimeout, document }, { filename: file });
     return record.exports;
   }
   return { load, jar, values, options };
@@ -785,4 +785,137 @@ test("목 중재는 초안 폐기 후 재감지되고 해제한 충돌의 열린
   assert.equal((await detail()).status, "DISMISSED");
   assert.match((await detail()).adoptedHref, /open=\d+/);
   assert.equal((await detail()).draft, null);
+});
+
+test("AI 어시스턴트 BFF는 429를 보존하고 SSE를 중계하며 클라이언트 취소를 전달한다", async () => {
+  const seen = [];
+  let stream;
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    assert.equal(new URL(url).pathname, "/api/v1/rooms/7/ai/assistant/messages");
+    assert.equal(new Headers(init.headers).get("authorization"), "Bearer fixture-access");
+    assert.equal(new Headers(init.headers).get("accept"), "text/event-stream");
+    assert.equal(JSON.parse(init.body).question, "현재 업무는?");
+    seen.push(init);
+    if (seen.length === 1) {
+      return Response.json({ success: false, error: { code: "AI_QUOTA_EXCEEDED", message: "한도를 초과했어요." } }, { status: 429 });
+    }
+    return new Response(new ReadableStream({ start(controller) { stream = controller; } }), {
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const { POST } = f.load("@/app/api/rooms/[roomId]/assistant/route");
+  const abort = new AbortController();
+  const request = (signal) => new Request("http://localhost:3000/api/rooms/7/assistant", {
+    method: "POST", headers: { origin: "http://localhost:3000", host: "localhost:3000" },
+    body: JSON.stringify({ question: "현재 업무는?" }), signal,
+  });
+  const context = { params: Promise.resolve({ roomId: "7" }) };
+  const failure = await POST(request(), context);
+  assert.equal(failure.status, 429);
+  assert.equal((await failure.json()).error.code, "AI_QUOTA_EXCEEDED");
+  const response = await POST(request(abort.signal), context);
+  assert.equal(response.headers.get("x-accel-buffering"), "no");
+  const fragment = 'event:delta\ndata:{"text":"첫 조각"}\n\n';
+  stream.enqueue(new TextEncoder().encode(fragment));
+  const reader = response.body.getReader();
+  assert.equal(new TextDecoder().decode((await reader.read()).value), fragment);
+  abort.abort();
+  assert.equal(seen[1].signal.aborted, true);
+  await reader.cancel();
+});
+
+test("AI 어시스턴트 SSE는 분할된 이벤트와 CRLF를 처리하고 이력의 근거 문자열을 변환한다", async () => {
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url) => {
+    const { pathname, searchParams } = new URL(url);
+    assert.equal(pathname, "/api/v1/rooms/7/ai/assistant/messages");
+    assert.equal(searchParams.get("before"), "31");
+    assert.equal(searchParams.get("size"), "20");
+    return ok({ items: [{ messageId: 30, status: "PARTIAL", answer: "답변", references: '{"cards":[{"id":9,"title":"회고"}],"tasks":[],"votes":[]}' }],
+      hasNext: true, nextCursor: 30 });
+  } });
+  const { readAssistantEvents } = f.load("@/features/ai/assistant-events");
+  const bytes = new TextEncoder().encode('event:delta\r\ndata:{"text":"답변\\n둘째 줄"}\r\n\r\nevent:done\ndata:{"status":"PARTIAL","messageId":30}\n\n');
+  const body = new ReadableStream({ start(controller) {
+    for (const byte of bytes) controller.enqueue(Uint8Array.of(byte));
+    controller.close();
+  } });
+  const received = [];
+  for await (const item of readAssistantEvents(body, () => {})) received.push(item);
+  assert.equal(received[0].data.text, "답변\n둘째 줄");
+  assert.equal(received[1].data.status, "PARTIAL");
+  const history = await f.load("@/features/ai/server").getAiHistory(7, "31");
+  assert.equal(history.nextCursor, "30");
+  assert.equal(history.items[0].state, "stopped");
+  assert.equal(history.items[0].references.cards[0].id, 9);
+});
+
+test("AI 구성 추천은 위젯 ID 없이 적용하고 적용·되돌리기의 새 배치를 반환한다", async () => {
+  const widgets = [{ widgetType: "MOOD", x: 0, y: 0, w: 4, h: 3 }];
+  const operations = [
+    ["", { purpose: "회고" }, { widgets, reason: "팀 상태 확인" }],
+    ["/apply", { widgets }, { layoutVersion: 3, widgets: [{ ...widgets[0], widgetId: 43 }] }],
+    ["/undo", undefined, { layoutVersion: 4, widgets: [{ ...widgets[0], widgetId: 44 }] }],
+  ];
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    const [suffix, input, data] = operations.shift();
+    assert.equal(new URL(url).pathname, "/api/v1/rooms/7/dashboard/ai-recommendations" + suffix);
+    assert.equal(init.method, "POST");
+    assert.deepEqual(init.body ? JSON.parse(init.body) : undefined, input);
+    return ok(data);
+  } });
+  const actions = f.load("@/features/ai/layout-actions");
+  const proposal = await actions.recommendLayout(7, "회고");
+  assert.equal(proposal.ok, true);
+  assert.equal((await actions.applyAiLayout(7, proposal.data.widgets)).data.widgets[0].id, 43);
+  assert.equal((await actions.undoAiLayout(7)).data.widgets[0].id, 44);
+  assert.equal(operations.length, 0);
+});
+
+test("회의 요약은 목록·회차 생성·수정·카드 저장을 각 API 요청 형식에 맞춰 연결한다", async () => {
+  const summary = { summaryId: 9, content: "초안", requestedBy: { accountId: 4 }, sessions: [{ title: "지난 회고" }] };
+  const operations = [
+    ["GET", "?page=0&size=20", undefined, { content: [summary] }],
+    ["POST", "", { scopeType: "SESSIONS", sessionIds: [2, 3] }, summary],
+    ["PATCH", "/9", { content: "수정한 요약" }, { ...summary, content: "수정한 요약" }],
+    ["POST", "/9/save-as-card", { cardType: "TRY", title: "회고 정리" }, { cardId: 51 }],
+  ];
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    const [method, suffix, input, data] = operations.shift();
+    const { pathname, search } = new URL(url);
+    assert.equal(pathname + search, "/api/v1/rooms/7/ai/summaries" + suffix);
+    assert.equal(init.method ?? "GET", method);
+    assert.deepEqual(init.body ? JSON.parse(init.body) : undefined, input);
+    return ok(data);
+  } });
+  const history = await f.load("@/features/ai/server").getMeetingSummaries(7);
+  const actions = f.load("@/features/ai/summary-actions");
+  assert.equal(history[0].requestedBy, 4);
+  assert.equal((await actions.summarizeMeeting(7, [2, 3])).data.sessionTitles[0], "지난 회고");
+  assert.equal((await actions.updateMeetingSummary(7, "9", "수정한 요약")).data.text, "수정한 요약");
+  assert.equal((await actions.saveMeetingSummary(7, "9", "TRY", "회고 정리")).data, 51);
+  assert.equal(operations.length, 0);
+});
+
+test("톤앤매너는 명세 대상 코드와 채널 ID를 사용하고 1:1에서는 점검 요청을 생략한다", async () => {
+  const sent = [];
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    const { pathname, search } = new URL(url);
+    if (pathname.endsWith("/accounts/me")) return ok({
+      accountId: 4, provider: "GOOGLE", name: "테스트", email: "", role: "USER", toneMode: "POLISH", createdAt: "2026-11-01",
+    });
+    assert.equal(search, "");
+    if (pathname.endsWith("/sessions/2")) return ok({ status: "IN_PROGRESS" });
+    if (pathname.endsWith("/channels/3")) return ok({ channelId: 3, channelType: "PUBLIC" });
+    if (pathname.endsWith("/channels/4")) return ok({ channelId: 4, channelType: "DIRECT" });
+    assert.equal(pathname, "/api/v1/rooms/7/ai/tone-checks");
+    sent.push(JSON.parse(init.body));
+    return ok({ needsChange: false });
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const { reviewToneAction } = f.load("@/features/tone/actions");
+  assert.equal((await reviewToneAction({ kind: "CARD", roomId: 7, sessionId: 2 }, "확인해줘", 100)).ok, true);
+  assert.equal((await reviewToneAction({ kind: "CHAT", roomId: 7, channelId: 3 }, "확인해줘", 2000)).ok, true);
+  assert.equal((await reviewToneAction({ kind: "CHAT", roomId: 7, channelId: 4 }, "확인해줘", 2000)).needsChange, false);
+  assert.deepEqual(sent, [{ text: "확인해줘", target: "IDEA_CARD" }, { text: "확인해줘", target: "CHAT_MESSAGE", channelId: 3 }]);
 });
