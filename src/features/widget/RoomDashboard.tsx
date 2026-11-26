@@ -7,7 +7,7 @@ import { DashboardGrid } from "./DashboardGrid";
 import { getDashboardSnapshot, usesMockDashboardEvents } from "./server";
 import { WidgetLoading, WidgetSummary } from "./WidgetSummary";
 
-export async function RoomDashboard({ roomId }: { roomId: number }) {
+export async function RoomDashboard({ roomId, accountId }: { roomId: number; accountId: number }) {
   const result = await getDashboardSnapshot(roomId).then(
     (snapshot) => ({ snapshot }),
     (error: unknown) => {
@@ -43,6 +43,7 @@ export async function RoomDashboard({ roomId }: { roomId: number }) {
     <DashboardGrid
       key={roomId}
       roomId={roomId}
+      accountId={accountId}
       initialSnapshot={snapshot}
       shouldOpenMockStream={usesMockDashboardEvents()}
       bodies={bodies}

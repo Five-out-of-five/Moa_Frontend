@@ -19,6 +19,7 @@
     "generate:api": "openapi-typescript \"${BE_SWAGGER_URL:-https://dev.moarang.kro.kr/v3/api-docs}\" -o src/types/api.d.ts"
   },
   "dependencies": {
+    "@stomp/stompjs": "^7.5.0",
     "@tanstack/react-query": "^5.101.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

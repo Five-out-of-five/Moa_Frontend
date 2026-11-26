@@ -1,6 +1,6 @@
 "use client";
 
-import { type KeyboardEvent, type PointerEvent, useRef, useState } from "react";
+import { type KeyboardEvent, type PointerEvent, useEffect, useRef, useState } from "react";
 
 import type { RoomWidget } from "@/types/db";
 
@@ -60,6 +60,15 @@ export function useWidgetGesture(
   const active = useRef<Gesture | null>(null);
   const saving = useRef(false);
   const [preview, setPreview] = useState<{ id: number; placement: WidgetPlacement } | null>(null);
+
+  useEffect(() => {
+    const gesture = active.current;
+    if (gesture && !widgets.some(({ id }) => id === gesture.widget.id)) {
+      active.current = null;
+      setPreview(null);
+      onEdit(null);
+    }
+  }, [onEdit, widgets]);
 
   function start(event: PointerEvent<HTMLButtonElement>, widget: RoomWidget, kind: Gesture["kind"]) {
     if (!grid.current || active.current || saving.current || event.button !== 0 || !event.isPrimary) return;

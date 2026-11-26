@@ -8,7 +8,9 @@ import type { RoomWidget } from "@/types/db";
 
 import { saveWidgetPlacementAction, setWidgetEditingAction } from "./actions";
 import { WIDGET_MINIMUM, type WidgetPlacement } from "./grid";
+import { WIDGET_EDIT_HEARTBEAT } from "./live-editing";
 import type { DashboardSnapshot } from "./live-types";
+import { useDashboardRealtime } from "./useDashboardRealtime";
 
 const snapshotSchema = z.object({
   revision: z.number().int().nonnegative(),
@@ -35,14 +37,16 @@ function parseSnapshot(data: string) {
   }
 }
 
-export function useDashboardLayout(roomId: number, initialSnapshot: DashboardSnapshot, shouldOpenMockStream: boolean) {
+export function useDashboardLayout(roomId: number, accountId: number, initialSnapshot: DashboardSnapshot, shouldOpenMockStream: boolean) {
   const [layout, setLayout] = useState(initialSnapshot);
   const [pending, setPending] = useState<{ id: number; placement: WidgetPlacement } | null>(null);
   const session = useRef<string | null>(null);
+  const activeWidget = useRef<number | null>(null);
   const heartbeat = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const applySnapshot = useCallback((snapshot: DashboardSnapshot) => {
     setLayout((current) => current.revision > snapshot.revision ? current : snapshot);
   }, []);
+  const { liveEditors, publishEditing, reconnecting } = useDashboardRealtime(roomId, accountId, layout.widgets, applySnapshot);
 
   useEffect(() => {
     applySnapshot(initialSnapshot);
@@ -57,22 +61,33 @@ export function useDashboardLayout(roomId: number, initialSnapshot: DashboardSna
       if (!snapshot) return;
       applySnapshot(snapshot);
     };
-    return () => {
-      stream.close();
-      clearInterval(heartbeat.current);
-    };
+    return () => stream.close();
   }, [applySnapshot, shouldOpenMockStream, roomId]);
 
-  function setEditing(widgetId: number | null) {
+  const setEditing = useCallback((widgetId: number | null) => {
     clearInterval(heartbeat.current);
+    const previous = activeWidget.current;
+    activeWidget.current = widgetId;
+    if (!shouldOpenMockStream) {
+      if (previous !== null && previous !== widgetId) publishEditing(previous, false);
+      if (widgetId !== null) {
+        publishEditing(widgetId, true);
+        heartbeat.current = setInterval(() => publishEditing(widgetId, true), WIDGET_EDIT_HEARTBEAT);
+      }
+      return;
+    }
     const sessionId = session.current;
     if (!sessionId) return;
     const publish = () => {
       void setWidgetEditingAction(roomId, widgetId, sessionId).catch(() => undefined);
     };
     publish();
-    if (widgetId !== null) heartbeat.current = setInterval(publish, 3_000);
-  }
+    if (widgetId !== null) heartbeat.current = setInterval(publish, WIDGET_EDIT_HEARTBEAT);
+  }, [publishEditing, roomId, shouldOpenMockStream]);
+
+  useEffect(() => () => {
+    if (activeWidget.current !== null) setEditing(null);
+  }, [setEditing]);
 
   async function save(id: number, placement: WidgetPlacement) {
     setPending({ id, placement });
@@ -90,7 +105,8 @@ export function useDashboardLayout(roomId: number, initialSnapshot: DashboardSna
   return {
     revision: layout.revision,
     widgets: layout.widgets,
-    editors: session.current ? layout.editors.filter(({ sessionId }) => sessionId !== session.current) : [],
+    editors: shouldOpenMockStream ? layout.editors.filter(({ sessionId }) => sessionId !== session.current) : liveEditors,
+    reconnecting,
     pending,
     setEditing,
     save,
