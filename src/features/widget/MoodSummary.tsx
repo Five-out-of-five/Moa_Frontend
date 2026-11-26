@@ -1,6 +1,7 @@
 import { getMyAccount } from "@/features/account/server";
 import { MOOD_OPTIONS, summarizeMoods } from "@/features/mood/model";
 import { getTeamMood } from "@/features/mood/server";
+import { RoomEventRefresh } from "@/features/realtime/RoomEventRefresh";
 
 import { MoodPicker } from "./MoodPicker";
 
@@ -15,6 +16,8 @@ export async function MoodSummary({ roomId }: { roomId: number }) {
   });
   return (
     <div className="space-y-1.5">
+      {/* 대시보드는 방 연결이 복구될 때 전체 배치와 위젯 데이터를 함께 조회한다. */}
+      <RoomEventRefresh eventType="MOOD_UPDATED" refreshOnConnect={false} />
       <p className="text-muted-foreground text-xs">{total ? `오늘 ${total}명 참여` : "오늘 등록된 상태가 없어요."}</p>
       <div className="flex items-center gap-2">
         <div data-preview-extra="mood-chart" className="bg-muted grid size-14 shrink-0 place-items-center rounded-full"

@@ -9,6 +9,7 @@ import { MoodForm } from "@/features/mood/MoodForm";
 import { MoodShare } from "@/features/mood/MoodShare";
 import { getTeamMood } from "@/features/mood/server";
 import { MoodDistribution, MoodTrend, TeamMoodList } from "@/features/mood/TeamMoodPanels";
+import { RoomEventRefresh } from "@/features/realtime/RoomEventRefresh";
 import { getRoomPageProfile } from "@/features/room/first-profile/server";
 
 const PERIODS = [{ days: 1, label: "오늘" }, { days: 7, label: "7일" }, { days: 30, label: "30일" }] as const;
@@ -30,6 +31,7 @@ export default async function TeamMoodPage({ params, searchParams }: {
 
   return (
     <section className="mx-auto max-w-6xl space-y-4">
+      <RoomEventRefresh eventType="MOOD_UPDATED" />
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-primary text-xs font-semibold">워크스페이스</p>
