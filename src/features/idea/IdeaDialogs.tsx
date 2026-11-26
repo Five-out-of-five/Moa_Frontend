@@ -117,14 +117,14 @@ function IdeaConfirmationForm({ action, submit, onSaved }: { action: FormAction;
 
 export function StartIdeaDialog({ roomId, trigger }: { roomId: number; trigger: ReactElement }) {
   return (
-    <IdeaDialog trigger={trigger} title="회차 시작" description="이번 회고의 이름과 필요한 경우 마감 시각을 입력하세요."
+    <IdeaDialog trigger={trigger} title="회차 시작" description="회차 이름을 입력하세요."
       action={startIdeaSession.bind(null, roomId)} submit="시작하기">
       <label className="block space-y-2 text-sm font-medium">
         <span>회차 이름</span><Input name="title" required maxLength={50} placeholder="예: 이번 주 제품 회고" />
       </label>
       <label className="block space-y-2 text-sm font-medium">
-        <span>마감 시각 (선택, 한국 시간)</span><Input type="datetime-local" name="endsAt" />
-        <span className="text-muted-foreground block text-xs font-normal">비워두면 직접 마감할 수 있어요.</span>
+        <span>마감 시간 (선택)</span><Input type="datetime-local" name="endsAt" />
+        <span className="text-muted-foreground block text-xs font-normal">설정한 시각에 자동으로 마감돼요.</span>
       </label>
     </IdeaDialog>
   );

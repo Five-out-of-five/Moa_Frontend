@@ -919,3 +919,36 @@ test("톤앤매너는 명세 대상 코드와 채널 ID를 사용하고 1:1에�
   assert.equal((await reviewToneAction({ kind: "CHAT", roomId: 7, channelId: 4 }, "확인해줘", 2000)).needsChange, false);
   assert.deepEqual(sent, [{ text: "확인해줘", target: "IDEA_CARD" }, { text: "확인해줘", target: "CHAT_MESSAGE", channelId: 3 }]);
 });
+
+test("대시보드의 배치 이벤트는 REST와 같은 형식으로 새 위젯 ID와 버전을 반영한다", () => {
+  const { load } = fixture();
+  const { parseRoomEvent } = load("@/features/realtime/room-event");
+  const { parseDashboardSnapshot } = load("@/features/widget/snapshot");
+  const wire = { type: "LAYOUT_CHANGED", actorAccountId: 7, payload: {
+    layoutVersion: 14, widgets: [{ widgetId: 51, widgetType: "MOOD", x: 2, y: 0, w: 4, h: 3 }],
+  } };
+  const event = parseRoomEvent(JSON.stringify(wire));
+  const layout = parseDashboardSnapshot(2, event.payload);
+  assert.equal(event.type, "LAYOUT_CHANGED");
+  assert.equal(layout.revision, 14);
+  assert.equal(layout.widgets[0].id, 51);
+  assert.equal(layout.widgets[0].roomId, 2);
+  assert.equal(layout.widgets[0].width, 4);
+  assert.equal(parseDashboardSnapshot(2, { layoutVersion: 0, widgets: null }), null);
+  assert.equal(parseRoomEvent("{"), null);
+});
+
+test("위젯 편집 이벤트는 본인을 제외하고 멤버별 갱신·종료와 만료 시각을 적용한다", () => {
+  const { updateWidgetEditors } = fixture().load("@/features/widget/live-editing");
+  const own = [];
+  assert.equal(updateWidgetEditors(own, { widgetId: 51, accountId: 1, editing: true }, 1, 0), own);
+  const start = updateWidgetEditors(own, { widgetId: 51, accountId: 2, editing: true }, 1, 0);
+  const renewed = updateWidgetEditors(start, { widgetId: 51, accountId: 2, editing: true }, 1, 3000);
+  assert.equal(renewed.length, 1);
+  assert.equal(renewed[0].expiresAt, 13000);
+  const together = updateWidgetEditors(renewed, { widgetId: 51, accountId: 3, editing: true }, 1, 3200);
+  const switched = updateWidgetEditors(together, { widgetId: 52, accountId: 2, editing: true }, 1, 3300);
+  assert.equal(updateWidgetEditors(switched, { widgetId: 51, accountId: 2, editing: false }, 1, 3400).length, 2);
+  const stopped = updateWidgetEditors(switched, { widgetId: 52, accountId: 2, editing: false }, 1, 3500);
+  assert.deepEqual(Array.from(stopped, ({ accountId }) => accountId), [3]);
+});

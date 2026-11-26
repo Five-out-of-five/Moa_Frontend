@@ -7,7 +7,7 @@ import { WidgetLoading } from "@/features/widget/WidgetSummary";
 
 export default async function RoomPage({ params }: { params: Promise<{ roomId: string }> }) {
   const { roomId } = await params;
-  const { room } = await getRoomPageProfile(roomId);
+  const { room, setup } = await getRoomPageProfile(roomId);
 
   return (
     <section className="mx-auto w-full max-w-7xl">
@@ -16,7 +16,7 @@ export default async function RoomPage({ params }: { params: Promise<{ roomId: s
       <Assistant key={room.id} roomId={room.id} />
       <div className="mt-5">
         <Suspense fallback={<WidgetLoading />}>
-          <RoomDashboard roomId={room.id} />
+          <RoomDashboard roomId={room.id} accountId={setup.account.id} />
         </Suspense>
       </div>
     </section>

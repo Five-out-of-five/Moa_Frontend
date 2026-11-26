@@ -18,18 +18,21 @@ import { WidgetRemovalControls } from "./WidgetRemovalControls";
 
 export function DashboardGrid({
   roomId,
+  accountId,
   initialSnapshot,
   shouldOpenMockStream,
   bodies,
 }: {
   roomId: number;
+  accountId: number;
   initialSnapshot: DashboardSnapshot;
   shouldOpenMockStream: boolean;
   bodies: Record<number, ReactNode>;
 }) {
   const router = useRouter();
-  const { revision, widgets, editors, pending, setEditing, save, applySnapshot } = useDashboardLayout(
+  const { revision, widgets, editors, reconnecting, pending, setEditing, save, applySnapshot } = useDashboardLayout(
     roomId,
+    accountId,
     initialSnapshot,
     shouldOpenMockStream,
   );
@@ -70,6 +73,7 @@ export function DashboardGrid({
           />
         </div>
       </div>
+      {reconnecting && <p role="status" className="text-muted-foreground mb-3 text-sm">실시간 연결을 다시 시도하고 있어요.</p>}
       {widgets.length === 0 && (
         <p className="text-muted-foreground text-sm">배치된 위젯이 없습니다.</p>
       )}

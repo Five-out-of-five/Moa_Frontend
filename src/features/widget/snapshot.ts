@@ -23,8 +23,7 @@ const dashboardResponse = z.object({
   ),
 });
 
-export function toDashboardSnapshot(roomId: number, response: unknown): DashboardSnapshot {
-  const res = dashboardResponse.parse(response);
+function mapDashboardSnapshot(roomId: number, res: z.infer<typeof dashboardResponse>): DashboardSnapshot {
   return {
     revision: res.layoutVersion,
     widgets: res.widgets.map(({ widgetId, widgetType, x, y, w, h }) => ({
@@ -38,4 +37,13 @@ export function toDashboardSnapshot(roomId: number, response: unknown): Dashboar
     })),
     editors: [],
   };
+}
+
+export function toDashboardSnapshot(roomId: number, response: unknown): DashboardSnapshot {
+  return mapDashboardSnapshot(roomId, dashboardResponse.parse(response));
+}
+
+export function parseDashboardSnapshot(roomId: number, response: unknown) {
+  const result = dashboardResponse.safeParse(response);
+  return result.success ? mapDashboardSnapshot(roomId, result.data) : null;
 }
