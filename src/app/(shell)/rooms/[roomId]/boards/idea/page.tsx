@@ -11,8 +11,10 @@ import { IdeaBoard } from "@/features/idea/IdeaBoard";
 import { IdeaBoardLive } from "@/features/idea/IdeaBoardLive";
 import { CloseIdeaDialog, IdeaCardDialog, StartIdeaDialog } from "@/features/idea/IdeaDialogs";
 import { ideaDateTime } from "@/features/idea/model";
+import { IDEA_BOARD_EVENTS } from "@/features/idea/realtime-events";
 import { getIdeaBoard } from "@/features/idea/server";
 import { listMockConflicts } from "@/features/mediation/server";
+import { RoomDataRefresh } from "@/features/realtime/RoomDataRefresh";
 import { getReportViewerAccountId } from "@/features/report/server";
 import { getFirstRoomProfile } from "@/features/room/first-profile/server";
 
@@ -50,7 +52,8 @@ export default async function IdeaBoardPage({ params, searchParams }: {
   return (
     <section className="mx-auto max-w-7xl space-y-4">
       <BriefingFocus ids={readBriefingFocus(query.briefingFocus)} />
-      {board.usesMockStream && <IdeaBoardLive roomId={id} revision={board.revision} />}
+      {board.usesMockStream ? <IdeaBoardLive roomId={id} revision={board.revision} />
+        : <RoomDataRefresh eventTypes={IDEA_BOARD_EVENTS} />}
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-primary text-xs font-semibold">워크스페이스</p>
@@ -100,7 +103,7 @@ export default async function IdeaBoardPage({ params, searchParams }: {
           {board.editable && !selected && <StartIdeaDialog roomId={id} trigger={<Button size="sm"><Plus aria-hidden="true" />회차 시작</Button>} />}
         </div>
       </header>
-      {selected ? <IdeaBoard session={selected} cards={cards} accountId={accountId} editable={board.editable} canUpload={!board.usesMockStream} conflictByCard={conflictByCard} sources={sources} openCardId={openCardId} />
+      {selected ? <IdeaBoard key={selected.id} session={selected} cards={cards} accountId={accountId} editable={board.editable} canUpload={!board.usesMockStream} conflictByCard={conflictByCard} sources={sources} openCardId={openCardId} />
         : <p className="bg-card border-border rounded-card text-muted-foreground border p-5 text-sm">진행 중인 회차가 없어요.</p>}
     </section>
   );

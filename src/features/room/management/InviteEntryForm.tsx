@@ -6,7 +6,8 @@ import { useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getInviteReturnPath } from "@/features/auth/mock-session";
+
+import { getInviteReturnPath } from "./invite-path";
 
 export function InviteEntryForm({ invitePath = "" }: { invitePath?: string }) {
   const router = useRouter();
@@ -16,13 +17,7 @@ export function InviteEntryForm({ invitePath = "" }: { invitePath?: string }) {
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    let path: string | null = null;
-    try {
-      const url = new URL(value.trim(), window.location.origin);
-      if (url.origin === window.location.origin) path = getInviteReturnPath(url.pathname);
-    } catch {
-      // URL 생성이 실패하면 같은 입력 오류로 표시한다.
-    }
+    const path = getInviteReturnPath(value, window.location.origin);
     if (!path) {
       setError(true);
       return;

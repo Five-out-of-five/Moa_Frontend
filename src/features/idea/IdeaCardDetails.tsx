@@ -2,7 +2,6 @@
 
 import { GitCompareArrows, MessageCircle, SmilePlus } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
 
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { ReportMenu } from "@/features/report/ReportMenu";
@@ -11,16 +10,20 @@ import type { IdeaCard } from "@/types/db";
 import { IdeaCardPanel } from "./IdeaCardPanel";
 import { IDEA_COLUMNS, ideaDateTime, type IdeaSourceLink } from "./model";
 
-export function IdeaCardDetails({ card, accountId, canEdit, canReport = false, canUpload, conflictId, sources = [], defaultOpen = false }: { card: IdeaCard; accountId: number; canEdit: boolean; canReport?: boolean; canUpload: boolean; conflictId?: number; sources?: IdeaSourceLink[]; defaultOpen?: boolean }) {
-  const [open, setOpen] = useState(defaultOpen);
+export function IdeaCardDetails({ card, accountId, canEdit, canReport = false, canUpload, conflictId, sources = [], open, onOpenChange, lockedBy }: {
+  card: IdeaCard; accountId: number; canEdit: boolean; canReport?: boolean; canUpload: boolean;
+  conflictId?: number; sources?: IdeaSourceLink[]; open: boolean; onOpenChange: (open: boolean) => void; lockedBy?: number;
+}) {
   const label = IDEA_COLUMNS.find(({ type }) => type === card.cardType)?.title;
+  const locked = lockedBy !== undefined && lockedBy !== accountId;
   return (
     <div className="relative">
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetTrigger asChild>
         <button type="button" className="bg-card border-border rounded-control hover:border-primary/40 focus-visible:ring-ring block w-full space-y-2 border p-3 text-left focus-visible:ring-2">
           <span className="flex h-6 items-center"><span className="bg-secondary text-primary rounded px-1.5 py-0.5 text-xs">{label}</span></span>
           <span className="line-clamp-2 block text-sm font-semibold">{card.title}</span>
+          {locked && <span className="text-warning block text-xs">다른 멤버가 편집 중</span>}
           {card.aiSuggested && <span className="text-primary block text-xs">인공지능 제안</span>}
           {card.content && <span className="text-muted-foreground line-clamp-2 block text-xs">{card.content}</span>}
           {(!!card.fileCount || !!card.convertedTaskId || !!card.linkedVote) && (
@@ -44,7 +47,7 @@ export function IdeaCardDetails({ card, accountId, canEdit, canReport = false, c
           <SheetDescription>{card.author.displayName} · {ideaDateTime.format(new Date(card.createdAt))}</SheetDescription>
         </SheetHeader>
         <div className="space-y-5 px-4 pb-5">
-          {open && <IdeaCardPanel card={card} accountId={accountId} canUpload={canUpload} canEdit={canEdit}>
+          {open && <IdeaCardPanel card={card} accountId={accountId} canUpload={canUpload} canEdit={canEdit} locked={locked}>
           {sources.length > 0 && (
             <section className="border-border space-y-2 border-t pt-4">
               <h3 className="text-sm font-semibold">절충안 원본 카드</h3>

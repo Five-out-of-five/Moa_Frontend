@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useRoomRealtime } from "@/features/realtime/RoomRealtimeProvider";
 import { ReportMenu } from "@/features/report/ReportMenu";
 import type { IdeaCard } from "@/types/db";
 
@@ -14,9 +15,10 @@ import { attachIdeaFile, removeIdeaFile } from "./file-actions";
 import { IdeaCardLinks } from "./IdeaCardLinks";
 import { DeleteIdeaDialog, IdeaCardDialog } from "./IdeaDialogs";
 import { IDEA_REACTIONS, type IdeaFormResult } from "./model";
+import { shouldReloadIdeaCard } from "./realtime-events";
 
-export function IdeaCardPanel({ card, accountId, canUpload, canEdit, children }: {
-  card: IdeaCard; accountId: number; canUpload: boolean; canEdit: boolean;
+export function IdeaCardPanel({ card, accountId, canUpload, canEdit, locked, children }: {
+  card: IdeaCard; accountId: number; canUpload: boolean; canEdit: boolean; locked: boolean;
   children: React.ReactNode;
 }) {
   const { id, roomId } = card;
@@ -26,6 +28,14 @@ export function IdeaCardPanel({ card, accountId, canUpload, canEdit, children }:
   const [editingComment, setEditingComment] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
   const reload = () => setRevision((value) => value + 1);
+  const realtime = useRoomRealtime();
+  const listen = realtime?.listen;
+  const generation = realtime?.connectionGeneration ?? 0;
+  const sessionId = card.sessionId;
+
+  useEffect(() => listen?.((event) => {
+    if (shouldReloadIdeaCard(event, id, sessionId)) setRevision((value) => value + 1);
+  }), [id, listen, sessionId]);
 
   useEffect(() => {
     let active = true;
@@ -35,7 +45,7 @@ export function IdeaCardPanel({ card, accountId, canUpload, canEdit, children }:
       if (active) setDetail({ error: "카드 상세를 불러오지 못했어요." });
     });
     return () => { active = false; };
-  }, [roomId, id, revision, card.version, card.commentCount, card.reactionCount, card.fileCount]);
+  }, [roomId, id, revision, generation, card.version, card.commentCount, card.reactionCount, card.fileCount]);
 
   function change(action: () => Promise<IdeaFormResult>, onSaved?: () => void) {
     if (pending) return;
@@ -66,12 +76,13 @@ export function IdeaCardPanel({ card, accountId, canUpload, canEdit, children }:
   const fullCard = { ...card, title: detail.card?.title ?? card.title, content: detail.card?.content ?? card.content };
   return (
     <>
+      {locked && <p role="status" className="text-warning text-sm">다른 멤버가 이 카드를 편집 중이에요.</p>}
       <p className="text-sm break-words whitespace-pre-wrap">{detail.card?.content ?? (card.content || "등록된 내용이 없어요.")}</p>
       {conflict?.conflictId && <a className="text-primary text-sm underline" href={`${root}/mediation?conflict=${conflict.conflictId}`}>충돌 의견 비교</a>}
       {children}
       {editable && canEdit && (
         <div className="flex flex-wrap gap-2">
-          <IdeaCardDialog roomId={roomId} sessionId={card.sessionId} card={fullCard} trigger={<Button variant="outline">카드 수정</Button>} />
+          <IdeaCardDialog roomId={roomId} sessionId={card.sessionId} card={fullCard} trigger={<Button variant="outline" disabled={locked}>카드 수정</Button>} />
           <DeleteIdeaDialog roomId={roomId} cardId={id} trigger={<Button variant="destructive">카드 삭제</Button>} />
         </div>
       )}

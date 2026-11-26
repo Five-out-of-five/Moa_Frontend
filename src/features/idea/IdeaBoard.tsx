@@ -11,6 +11,7 @@ import { IdeaCardDetails } from "./IdeaCardDetails";
 import { IdeaCardDialog } from "./IdeaDialogs";
 import { IdeaDraggableCard, IdeaDropColumn } from "./IdeaDrag";
 import { IDEA_COLUMNS, type IdeaMovedCard, type IdeaSourceLink } from "./model";
+import { useIdeaCardLocks } from "./useIdeaCardLocks";
 
 export function IdeaBoard({ session, cards, accountId, editable, canUpload, conflictByCard = {}, sources = new Map(), openCardId }: {
   session: BoardSession; cards: IdeaCard[]; accountId: number; editable: boolean; canUpload: boolean;
@@ -19,6 +20,9 @@ export function IdeaBoard({ session, cards, accountId, editable, canUpload, conf
   openCardId?: number;
 }) {
   const canCreate = editable && session.state === "ACTIVE";
+  const [selection, setSelection] = useState({ requested: openCardId, current: openCardId });
+  if (selection.requested !== openCardId) setSelection({ requested: openCardId, current: openCardId });
+  const locks = useIdeaCardLocks();
   const [position, setPosition] = useState<{ base: IdeaCard[]; cards: IdeaMovedCard[] }>({ base: cards, cards: [] });
   const moved = new Map(position.base === cards ? position.cards.map((card) => [card.id, card]) : []);
   const displayed = cards.map((card) => {
@@ -57,10 +61,20 @@ export function IdeaBoard({ session, cards, accountId, editable, canUpload, conf
               {column.length ? (
                 <ul className="space-y-2">
                   {column.map((card, index) => (
-                    <IdeaDraggableCard key={card.id} card={card} index={index} onMoved={applyMoved}><IdeaCardDetails key={card.id === openCardId ? "linked" : "board"} defaultOpen={card.id === openCardId} card={card} accountId={accountId} canUpload={canUpload} canReport={accountId > 0 && card.author.accountId > 0 && !isAuthor({ id: accountId }, card.author)} canEdit={canCreate && isAuthor({ id: accountId }, card.author)} conflictId={conflictByCard[card.id]} sources={(card.sourceCardIds ?? []).flatMap((id) => {
-                      const source = sources.get(id);
-                      return source ? [source] : [];
-                    })} /></IdeaDraggableCard>
+                    <IdeaDraggableCard key={card.id} card={card} index={index} onMoved={applyMoved}>
+                      <IdeaCardDetails card={card} accountId={accountId} canUpload={canUpload}
+                        open={selection.current === card.id}
+                        onOpenChange={(open) => setSelection((current) => ({
+                          ...current, current: open ? card.id : current.current === card.id ? undefined : current.current,
+                        }))}
+                        lockedBy={locks.get(card.id)?.accountId}
+                        canReport={accountId > 0 && card.author.accountId > 0 && !isAuthor({ id: accountId }, card.author)}
+                        canEdit={canCreate && isAuthor({ id: accountId }, card.author)} conflictId={conflictByCard[card.id]}
+                        sources={(card.sourceCardIds ?? []).flatMap((id) => {
+                          const source = sources.get(id);
+                          return source ? [source] : [];
+                        })} />
+                    </IdeaDraggableCard>
                   ))}
                 </ul>
               ) : (

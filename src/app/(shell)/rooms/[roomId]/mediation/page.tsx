@@ -5,11 +5,13 @@ import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { IdeaBoardLive } from "@/features/idea/IdeaBoardLive";
 import { CompromiseEditor, DismissConflict } from "@/features/mediation/MediationControls";
-import { MEDIATION_CARD_LABELS, MEDIATION_FILTERS, MEDIATION_STATUS_LABELS, type MediationCard, needsMediation } from "@/features/mediation/model";
+import { MEDIATION_CARD_LABELS, MEDIATION_EVENTS, MEDIATION_FILTERS, MEDIATION_STATUS_LABELS, type MediationCard, needsMediation } from "@/features/mediation/model";
 import { getMediationBoard, getMediationDetail } from "@/features/mediation/server";
+import { RoomDataRefresh } from "@/features/realtime/RoomDataRefresh";
 import { getFirstRoomProfile } from "@/features/room/first-profile/server";
 
 const format = new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "Asia/Seoul" });
+const PAGE_EVENTS = [...MEDIATION_EVENTS, "LAYOUT_CHANGED"];
 
 export default async function MediationPage({ params, searchParams }: {
   params: Promise<{ roomId: string }>; searchParams: Promise<{ conflict?: string; filter?: string }>;
@@ -23,8 +25,9 @@ export default async function MediationPage({ params, searchParams }: {
   const all = getMediationBoard(id);
   const [board, unfiltered] = await Promise.all([filter === "all" ? all : getMediationBoard(id, filter), all]);
   const { items } = board;
-  const selected = unfiltered.items.find((item) => String(item.id) === query.conflict) ?? items.find(needsMediation)
-    ?? items.find(({ status }) => status !== "DISMISSED") ?? items[0];
+  const selected = query.conflict !== undefined
+    ? unfiltered.items.find((item) => String(item.id) === query.conflict)
+    : items.find(needsMediation) ?? items.find(({ status }) => status !== "DISMISSED") ?? items[0];
   const detail = selected ? await getMediationDetail(id, selected.id) : null;
   const itemLink = (conflict: number) => `${base}?conflict=${conflict}${filter !== "all" ? `&filter=${filter}` : ""}`;
   const list = (dismissed: boolean) => items.filter(({ status }) => (status === "DISMISSED") === dismissed).map((item) => (
@@ -42,7 +45,8 @@ export default async function MediationPage({ params, searchParams }: {
   ));
   return (
     <section className="mx-auto max-w-7xl space-y-4">
-      {board.enabled && board.revision !== null && <IdeaBoardLive roomId={id} revision={board.revision} />}
+      {board.revision === null ? <RoomDataRefresh eventTypes={PAGE_EVENTS} />
+        : board.enabled && <IdeaBoardLive roomId={id} revision={board.revision} />}
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div><p className="text-primary text-xs">워크스페이스</p><h1 className="mt-1 text-2xl font-bold">인공지능 중재</h1>
           {board.enabled && <p className="text-muted-foreground mt-1 text-sm">확인이 필요한 충돌 {unfiltered.items.filter(needsMediation).length}개</p>}</div>
@@ -78,7 +82,7 @@ export default async function MediationPage({ params, searchParams }: {
                 </div>}
                 {(detail.draft || (detail.status !== "DISMISSED" && detail.adoptedCardId === null)) &&
                   <CompromiseEditor key={selected.id} roomId={id} conflictId={selected.id} draft={detail.draft} canAdopt={detail.adoptedCardId === null} />}
-              </> : <p className="text-muted-foreground text-sm">{selected ? "이 충돌을 더 이상 확인할 수 없어요." : "확인할 충돌을 선택해 주세요."}</p>}
+              </> : <p className="text-muted-foreground text-sm">{selected || query.conflict !== undefined ? "이 충돌을 더 이상 확인할 수 없어요." : "확인할 충돌을 선택해 주세요."}</p>}
             </div>
           </div>}
     </section>

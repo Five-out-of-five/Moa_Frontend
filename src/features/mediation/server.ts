@@ -52,7 +52,7 @@ export async function getMediationBoard(roomId: number, status?: MediationStatus
   }
   try {
     const query = status ? `?status=${status}` : "";
-    const response = await api<ConflictSummary[]>(`/api/v1/rooms/${roomId}/conflicts${query}`);
+    const response = await api<ConflictSummary[]>(`/api/v1/rooms/${roomId}/conflicts${query}`, { cache: "no-store" });
     const items = response.flatMap(({ conflictId, status, cardA, cardB, detectedAt, adoptedCardId }): MediationItem[] =>
       conflictId && status ? [{ id: conflictId, status, leftCardTitle: cardA?.title ?? "제목 없음",
         rightCardTitle: cardB?.title ?? "제목 없음", detectedAt: detectedAt ?? null, adoptedCardId: adoptedCardId ?? null }] : []);
@@ -91,7 +91,7 @@ export async function getMediationDetail(roomId: number, conflictId: number): Pr
         cardType: left?.cardType === "AGENDA" || right?.cardType === "AGENDA" ? "AGENDA" : "TRY" } : null };
   }
   try {
-    const data = await api<Schemas["ConflictDetailResponse"]>(`/api/v1/rooms/${roomId}/conflicts/${conflictId}`);
+    const data = await api<Schemas["ConflictDetailResponse"]>(`/api/v1/rooms/${roomId}/conflicts/${conflictId}`, { cache: "no-store" });
     if (!data.status) return null;
     const { myDraft, adoptedCardId } = data;
     const adoptedCard = adoptedCardId ? await getLiveIdeaCard(roomId, adoptedCardId).catch((error: unknown) => {

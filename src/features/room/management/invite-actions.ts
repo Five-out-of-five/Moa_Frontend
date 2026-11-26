@@ -11,6 +11,7 @@ import { isMock } from "@/mocks/config";
 import { roomMembers, rooms } from "@/mocks/db";
 
 import { isRoomId } from "./api-server";
+import { isInviteToken } from "./invite-path";
 import {
   addMockRoomMember,
   isPendingJoinRequest,
@@ -21,7 +22,7 @@ import { getManagedRoom, getRoomInvite } from "./server";
 import type { RoomManagementResult } from "./types";
 
 export async function requestRoomJoinAction(token: string): Promise<RoomManagementResult> {
-  if (typeof token !== "string" || !/^[\w-]+$/.test(token)) return { message: "초대 링크를 확인해 주세요." };
+  if (!isInviteToken(token)) return { message: "초대 링크를 확인해 주세요." };
   if (!isMock) {
     try {
       await api(`/api/v1/invites/${encodeURIComponent(token)}/join-requests`, { method: "POST", cache: "no-store" });

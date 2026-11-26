@@ -87,7 +87,7 @@ export async function getRoomDashboard(roomId: number) {
  *
  * ⚠️ `LEFT` / `KICKED` 는 제외. 비담당(= 담당자 없음) 옵션은 호출부가 UI 에서 추가.
  */
-export async function listRoomMembers(roomId: number): Promise<MemberRef[]> {
+export async function listRoomMembers(roomId: number): Promise<(MemberRef & { online?: boolean })[]> {
   if (isMock) {
     return roomMembers
       .filter((m) => m.roomId === roomId && isActiveMember(m))
@@ -106,6 +106,7 @@ export async function listRoomMembers(roomId: number): Promise<MemberRef[]> {
     accountId: member.accountId,
     displayName: member.displayName ?? "이름 없는 멤버",
     profileImageUrl: member.profileImageUrl ?? null,
+    online: member.online,
     memberStatus: "ACTIVE" as const,
   }]);
 }

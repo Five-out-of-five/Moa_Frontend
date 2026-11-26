@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { IDEA_BOARD_EVENTS } from "@/features/idea/realtime-events";
+import { MEDIATION_EVENTS } from "@/features/mediation/model";
 import type { RoomEvent } from "@/features/realtime/room-event";
 import { useRoomRealtime } from "@/features/realtime/RoomRealtimeProvider";
 import type { RoomWidget } from "@/types/db";
@@ -18,6 +20,8 @@ export function useDashboardRealtime(roomId: number, accountId: number, widgets:
   const publish = realtime?.publish;
   const generation = realtime?.connectionGeneration ?? 0;
   const [editors, setEditors] = useState<ActiveEditor[]>([]);
+  const hasIdeaBoard = widgets.some(({ widgetType }) => widgetType === "IDEA_BOARD");
+  const hasMediation = widgets.some(({ widgetType }) => widgetType === "MEDIATION");
 
   useEffect(() => {
     if (!listen) return;
@@ -31,9 +35,12 @@ export function useDashboardRealtime(roomId: number, accountId: number, widgets:
         const now = Date.now();
         setEditors((current) => updateWidgetEditors(current, payload, accountId, now));
       }
+      if ((hasIdeaBoard && IDEA_BOARD_EVENTS.includes(type)) || (hasMediation && MEDIATION_EVENTS.includes(type))) {
+        router.refresh();
+      }
     };
     return listen(handleEvent);
-  }, [accountId, applySnapshot, listen, roomId, router]);
+  }, [accountId, applySnapshot, hasIdeaBoard, hasMediation, listen, roomId, router]);
 
   useEffect(() => {
     // 구독이 다시 열린 뒤 조회해 연결이 비어 있던 동안의 변경도 반영한다.
