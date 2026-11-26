@@ -3,6 +3,7 @@ import type { components } from "@/types/api";
 type Schemas = components["schemas"];
 export type MediationStatus = NonNullable<Schemas["ConflictSummaryResponse"]["status"]>;
 export type MediationResult = { saved?: boolean; error?: string };
+export const MEDIATION_EVENTS: readonly string[] = ["CONFLICT_CHANGED", "CARD_DELETED"];
 export const MEDIATION_STATUS_LABELS = {
   DETECTED: "감지됨", PROPOSED: "제안됨", DISMISSED: "해제됨", REDETECTED: "재감지됨",
 } satisfies Record<MediationStatus, string>;

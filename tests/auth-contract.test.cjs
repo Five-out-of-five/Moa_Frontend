@@ -952,3 +952,33 @@ test("위젯 편집 이벤트는 본인을 제외하고 멤버별 갱신·종료
   const stopped = updateWidgetEditors(switched, { widgetId: 52, accountId: 2, editing: false }, 1, 3500);
   assert.deepEqual(Array.from(stopped, ({ accountId }) => accountId), [3]);
 });
+
+test("아이디어 보드 실시간 이벤트는 열린 카드·회차를 구분하고 편집 잠금 만료를 갱신한다", () => {
+  const { shouldReloadIdeaCard, updateIdeaCardLocks } = fixture().load("@/features/idea/realtime-events");
+  assert.equal(shouldReloadIdeaCard({ type: "COMMENT_CHANGED", payload: { cardId: 12 } }, 12, 5), true);
+  assert.equal(shouldReloadIdeaCard({ type: "REACTION_CHANGED", payload: { cardId: 11 } }, 12, 5), false);
+  assert.equal(shouldReloadIdeaCard({ type: "CARD_MOVED", payload: [{ cardId: 11 }, { cardId: 12 }] }, 12, 5), true);
+  assert.equal(shouldReloadIdeaCard({ type: "SESSION_CLOSED", payload: { sessionId: 4 } }, 12, 5), false);
+  assert.equal(shouldReloadIdeaCard({ type: "SESSION_CLOSED", payload: { sessionId: 5 } }, 12, 5), true);
+  const event = { type: "CARD_LOCKED", payload: { cardId: 12, lockedBy: 7 } };
+  const locked = updateIdeaCardLocks(new Map(), event, 1000);
+  assert.equal(locked.get(12).accountId, 7);
+  const renewed = updateIdeaCardLocks(locked, event, 21000);
+  assert.equal(renewed.get(12).expiresAt, 51000);
+  assert.equal(updateIdeaCardLocks(renewed, { type: "CARD_UNLOCKED", payload: { cardId: 12 } }, 25000).size, 0);
+});
+
+test("방 멤버 목록의 REST 초기값과 presence 이벤트는 오프라인 값을 유지한다", async () => {
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url) => {
+    assert.equal(new URL(url).pathname, "/api/v1/rooms/7/members");
+    return ok([{ accountId: 12, displayName: "방 닉네임", online: false }, { accountId: 15, online: true }]);
+  } });
+  const members = await f.load("@/features/room/server").listRoomMembers(7);
+  assert.equal(members[0].displayName, "방 닉네임");
+  assert.equal(members[0].online, false);
+  assert.equal(members[1].online, true);
+  const { parsePresenceEvent } = f.load("@/features/realtime/room-event");
+  assert.equal(parsePresenceEvent('{"accountId":12,"online":false}').online, false);
+  assert.equal(parsePresenceEvent('{"accountId":12,"online":"false"}'), null);
+  assert.equal(parsePresenceEvent('{"accountId":0,"online":true}'), null);
+});
