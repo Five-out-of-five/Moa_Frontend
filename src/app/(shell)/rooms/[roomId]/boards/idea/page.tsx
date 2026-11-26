@@ -1,9 +1,10 @@
 import { ArrowLeft, History, Plus, Square } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 
 import { Button } from "@/components/ui/button";
-import { MeetingSummaryDialog } from "@/features/ai/MeetingSummaryDialog";
+import { MeetingSummaryLoader } from "@/features/ai/MeetingSummaryLoader";
 import { BriefingFocus } from "@/features/briefing/BriefingFocus";
 import { readBriefingFocus } from "@/features/briefing/model";
 import { IdeaBoard } from "@/features/idea/IdeaBoard";
@@ -64,7 +65,10 @@ export default async function IdeaBoardPage({ params, searchParams }: {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          {board.editable && <MeetingSummaryDialog roomId={id} history={board.history} hasActive={Boolean(board.active)} cards={board.cards} />}
+          <Suspense fallback={<Button size="sm" variant="outline" disabled>요약 불러오는 중…</Button>}>
+            <MeetingSummaryLoader roomId={id} history={board.history} hasActive={Boolean(board.active)} accountId={accountId}
+              visibleCards={cards.slice(0, 10).map(({ id: cardId, title }) => ({ id: cardId, title }))} />
+          </Suspense>
           <Button variant="outline" size="sm" asChild><Link href={`/rooms/${id}`}><ArrowLeft aria-hidden="true" />대시보드로 돌아가기</Link></Button>
           <details className="group relative">
             <summary className="rounded-control bg-card border-border flex h-8 cursor-pointer list-none items-center gap-1.5 border px-3 text-xs font-medium [&::-webkit-details-marker]:hidden">

@@ -5,10 +5,10 @@ import { unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 
 import { getMyAccount } from "@/features/account/server";
+import { takeAiCall } from "@/features/ai/mock-state";
 import { getChannel } from "@/features/chat/server";
 import { getManagedRoom } from "@/features/room/management/server";
 import { api, ApiError } from "@/lib/api";
-import { getApiAccountContext } from "@/lib/api-account";
 import { isAuthor } from "@/lib/permission";
 import { isMock } from "@/mocks/config";
 import { boardSessions, ideaCards } from "@/mocks/db";
@@ -76,7 +76,7 @@ export async function reviewToneAction(
     return { ok: false, error: "검토 대상을 확인해 주세요." };
   try {
     const mode = await getToneMode();
-    if (mode === "OFF") return { ok: false, error: "계정 설정에서 톤앤매너 순화를 켜 주세요." };
+    if (mode === "OFF") return { ok: true, needsChange: false, suggestion: text };
     if (isMock) {
       const context = await getManagedRoom(target.roomId);
       if (!context) return { ok: false, error: "이 방의 내용을 검토할 권한이 없어요." };
@@ -97,8 +97,12 @@ export async function reviewToneAction(
           if (!card || !isAuthor(context.account, card.author))
             return { ok: false, error: "본인의 카드만 검토할 수 있어요." };
         }
-      } else if (!(await getChannel(target.roomId, target.channelId)))
-        return { ok: false, error: "검토할 채널을 찾을 수 없어요." };
+      } else {
+        const channel = await getChannel(target.roomId, target.channelId);
+        if (!channel) return { ok: false, error: "검토할 채널을 찾을 수 없어요." };
+        if (channel.channelType === "DIRECT") return { ok: true, needsChange: false, suggestion: text };
+      }
+      takeAiCall(target.roomId, "TONE");
       await new Promise((resolve) => setTimeout(resolve, 500));
       let suggestion = text
         .replace(/너 때문에/g, "이 상황으로 인해")
@@ -112,11 +116,10 @@ export async function reviewToneAction(
           .replace(/확인해(?!요)/g, "확인해 주세요");
       return { ok: true, needsChange: suggestion !== text, suggestion };
     }
-    const { init, query, accountId } = await getApiAccountContext();
     if (target.kind === "CARD") {
       const session = await api<components["schemas"]["SessionResponse"]>(
-        `/api/v1/rooms/${target.roomId}/sessions/${target.sessionId}?${query}`,
-        init,
+        `/api/v1/rooms/${target.roomId}/sessions/${target.sessionId}`,
+        { cache: "no-store" },
       );
       if (
         session.status !== "IN_PROGRESS" ||
@@ -124,22 +127,28 @@ export async function reviewToneAction(
       )
         return { ok: false, error: "진행 중인 회차에서만 검토할 수 있어요." };
       if (target.cardId !== undefined) {
-        const card = await api<components["schemas"]["IdeaCardDetailResponse"]>(
-          `/api/v1/rooms/${target.roomId}/idea-cards/${target.cardId}?${query}`,
-          init,
-        );
-        if (card.sessionId !== target.sessionId || card.writer?.accountId !== accountId)
+        const [account, card] = await Promise.all([
+          getMyAccount(),
+          api<components["schemas"]["IdeaCardDetailResponse"]>(
+            `/api/v1/rooms/${target.roomId}/idea-cards/${target.cardId}`, { cache: "no-store" },
+          ),
+        ]);
+        if (card.sessionId !== target.sessionId || card.writer?.accountId !== account.id)
           return { ok: false, error: "본인의 카드만 검토할 수 있어요." };
       }
-    } else await api(`/api/v1/rooms/${target.roomId}/channels/${target.channelId}`, init);
+    } else {
+      const channel = await getChannel(target.roomId, target.channelId);
+      if (!channel) return { ok: false, error: "검토할 채널을 찾을 수 없어요." };
+      if (channel.channelType === "DIRECT") return { ok: true, needsChange: false, suggestion: text };
+    }
     const result = await api<components["schemas"]["ToneCheckResponse"]>(
-      `/api/v1/rooms/${target.roomId}/ai/tone-checks?${query}`,
+      `/api/v1/rooms/${target.roomId}/ai/tone-checks`,
       {
-        ...init,
         method: "POST",
+        timeoutMs: 35_000,
         json: {
           text,
-          target: target.kind,
+          target: target.kind === "CARD" ? "IDEA_CARD" : "CHAT_MESSAGE",
           ...(target.kind === "CHAT" ? { channelId: target.channelId } : {}),
         },
       },
@@ -149,8 +158,10 @@ export async function reviewToneAction(
       (result.needsChange && !result.suggestion?.trim())
     )
       throw new Error();
-    return { ok: true, needsChange: result.needsChange, suggestion: result.suggestion ?? text };
+    return { ok: true, needsChange: result.needsChange, suggestion: result.needsChange ? result.suggestion ?? text : text };
   } catch (error) {
+    unstable_rethrow(error);
+    if (error instanceof ApiError && error.code === "AI_UNAVAILABLE") return { ok: true, needsChange: false, suggestion: text };
     return {
       ok: false,
       error:

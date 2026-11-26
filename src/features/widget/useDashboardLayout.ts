@@ -88,6 +88,7 @@ export function useDashboardLayout(roomId: number, initialSnapshot: DashboardSna
   }
 
   return {
+    revision: layout.revision,
     widgets: layout.widgets,
     editors: session.current ? layout.editors.filter(({ sessionId }) => sessionId !== session.current) : [],
     pending,

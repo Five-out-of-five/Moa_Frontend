@@ -73,6 +73,8 @@ export interface ApiInit extends Omit<RequestInit, "body"> {
   onHeaders?: (headers: Headers) => Promise<void>;
   /** 쿠키를 쓸 수 있는 Route Handler에서만 사용한다. Server Action은 자동 판별한다. */
   allowAuthRefresh?: boolean;
+  /** SSE 응답 본문을 읽지 않고 호출자에게 전달한다. */
+  eventStream?: boolean;
 }
 
 /**
@@ -81,8 +83,14 @@ export interface ApiInit extends Omit<RequestInit, "body"> {
  * - 성공: `data` 를 반환
  * - 실패: `ApiError` throw (상위에서 toast·redirect 등으로 처리)
  */
-export async function api<T>(path: string, init: ApiInit = {}, attempt = 0): Promise<T> {
-  const { json, body, timeoutMs, accessToken: suppliedToken, headers, onResponse, onHeaders, allowAuthRefresh, ...rest } = init;
+export function api(path: string, init: ApiInit & { eventStream: true }): Promise<Response>;
+export function api<T>(path: string, init?: ApiInit): Promise<T>;
+export function api<T>(path: string, init: ApiInit = {}): Promise<T | Response> {
+  return requestApi<T>(path, init, 0);
+}
+
+async function requestApi<T>(path: string, init: ApiInit, attempt: number): Promise<T | Response> {
+  const { json, body, timeoutMs, accessToken: suppliedToken, headers, onResponse, onHeaders, allowAuthRefresh, eventStream, signal, ...rest } = init;
   const authenticated = !isAuthMock && !path.startsWith("/api/v1/auth/");
   const jar = authenticated ? await cookies() : null;
   const accessToken = suppliedToken ?? jar?.get(process.env.AUTH_ACCESS_TOKEN_COOKIE_NAME || "accessToken")?.value;
@@ -94,19 +102,20 @@ export async function api<T>(path: string, init: ApiInit = {}, attempt = 0): Pro
 
   try {
     const outgoingHeaders = new Headers(headers);
-    if (!outgoingHeaders.has("Accept")) outgoingHeaders.set("Accept", "application/json");
+    if (!outgoingHeaders.has("Accept")) outgoingHeaders.set("Accept", eventStream ? "text/event-stream" : "application/json");
     if (json !== undefined) outgoingHeaders.set("Content-Type", "application/json");
     if (accessToken) outgoingHeaders.set("Authorization", `Bearer ${accessToken}`);
     const res = await fetch(`${BACKEND_BASE_URL}${path}`, {
       ...rest,
-      signal: controller.signal,
+      signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
       headers: outgoingHeaders,
       body: json !== undefined ? JSON.stringify(json) : body,
     });
 
     await onHeaders?.(res.headers);
+    if (eventStream && res.ok && res.body && res.headers.get("content-type")?.startsWith("text/event-stream")) return res;
     const envelope = await res.json().catch(() => null) as ApiEnvelope<T> | null;
-    if (res.ok && envelope?.success) {
+    if (!eventStream && res.ok && envelope?.success) {
       await onResponse?.(envelope.data, res.headers);
       return envelope.data;
     }
@@ -124,7 +133,7 @@ export async function api<T>(path: string, init: ApiInit = {}, attempt = 0): Pro
           }
           throw error;
         }
-        return api<T>(path, { ...init, accessToken: token }, 1);
+        return requestApi<T>(path, { ...init, accessToken: token }, 1);
       }
       // Server Component는 쿠키를 쓸 수 없어 페이지/BFF 왕복 후 조회를 재실행한다.
       if (!jar?.has("moa_auth_retry")) {

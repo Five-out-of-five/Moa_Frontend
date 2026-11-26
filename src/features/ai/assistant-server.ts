@@ -2,92 +2,95 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { ideaCards, moodStatuses, tasks, votes } from "@/mocks/db";
+import { getLiveIdeaCard } from "@/features/idea/server";
+import { api, ApiError } from "@/lib/api";
+import { isMock } from "@/mocks/config";
+import { boardSessions, ideaCards, tasks, votes } from "@/mocks/db";
 
+import { encodeAssistantEvent } from "./assistant-events";
 import { aiMock, takeAiCall } from "./mock-state";
 import { getAiContext } from "./server";
+import type { AiMessage } from "./types";
 
-export async function openAssistantStream(roomId: number, question: string, signal: AbortSignal) {
+export const assistantStreamHeaders = {
+  "Content-Type": "text/event-stream; charset=utf-8",
+  "Cache-Control": "no-cache, no-transform",
+  "X-Accel-Buffering": "no",
+};
+
+export async function openAssistantStream(roomId: number, input: string, signal: AbortSignal) {
+  const question = input.trim();
+  if (!question || input.length > 200) throw new ApiError(400, "질문을 1~200자로 입력해 주세요.", "COMMON_INVALID_INPUT");
+  if (!isMock) {
+    const response = await api(`/api/v1/rooms/${roomId}/ai/assistant/messages`, {
+      method: "POST", json: { question }, eventStream: true, signal, cache: "no-store", timeoutMs: 40_000, allowAuthRefresh: true,
+    });
+    return new Response(response.body, { headers: assistantStreamHeaders });
+  }
   const { key } = await getAiContext(roomId);
-  if (typeof question !== "string" || !question.trim() || question.length > 200) throw new Error("질문을 1~200자로 입력해 주세요.");
   const history = aiMock.messages.get(key) ?? [];
-  if (history.some((message) => message.state === "streaming")) throw new Error("이 방에서 진행 중인 응답을 먼저 중단해 주세요.");
-  if (signal.aborted) throw new Error("요청이 취소됐어요.");
-  takeAiCall(roomId, "assistant-chat");
+  if (history.some(({ state }) => state === "streaming")) throw new ApiError(503, "진행 중인 응답을 먼저 중단해 주세요.", "AI_UNAVAILABLE");
+  signal.throwIfAborted();
+  const refund = takeAiCall(roomId, "ASSISTANT");
   const cards = ideaCards.filter((card) => card.roomId === roomId);
   const work = tasks.filter((task) => task.roomId === roomId);
   const polls = votes.filter((vote) => vote.roomId === roomId && vote.status === "OPEN");
-  const moods = moodStatuses.filter((mood) => mood.roomId === roomId);
-  const available = cards.length + work.length + polls.length + moods.length;
-  const answer = available
-    ? `## 팀 협업 현황\n\n현재 방의 기록을 기준으로 정리했어요.\n\n- 아이디어 **${cards.length}개**\n- 미완료 업무 **${work.filter((task) => task.status !== "DONE").length}개**\n- 진행 중인 투표 **${polls.length}개**\n\n### 함께 확인할 내용\n${cards.slice(0, 2).map((card) => `- [${card.title.replace(/[\[\]\\]/g, "")}](/rooms/${roomId}/boards/idea?briefingFocus=${card.id})`).join("\n")}\n${work.slice(0, 2).map((task) => `- [${task.title.replace(/[\[\]\\]/g, "")}](/rooms/${roomId}/boards/task?open=${task.taskId})`).join("\n")}\n\n**다음 단계**로 우선순위를 함께 정하고, 진행 중인 업무부터 확인해 보세요.`
-    : "아직 참고할 방 데이터가 부족해요. 아이디어나 업무를 등록한 뒤 질문해 주세요.";
-  const message = { id: randomUUID(), question: question.trim(), answer: "", state: "streaming" as const, createdAt: new Date().toISOString() };
+  const answer = `## 팀 협업 현황\n\n- 아이디어 **${cards.length}개**\n- 미완료 업무 **${work.filter((task) => task.status !== "DONE").length}개**\n- 진행 중인 투표 **${polls.length}개**`;
+  const message: AiMessage = { id: randomUUID(), question, answer: "", state: "streaming", createdAt: new Date().toISOString() };
   history.push(message);
   aiMock.messages.set(key, history);
-  const encoder = new TextEncoder();
   let timer: ReturnType<typeof setTimeout>;
-  let close: (() => void) | undefined;
-  const stream = new ReadableStream({
+  let dispose = () => {};
+  let disposeOnCancel: (() => void) | undefined;
+  const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      let cursor = 0;
-      let closed = false;
-      const stop = () => {
-        if (closed) return;
-        closed = true;
-        clearTimeout(timer);
-        signal.removeEventListener("abort", stop);
-        const stored = history.find(({ id }) => id === message.id);
-        if (stored?.state === "streaming") stored.state = "stopped";
-        aiMock.streams.delete(key);
-        try { controller.close(); } catch { /* 스트림 소비자가 먼저 취소했을 수 있다. */ }
+      const finish = () => {
+        if (message.state !== "streaming") return;
+        message.state = message.answer ? "stopped" : "failed";
+        if (!message.answer) refund();
+        dispose();
       };
-      close = stop;
-      aiMock.streams.set(key, { id: message.id, stop: () => {
-        if (closed) return;
-        try {
-          controller.enqueue(encoder.encode(JSON.stringify({ type: "stopped" }) + "\n"));
-        } catch {
-          // 취소된 연결에는 종료 메시지를 보낼 수 없다.
-        } finally { stop(); }
-      } });
-      const send = async () => {
-        try {
-          await getAiContext(roomId);
-          if (closed) return;
-          const stored = history.find(({ id }) => id === message.id);
-          if (!stored) return stop();
-          const chunk = answer.slice(cursor, cursor + 12);
-          cursor += chunk.length;
-          stored.answer += chunk;
-          controller.enqueue(encoder.encode(JSON.stringify({ type: "delta", text: chunk }) + "\n"));
-          if (cursor >= answer.length) {
-            stored.state = "complete";
-            controller.enqueue(encoder.encode(JSON.stringify({ type: "done" }) + "\n"));
-            stop();
-          } else timer = setTimeout(() => void send(), 45);
-        } catch {
-          if (closed) return;
-          const stored = history.find(({ id }) => id === message.id);
-          if (stored) stored.state = "failed";
-          try {
-            controller.enqueue(encoder.encode(JSON.stringify({ type: "error", message: "응답이 중단됐어요. 다시 시도해 주세요." }) + "\n"));
-          } catch {
-            // 연결 종료와 타이머 실행이 겹칠 수 있다.
-          } finally { stop(); }
+      const abort = () => { finish(); controller.close(); };
+      dispose = () => { clearTimeout(timer); signal.removeEventListener("abort", abort); };
+      const send = () => {
+        const text = answer.slice(message.answer.length, message.answer.length + 12);
+        message.answer += text;
+        controller.enqueue(encodeAssistantEvent({ event: "delta", data: { text } }));
+        if (message.answer.length < answer.length) {
+          timer = setTimeout(send, 45);
+          return;
         }
+        message.references = {
+          cards: cards.slice(0, 2).map(({ id, title }) => ({ id, title })),
+          tasks: work.slice(0, 2).map(({ taskId, title }) => ({ id: taskId, title })),
+          votes: polls.slice(0, 2).map(({ voteId, title }) => ({ id: voteId, title })),
+        };
+        controller.enqueue(encodeAssistantEvent({ event: "references", data: message.references }));
+        controller.enqueue(encodeAssistantEvent({ event: "done", data: { messageId: message.id, status: "COMPLETED" } }));
+        message.state = "complete";
+        dispose();
+        controller.close();
       };
-      signal.addEventListener("abort", stop, { once: true });
-      if (signal.aborted) stop();
-      else timer = setTimeout(() => void send(), 900);
+      signal.addEventListener("abort", abort, { once: true });
+      timer = setTimeout(send, 350);
+      disposeOnCancel = finish;
     },
-    cancel() { close?.(); },
+    cancel() { disposeOnCancel?.(); },
   });
-  return new Response(stream, { headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" } });
+  return new Response(stream, { headers: assistantStreamHeaders });
 }
 
-export async function stopAssistantStream(roomId: number, messageId: string | null) {
-  const { key } = await getAiContext(roomId);
-  const stream = aiMock.streams.get(key);
-  if (stream && stream.id === messageId) stream.stop();
+export async function resolveAssistantCard(roomId: number, cardId: number) {
+  let archivedSessionId: number | undefined;
+  if (isMock) {
+    await getAiContext(roomId);
+    const card = ideaCards.find((item) => item.roomId === roomId && item.id === cardId);
+    if (!card) return null;
+    archivedSessionId = boardSessions.find((item) => item.roomId === roomId && item.id === card.sessionId && item.state === "CLOSED")?.id;
+  } else {
+    const card = await getLiveIdeaCard(roomId, cardId);
+    if (!card) return null;
+    if (card.sessionClosed) archivedSessionId = card.sessionId;
+  }
+  return `/rooms/${roomId}/boards/idea?${archivedSessionId ? `session=${archivedSessionId}&` : ""}open=${cardId}&briefingFocus=${cardId}`;
 }

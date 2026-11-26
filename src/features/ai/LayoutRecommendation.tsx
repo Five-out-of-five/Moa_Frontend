@@ -8,20 +8,25 @@ import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescript
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import type { DashboardSnapshot } from "@/features/widget/live-types";
 import { WIDGET_TITLES } from "@/features/widget/widget-info";
+import type { RoomWidget } from "@/types/db";
 
 import { AiSkeleton } from "./AiSkeleton";
 import { applyAiLayout, recommendLayout, undoAiLayout } from "./layout-actions";
 import type { LayoutProposal } from "./types";
 
-export function LayoutRecommendation({ roomId }: { roomId: number }) {
+export function LayoutRecommendation({ roomId, revision, widgets, onChanged }: {
+  roomId: number; revision: number; widgets: RoomWidget[]; onChanged: (snapshot: DashboardSnapshot) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [purpose, setPurpose] = useState("");
   const [proposal, setProposal] = useState<LayoutProposal | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState("");
-  const [undo, setUndo] = useState(false);
+  const [undoRevision, setUndoRevision] = useState<number | null>(null);
   const [pending, start] = useTransition();
+  const removed = proposal ? widgets.filter(({ widgetType }) => !proposal.widgets.some((item) => item.widgetType === widgetType)) : [];
   const perform = (action: () => Promise<void>) => start(async () => {
     try { await action(); } catch { toast.error("요청을 처리하지 못했어요. 다시 시도해 주세요."); }
   });
@@ -40,28 +45,45 @@ export function LayoutRecommendation({ roomId }: { roomId: number }) {
         {pending && <AiSkeleton />}
         {proposal && <div className="space-y-4">
           <div aria-label="추천 배치 미리보기" className="bg-muted grid grid-cols-12 gap-1 rounded p-2" style={{ gridAutoRows: "15px" }}>
-            {proposal.widgets.map((widget) => <div key={widget.id} className="border-border bg-card text-primary overflow-hidden rounded border p-1 text-xs"
-              style={{ gridColumn: `${widget.x + 1} / span ${widget.width}`, gridRow: `${widget.y + 1} / span ${widget.height}` }}>{WIDGET_TITLES[widget.widgetType]}</div>)}
+            {proposal.widgets.map((widget) => <div key={widget.widgetType} className="border-border bg-card text-primary overflow-hidden rounded border p-1 text-xs"
+              style={{ gridColumn: `${widget.x + 1} / span ${widget.w}`, gridRow: `${widget.y + 1} / span ${widget.h}` }}>{WIDGET_TITLES[widget.widgetType]}</div>)}
           </div>
           <p className="text-sm">{proposal.reason}</p>
           <AlertDialog open={confirmOpen} onOpenChange={(value) => { if (!pending) setConfirmOpen(value); }}>
             <AlertDialogTrigger asChild><Button disabled={pending}>이 레이아웃 적용</Button></AlertDialogTrigger>
-            <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>방 전체에 적용할까요?</AlertDialogTitle><AlertDialogDescription>모든 멤버의 대시보드 배치가 변경됩니다.</AlertDialogDescription></AlertDialogHeader>
+            <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>방 전체에 적용할까요?</AlertDialogTitle><AlertDialogDescription>
+              모든 멤버의 대시보드 배치가 변경됩니다.
+              {removed.length > 0 && <> 대시보드에서 빠지는 위젯은 {removed.map(({ widgetType }) => WIDGET_TITLES[widgetType]).join(", ")}입니다. 위젯 데이터는 유지됩니다.</>}
+            </AlertDialogDescription></AlertDialogHeader>
               <AlertDialogFooter><AlertDialogCancel disabled={pending}>취소</AlertDialogCancel>
                 <Button disabled={pending} onClick={() => perform(async () => {
-                  const result = await applyAiLayout(roomId, proposal.id).finally(() => setConfirmOpen(false));
+                  const result = await applyAiLayout(roomId, proposal.widgets, proposal.mockId).finally(() => setConfirmOpen(false));
                   if (!result.ok) { setProposal(null); toast.error(result.error); }
-                  else { setOpen(false); setUndo(true); toast.success(result.data); }
+                  else {
+                    onChanged(result.data);
+                    setProposal(null);
+                    setOpen(false);
+                    setUndoRevision(result.data.revision);
+                    toast.success("추천 배치를 적용했어요.");
+                  }
                 })}>적용하기</Button></AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+          <Button variant="outline" className="ml-2" disabled={pending} onClick={() => { setOpen(false); setProposal(null); }}>나중에</Button>
         </div>}
         {error && <p role="alert" className="text-destructive text-sm">{error}</p>}
       </DialogContent>
     </Dialog>
-    {undo && <Button variant="outline" size="sm" disabled={pending} onClick={() => perform(async () => {
+    {undoRevision === revision && <Button variant="outline" size="sm" disabled={pending} onClick={() => perform(async () => {
       const result = await undoAiLayout(roomId);
-      if (result.ok) { toast.success(result.data); setUndo(false); } else toast.error(result.error);
+      if (result.ok) {
+        onChanged(result.data);
+        setUndoRevision(null);
+        toast.success("이전 배치로 되돌렸어요.");
+      } else {
+        if (result.code === "DASHBOARD_UNDO_NOT_AVAILABLE") setUndoRevision(null);
+        toast.error(result.error);
+      }
     })}>배치 되돌리기</Button>}
   </>;
 }
