@@ -8,9 +8,10 @@ import {
   RefreshCcw,
   Settings2,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import {
   DropdownMenu,
@@ -24,7 +25,7 @@ import { cn } from "@/lib/utils";
 import type { Room } from "@/types/db";
 
 interface Props {
-  rooms: readonly (Pick<Room, "id" | "name"> & { status?: "ACTIVE" | "INACTIVE" })[];
+  rooms: readonly (Pick<Room, "id" | "name" | "imageUrl"> & { status?: "ACTIVE" | "INACTIVE" })[];
   fallbackRoomId: number | null;
 }
 
@@ -64,7 +65,7 @@ export function WorkspaceSwitcher({ rooms, fallbackRoomId }: Props) {
         )}
         aria-label="워크스페이스 선택"
       >
-        <WorkspaceAvatar name={current.name} />
+        <WorkspaceAvatar name={current.name} imageUrl={current.imageUrl} />
         <span className="text-foreground max-w-[220px] truncate font-medium">
           {current.name}
         </span>
@@ -85,7 +86,7 @@ export function WorkspaceSwitcher({ rooms, fallbackRoomId }: Props) {
                 href={`/rooms/${room.id}`}
                 className="flex cursor-pointer items-center gap-2"
               >
-                <WorkspaceAvatar name={room.name} />
+                <WorkspaceAvatar name={room.name} imageUrl={room.imageUrl} />
                 <span className="flex-1 truncate">{room.name}</span>
                 {active && <Check className="text-brand size-4" />}
               </Link>
@@ -110,14 +111,26 @@ export function WorkspaceSwitcher({ rooms, fallbackRoomId }: Props) {
   );
 }
 
-function WorkspaceAvatar({ name }: { name: string }) {
+function WorkspaceAvatar({ name, imageUrl }: Pick<Room, "name" | "imageUrl">) {
+  const [failedImage, setFailedImage] = useState<string | null>(null);
   const initial = name.slice(0, 1).toUpperCase();
   return (
     <span
       aria-hidden="true"
-      className="bg-brand flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-control)] text-[11px] font-semibold text-white"
+      className="bg-brand text-primary-foreground flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-control)] text-[11px] font-semibold"
     >
-      {initial}
+      {imageUrl && imageUrl !== failedImage ? (
+        <Image
+          key={imageUrl}
+          src={imageUrl}
+          alt=""
+          width={24}
+          height={24}
+          unoptimized
+          className="size-full object-cover"
+          onError={() => setFailedImage(imageUrl)}
+        />
+      ) : initial}
     </span>
   );
 }

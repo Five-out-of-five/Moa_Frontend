@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { requestRoomJoinAction } from "@/features/room/management/invite-actions";
+import { isInviteToken } from "@/features/room/management/invite-path";
 import { InviteEntry } from "@/features/room/management/InviteEntry";
 import { InviteEntryForm } from "@/features/room/management/InviteEntryForm";
 import { RoomCommand } from "@/features/room/management/RoomCommand";
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
 
 export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  if (!/^[\w-]+$/.test(token)) return <InviteEntry invalid />;
+  if (!isInviteToken(token)) return <InviteEntry invalid />;
   const invitePath = `/invite/${token}`;
   const loginHref = `/login?next=${encodeURIComponent(invitePath)}`;
   const invite = await getRoomInvite(token);

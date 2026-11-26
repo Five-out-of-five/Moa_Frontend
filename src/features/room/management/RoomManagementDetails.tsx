@@ -38,19 +38,14 @@ export function RoomManagementDetails({
 
   return (
     <div className="min-w-0">
-      <header className="border-border space-y-3 border-b px-5 pt-4">
+      <header className="border-border space-y-2 border-b px-4 pt-3">
         <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="font-semibold">{room.name}</h2>
-            {room.description && (
-              <p className="text-muted-foreground text-sm break-words">{room.description}</p>
-            )}
-          </div>
-          <span className="bg-secondary rounded-full px-2 py-1 text-xs">
+          <h2 className="min-w-0 font-semibold break-words">{room.name}</h2>
+          <span className="bg-secondary shrink-0 rounded-full px-2 py-1 text-xs">
             {isOwner ? "방장" : "멤버"}
           </span>
         </div>
-        <nav aria-label="관리 메뉴" className="flex gap-4 text-sm">
+        <nav aria-label="관리 메뉴" className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
           <Link
             className={tabClass("settings")}
             href={path}
@@ -86,44 +81,44 @@ export function RoomManagementDetails({
 function SettingsPanel({ management }: { management: Management }) {
   const { room, isOwner, invitePath, inviteUrl } = management;
   return (
-    <div className="space-y-4 p-5">
-      <section className="rounded-card border p-4">
-        <div className="flex items-center justify-between gap-2">
+    <div className="grid gap-3 p-4 @2xl:grid-cols-[repeat(2,minmax(0,1fr))]">
+      <section className={cn("rounded-card min-w-0 border p-3", !invitePath && "@2xl:col-span-2")}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-semibold">워크스페이스 정보</h3>
           {isOwner && <RoomFormDialog room={room} />}
         </div>
-        <dl className="mt-3 space-y-2 text-sm">
-          <div>
+        <dl className="mt-2 space-y-1.5 text-sm">
+          <div className="grid grid-cols-[3rem_minmax(0,1fr)] gap-2">
             <dt className="text-muted-foreground">이름</dt>
-            <dd>{room.name}</dd>
+            <dd className="break-words">{room.name}</dd>
           </div>
-          <div>
+          <div className="grid grid-cols-[3rem_minmax(0,1fr)] gap-2">
             <dt className="text-muted-foreground">설명</dt>
             <dd className="break-words">{room.description ?? "등록된 설명이 없습니다."}</dd>
           </div>
         </dl>
       </section>
       {invitePath && (
-        <section className="rounded-card border p-4">
-          <h3 className="font-semibold">영구 초대 링크</h3>
-          <p className="text-muted-foreground mt-1 text-sm">
-            링크를 받은 사용자는 방장 승인 후 참여할 수 있습니다.
-          </p>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <Link href={invitePath} className="text-primary text-sm break-all hover:underline">
-              {inviteUrl ?? invitePath}
-            </Link>
+        <section className="rounded-card min-w-0 border p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-semibold">영구 초대 링크</h3>
             <InviteCopyButton path={inviteUrl ?? invitePath} />
           </div>
+          <p className="text-muted-foreground mt-1.5 text-sm">
+            링크를 받은 사용자는 방장 승인 후 참여할 수 있습니다.
+          </p>
+          <Link href={invitePath} className="text-primary mt-1 block text-sm wrap-anywhere hover:underline">
+            {inviteUrl ?? invitePath}
+          </Link>
         </section>
       )}
-      <section className="rounded-card flex flex-wrap items-center justify-between gap-3 border p-4">
+      <section className="rounded-card flex min-w-0 flex-wrap items-center justify-between gap-2 border p-3">
         <h3 className="font-semibold">내 워크스페이스 프로필</h3>
         <Button asChild variant="outline" size="sm">
           <Link href={`/rooms/${room.id}/profile`}>프로필 수정</Link>
         </Button>
       </section>
-      <section className="rounded-card border-destructive/30 flex flex-wrap items-center justify-between gap-3 border p-4">
+      <section className="rounded-card border-destructive/30 flex min-w-0 flex-wrap items-center justify-between gap-2 border p-3">
         <h3 className="font-semibold">워크스페이스 나가기 및 삭제</h3>
         {isOwner ? (
           <RoomCommand

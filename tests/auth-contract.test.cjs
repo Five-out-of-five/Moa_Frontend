@@ -51,6 +51,22 @@ test("복귀 주소는 정규화 후에도 내부 경로만 허용한다", () =>
   for (const value of ["https://evil.invalid", "//evil.invalid", "/.//evil.invalid", "/%2e%2e//evil.invalid", "/\\evil.invalid", "/%5cevil.invalid", "/login", "/auth/callback", "/api/auth/session", "/a\nb"]) assert.equal(getAuthReturnPath(value), null);
 });
 
+test("초대 입력은 실서버 코드와 목 UUID를 받고 로그인 복귀 경로를 유지한다", () => {
+  const { load } = fixture();
+  const { getInviteReturnPath, isInviteToken } = load("@/features/room/management/invite-path");
+  const { getAuthReturnPath } = load("@/features/auth/return-path");
+  const origin = "https://moa.invalid";
+  const live = "/invite/7621d74f446744a7ba1eda318cdd0a20";
+  const mock = "/invite/7621d74f-4467-44a7-ba1e-da318cdd0a20";
+  assert.equal(getInviteReturnPath(origin + live, origin), live);
+  assert.equal(getInviteReturnPath(mock, origin), mock);
+  assert.equal(getAuthReturnPath(getInviteReturnPath(live, origin)), live);
+  for (const value of ["/invite/", "/invite/code/extra", "/invite/%2Fcode", "https://else.invalid" + live]) {
+    assert.equal(getInviteReturnPath(value, origin), null);
+  }
+  assert.equal(isInviteToken("code\n"), false);
+});
+
 test("새 refresh 쿠키의 Strict·Secure·유효기간을 유지하고 액세스 토큰은 httpOnly로 저장한다", async () => {
   const f = fixture({ env: { NODE_ENV: "production" } });
   await f.load("@/features/auth/cookie-session").storeAuthTokens(tokens, new Headers({ "Set-Cookie": "refreshToken=fixture-new; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=604800" }));

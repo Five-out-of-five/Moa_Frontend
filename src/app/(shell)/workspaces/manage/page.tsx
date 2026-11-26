@@ -74,7 +74,7 @@ export default async function WorkspaceManagementPage({
     : null;
 
   return (
-    <section className="mx-auto flex max-w-7xl flex-col gap-4 lg:h-[calc(100dvh-var(--header-height)-var(--spacing)*12)]">
+    <section className="mx-auto flex max-w-7xl flex-col gap-3">
       <Link
         href={selected && selected.status !== "INACTIVE" ? `/rooms/${selected.id}` : "/workspaces"}
         className="text-muted-foreground hover:text-foreground inline-flex w-fit shrink-0 items-center gap-2 text-sm font-medium hover:underline"
@@ -82,13 +82,8 @@ export default async function WorkspaceManagementPage({
         <ArrowLeft aria-hidden="true" className="size-4" />
         {selected && selected.status !== "INACTIVE" ? "대시보드로 돌아가기" : "워크스페이스 선택으로 돌아가기"}
       </Link>
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">워크스페이스 관리</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            방 정보, 초대 링크, 참여 요청을 관리합니다.
-          </p>
-        </div>
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold tracking-tight">워크스페이스 관리</h1>
         <RoomFormDialog
           key={query.create === "1" ? "create" : "manage"}
           initiallyOpen={query.create === "1"}
@@ -114,12 +109,12 @@ export default async function WorkspaceManagementPage({
           </div>
         );
       })()}
-      <div className="bg-card rounded-card grid min-h-0 flex-1 overflow-hidden border lg:grid-cols-[14rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
+      <div className="bg-card rounded-card grid overflow-clip border lg:grid-cols-[14rem_minmax(0,1fr)]">
         <nav
           aria-label="참여 중인 워크스페이스"
-          className="bg-secondary/40 border-border min-h-0 space-y-2 border-b p-4 lg:overflow-y-auto lg:border-r lg:border-b-0"
+          className="bg-secondary/40 border-border grid min-w-0 content-start gap-1 border-b p-3 sm:grid-cols-2 lg:grid-cols-1 lg:border-r lg:border-b-0"
         >
-          <h2 className="text-muted-foreground text-xs font-medium">
+          <h2 className="text-muted-foreground col-span-full mb-1 text-xs font-medium">
             참여 중인 워크스페이스 · {rooms.length}개
           </h2>
           {rooms.map((room) => (
@@ -127,7 +122,7 @@ export default async function WorkspaceManagementPage({
               key={room.id}
               asChild
               variant={room.id === selected?.id ? "secondary" : "ghost"}
-              className="h-auto w-full justify-start gap-2 px-2 py-2"
+              className="h-auto w-full min-w-0 justify-start gap-2 px-2 py-1.5"
             >
               <Link
                 href={`/workspaces/manage?room=${room.id}`}
@@ -163,7 +158,7 @@ export default async function WorkspaceManagementPage({
           ))}
         </nav>
         {management ? (
-          <div className="min-h-0 min-w-0 lg:overflow-y-auto">
+          <div className="@container min-w-0">
             <RoomManagementDetails
               key={management.room.id}
               management={management}
