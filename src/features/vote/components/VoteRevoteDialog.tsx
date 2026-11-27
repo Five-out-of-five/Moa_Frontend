@@ -21,7 +21,7 @@ import { createRevoteAction } from "../actions";
 
 interface Props {
   roomId: number;
-  /** 재투표의 **부모** — CLOSED 상태여야 한다. 선택지·유형을 그대로 복제한다. */
+  /** 재투표의 **부모** — CLOSED 상태여야 한다. 선택지·유형·익명을 그대로 복제한다. */
   parent: VoteDetail;
   open: boolean;
   onOpenChange(open: boolean): void;
@@ -31,8 +31,6 @@ interface Props {
 
 type FieldErrors = Partial<Record<string, string>>;
 
-const MAX_TITLE_LENGTH = 120;
-const TITLE_PREFIX = "재투표: ";
 /** 재투표 기본 마감: 지금으로부터 7일 뒤 23:59 (KST 기준). */
 const DEFAULT_DAYS_AHEAD = 7;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -40,12 +38,11 @@ const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 /**
  * 재투표 생성 다이얼로그 — CLOSED 투표 상세 Sheet 의 "재투표" 버튼에서 호출된다.
  *
- * ⚠️ 유형(단일/복수/찬반) · 선택지 · 최대 선택 수는 부모에서 자동 복제 — 사용자가 조정할 수
- *    있는 건 **제목 · 마감 · 익명** 셋이다. "같은 조건으로 한 번 더" 가 재투표의 의도라
- *    선택지는 읽기 전용으로 노출만 한다.
- * ⚠️ 제목 기본값은 `다시: <부모 제목>`. 사용자가 다듬어 저장할 수 있도록 미리 채워 둔다.
- * ⚠️ 투표 수정/생성 Dialog 와 같은 패턴: `kind` 분기, pending 중 close 가드, Server Action
- *    reject 는 try/catch 로 받아 상위 error boundary 로 올리지 않는다.
+ * ⚠️ BE `POST /votes/{id}/revote` 는 `{deadlineAt}` 만 받고 **제목·익명·유형·선택지는
+ *    부모에서 자동 복제**한다. 사용자가 조정할 수 있는 건 **마감 일시 하나**뿐이라
+ *    기존 제목·익명 입력을 제거 (지난 UI 는 입력해도 BE 가 무시해 혼선이었음).
+ * ⚠️ 복제되는 부모 정보는 유형·선택지·익명 설정을 읽기 전용으로 노출해 사용자가 "무엇이
+ *    그대로 쓰이는지" 확인할 수 있도록 한다.
  */
 export function VoteRevoteDialog({
   roomId,
@@ -54,42 +51,29 @@ export function VoteRevoteDialog({
   onOpenChange,
   onCreated,
 }: Props) {
-  // ⚠️ 접두사 길이를 포함해 `MAX_TITLE_LENGTH` 안에 맞춘다 — 부모 제목이 길면 잘라 둔다.
-  //    그렇지 않으면 사용자가 기본값 그대로 제출했을 때 zod 가 거절한다 (CodeRabbit).
-  const defaultTitle = useMemo(() => {
-    const available = MAX_TITLE_LENGTH - TITLE_PREFIX.length;
-    return `${TITLE_PREFIX}${parent.title.slice(0, available)}`;
-  }, [parent.title]);
   const defaultDeadline = useMemo(() => computeDefaultDeadline(), []);
 
-  const [title, setTitle] = useState(defaultTitle);
   const [deadlineAt, setDeadlineAt] = useState(defaultDeadline);
-  const [anonymous, setAnonymous] = useState(parent.anonymous);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [pending, startTransition] = useTransition();
-  const titleInputId = useId();
   const deadlineInputId = useId();
 
-  // Dialog 를 다시 열 때마다 기본값으로 초기화 — 취소 후 재오픈이나 다른 부모로 전환에
-  // 이전 입력이 남지 않도록.
+  // Dialog 를 다시 열 때마다 마감 기본값 재계산.
   useEffect(() => {
     if (open) {
-      setTitle(defaultTitle);
       setDeadlineAt(computeDefaultDeadline());
-      setAnonymous(parent.anonymous);
       setError(null);
       setFieldErrors({});
     }
-  }, [open, defaultTitle, parent.anonymous]);
+  }, [open]);
 
   const handleOpenChange = (next: boolean) => {
     if (pending && !next) return;
     onOpenChange(next);
   };
 
-  const canSubmit =
-    !pending && title.trim().length > 0 && deadlineAt.length > 0;
+  const canSubmit = !pending && deadlineAt.length > 0;
 
   const handleSubmit = () => {
     if (!canSubmit) return;
@@ -109,9 +93,7 @@ export function VoteRevoteDialog({
         result = await createRevoteAction({
           roomId,
           parentVoteId: parent.voteId,
-          title: title.trim(),
           deadlineAt: isoDeadline,
-          anonymous,
         });
       } catch (e) {
         console.error("VoteRevoteDialog createRevoteAction rejected:", e);
@@ -143,30 +125,11 @@ export function VoteRevoteDialog({
         <DialogHeader>
           <DialogTitle>재투표</DialogTitle>
           <DialogDescription>
-            선택지와 유형은 원본 투표에서 그대로 복제됩니다. 제목과 마감만 조정하세요.
+            제목 · 선택지 · 유형 · 익명 여부는 원본에서 그대로 복제됩니다. 마감만 조정하세요.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor={titleInputId}>제목</Label>
-            <Input
-              id={titleInputId}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              maxLength={MAX_TITLE_LENGTH}
-              aria-invalid={fieldErrors.title ? true : undefined}
-              aria-describedby={
-                fieldErrors.title ? `${titleInputId}-error` : undefined
-              }
-            />
-            {fieldErrors.title && (
-              <FieldError id={`${titleInputId}-error`}>
-                {fieldErrors.title}
-              </FieldError>
-            )}
-          </div>
-
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={deadlineInputId}>마감 일시</Label>
             <Input
@@ -186,23 +149,20 @@ export function VoteRevoteDialog({
             )}
           </div>
 
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={anonymous}
-              onChange={(e) => setAnonymous(e.target.checked)}
-              className="border-border rounded"
-            />
-            <span className="inline-flex items-center gap-1">
-              <EyeOff className="size-3.5" />
-              익명 투표로 진행
-            </span>
-          </label>
-
-          {/* 선택지 · 유형 — 읽기 전용 확인 영역. */}
+          {/* 복제 대상 요약 — 사용자가 "무엇이 그대로 가는지" 볼 수 있도록. */}
           <div className="border-border-soft bg-background flex flex-col gap-2 rounded-[var(--radius-control)] border px-3 py-2.5">
-            <p className="text-muted-foreground text-xs font-medium">
+            <p className="text-foreground truncate text-sm font-medium">
+              {parent.title}
+            </p>
+            <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
               유형 · {typeLabel}
+              {parent.anonymous && (
+                <>
+                  <span>·</span>
+                  <EyeOff className="size-3" />
+                  <span>익명</span>
+                </>
+              )}
             </p>
             <ul className="flex flex-col gap-1">
               {parent.options.map((o) => (
