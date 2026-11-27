@@ -427,6 +427,24 @@ test("위젯 제거와 레이아웃 초기화는 서버가 반환한 새 ID를 �
   assert.deepEqual(calls, [["DELETE", "/api/v1/rooms/3/dashboard/widgets/12"], ["POST", "/api/v1/rooms/3/dashboard/reset"]]);
 });
 
+test("방 파일 표시와 목 필터는 MIME과 무관하게 대소문자를 구분하지 않는 확장자로 분류한다", () => {
+  const { fileType, matchesFileType } = fixture().load("@/features/room-files/model");
+  const examples = [
+    ["회의록.TXT", "text/plain", "DOCUMENT"],
+    ["첨부.ZIP", "application/zip", "ARCHIVE"],
+    ["사진.JPEG", "application/octet-stream", "IMAGE"],
+    ["사진.svg", "image/svg+xml", "OTHER"],
+  ];
+  for (const [originalName, mimeType, expected] of examples) {
+    const file = { fileId: 1, originalName, mimeType };
+    assert.equal(fileType(file), expected);
+    assert.equal(matchesFileType(file, ""), true);
+    for (const filter of ["DOCUMENT", "ARCHIVE", "IMAGE"]) {
+      assert.equal(matchesFileType(file, filter), filter === expected);
+    }
+  }
+});
+
 test("다운로드는 매번 새 서명 URL을 발급받아 302로 이동한다", async () => {
   let calls = 0;
   const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {

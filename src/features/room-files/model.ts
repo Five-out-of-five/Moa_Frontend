@@ -17,15 +17,13 @@ export const FILE_TYPES = {
 export const FILE_SOURCES = { CHAT: "채팅", IDEA_CARD: "아이디어 카드", TASK: "업무 카드" } as const;
 
 export function fileType(file: RoomFile): keyof typeof FILE_TYPES | "OTHER" {
-  if (file.mimeType?.startsWith("image/") || /\.(png|jpe?g|gif|webp)$/i.test(file.originalName))
-    return "IMAGE";
+  if (/\.(png|jpe?g|gif|webp)$/i.test(file.originalName)) return "IMAGE";
   if (/\.(pdf|docx|xlsx|pptx|txt|md)$/i.test(file.originalName)) return "DOCUMENT";
   if (/\.zip$/i.test(file.originalName)) return "ARCHIVE";
   return "OTHER";
 }
 
 export function matchesFileType(file: RoomFile, filter: string) {
-  if (filter === "DOCUMENT") return file.mimeType?.startsWith("application/") ?? false;
   return !filter || fileType(file) === filter;
 }
 
