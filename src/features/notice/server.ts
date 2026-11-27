@@ -75,9 +75,9 @@ export async function getNoticeBanner() {
   const urgent = data.banner?.noticeType === "URGENT" ? data.banner : undefined;
   const urgentEndsAt = Date.parse(data.notices?.find(({ noticeId }) => noticeId === urgent?.noticeId)?.displayEndsAt ?? "");
   const maintenance = data.notices?.find(({ noticeType, displayEndsAt }) =>
-    noticeType === "MAINTENANCE" && !(Date.parse(displayEndsAt ?? "") <= now),
+    noticeType === "MAINTENANCE" && Date.parse(displayEndsAt ?? "") > now,
   );
-  const showUrgent = !!urgent && !(urgentEndsAt <= now);
+  const showUrgent = !!urgent && urgentEndsAt > now;
   const endsAt = showUrgent ? urgentEndsAt : Date.parse(maintenance?.displayEndsAt ?? "");
   return {
     banner: showUrgent ? urgent : maintenance,
