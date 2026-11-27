@@ -91,6 +91,7 @@ export async function saveMeetingSummary(roomId: number, summaryId: string, card
       const { account, membership } = await getAiContext(roomId);
       const summary = aiMock.summaries.get(roomId)?.find(({ id }) => id === summaryId);
       if (!summary) throw new Error("회의 요약을 찾을 수 없어요.");
+      if (summary.savedCardId !== null) return { ok: true, data: summary.savedCardId };
       closeExpiredIdeaSession(roomId);
       const session = boardSessions.find((item) => item.roomId === roomId && item.state === "ACTIVE");
       if (!session) throw new Error("진행 중인 회차가 없어요. 복사를 이용하거나 회차를 시작해 주세요.");
