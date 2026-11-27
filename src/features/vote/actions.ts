@@ -484,17 +484,13 @@ const CLOSED_MSG = "마감 시각이 지나 더 이상 참여할 수 없습니�
  *    있는 건 제목 · 마감 · 익명 셋.
  * ⚠️ 명세의 `VoteDetail.parentVoteId` 를 세팅해 부모와의 연결을 남긴다.
  */
+// ⚠️ BE `POST /votes/{id}/revote` 는 `{deadlineAt}` 만 받는다. title·anonymous·선택지·유형은
+//    부모 투표에서 **서버가 자동 복제**하므로 입력도 받지 않는다 (사용자가 바꿔봤자 무시됨).
 const createRevoteSchema = z
   .object({
     roomId: z.number().int().positive(),
     parentVoteId: z.number().int().positive(),
-    title: z
-      .string()
-      .trim()
-      .min(1, "투표 제목을 입력해 주세요.")
-      .max(120, "투표 제목은 120자 이하로 입력해 주세요."),
     deadlineAt: z.string().datetime({ offset: true }),
-    anonymous: z.boolean(),
   })
   .superRefine((v, ctx) => {
     const dueMs = Date.parse(v.deadlineAt);
@@ -557,7 +553,7 @@ export async function createRevoteAction(
       fieldErrors,
     };
   }
-  const { roomId, parentVoteId, title, deadlineAt, anonymous } = parsed.data;
+  const { roomId, parentVoteId, deadlineAt } = parsed.data;
 
   if (isMock) {
     const parent = votes.find(
@@ -599,10 +595,11 @@ export async function createRevoteAction(
     let nextOptId = nextMockId(existingOptionIds);
     const detail: VoteDetail = {
       voteId: newVoteId,
-      title,
+      // BE 와 동일하게 부모 제목·익명 설정을 **그대로 복제**. 사용자 수정 포인트 아님.
+      title: parent.title,
       voteType: parent.voteType,
       maxSelectCount: parent.maxSelectCount,
-      anonymous,
+      anonymous: parent.anonymous,
       status: "OPEN",
       deadlineAt,
       closeReason: null,
@@ -626,9 +623,7 @@ export async function createRevoteAction(
     return { kind: "ok", vote: detail };
   }
 
-  // ⚠️ BE 는 `POST /{voteId}/revote` + `{deadlineAt}` 만 받는다. 부모 투표의 voteType ·
-  //    options · maxSelectCount · title 은 서버가 자동 복제한다. UI 쪽 title · anonymous
-  //    입력은 mock 환경 전용이며, BE 는 무시한다 (다이얼로그 정리는 Phase 2 PR).
+  // BE 는 `POST /{voteId}/revote` + `{deadlineAt}` 만 받고 나머지는 부모에서 자동 복제.
   try {
     const res = await api<VoteDetail>(
       `/api/v1/rooms/${roomId}/votes/${parentVoteId}/revote`,
