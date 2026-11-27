@@ -96,8 +96,6 @@ export function TaskBoardPageClient({
 }: Props) {
   const [openTaskId, setOpenTaskId] = useState<number | null>(initialOpenTaskId);
   const [createOpen, setCreateOpen] = useState(false);
-  /** "+ 추가" 버튼이 눌린 컬럼의 기본 상태. 전역 "새 업무" 버튼이면 TODO. */
-  const [createDefaultStatus, setCreateDefaultStatus] = useState<TaskStatus>("TODO");
 
   // 생성 직후 revalidate 응답이 돌아오기 전까지 UI 공백을 메우기 위해 로컬 보강 상태를
   // 둔다. props 로 들어온 서버 데이터가 바뀌면 (`revalidatePath` 완료) 그 값으로
@@ -169,8 +167,10 @@ export function TaskBoardPageClient({
     return map;
   }, [localSummaries]);
 
-  const openCreateFor = (status: TaskStatus) => {
-    setCreateDefaultStatus(status);
+  // ⚠️ BE 가 상태를 받지 않아 어느 컬럼의 "+ 추가" 를 눌러도 생성은 항상 '할 일' 로 떨어진다.
+  //    Dialog 가 그 사실을 Description 으로 안내하므로 호출부는 단순히 Dialog 만 열어 준다.
+  const openCreateFor = (_status: TaskStatus) => {
+    void _status;
     setCreateOpen(true);
   };
 
@@ -312,7 +312,6 @@ export function TaskBoardPageClient({
         members={members}
         defaultAssigneeAccountId={meAccountId}
         activeSprint={activeSprint}
-        defaultStatus={createDefaultStatus}
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={handleCreated}
