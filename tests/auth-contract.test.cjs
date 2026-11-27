@@ -614,6 +614,33 @@ test("팀 상태는 선택한 기간의 오늘 현황과 날짜별 평균을 한
   assert.deepEqual(queries, ["DAYS_7", "DAYS_30"]);
 });
 
+test("같은 방의 상태값 위젯과 상세는 MOOD_UPDATED를 수신하면 다시 조회한다", () => {
+  const listeners = [];
+  const views = [
+    { refreshOnConnect: false, refreshes: 0 },
+    { refreshOnConnect: undefined, refreshes: 0 },
+  ];
+  for (const view of views) {
+    const { load } = fixture({ moduleOverrides: {
+      react: { useEffect: (effect) => effect() },
+      "next/navigation": { useRouter: () => ({ refresh: () => { view.refreshes++; } }) },
+      "./RoomRealtimeProvider": {
+        useRoomRealtime: () => ({ connectionGeneration: 1, listen: (listener) => { listeners.push(listener); } }),
+      },
+    } });
+    load("@/features/realtime/RoomEventRefresh.tsx").RoomEventRefresh({
+      eventType: "MOOD_UPDATED", refreshOnConnect: view.refreshOnConnect,
+    });
+  }
+  const { parseRoomEvent } = fixture().load("@/features/realtime/room-event");
+  assert.deepEqual(views.map(({ refreshes }) => refreshes), [0, 1]);
+  for (const type of ["MEMBER_UPDATED", "MOOD_UPDATED"]) {
+    const event = parseRoomEvent(JSON.stringify({ type, actorAccountId: 12, payload: { mood: "GOOD", comment: "한마디" } }));
+    for (const listener of listeners) listener(event);
+    assert.deepEqual(views.map(({ refreshes }) => refreshes), type === "MOOD_UPDATED" ? [1, 2] : [0, 1]);
+  }
+});
+
 test("위젯 기분 변경은 내 한마디를 유지하고 상세 화면에서는 지울 수 있다", async () => {
   const writes = [];
   const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {

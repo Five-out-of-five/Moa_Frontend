@@ -9,6 +9,7 @@ import { getManagedRoom } from "@/features/room/management/server";
 import { api, ApiError } from "@/lib/api";
 import { isMock } from "@/mocks/config";
 import { moodStatuses } from "@/mocks/db";
+import type { components } from "@/types/api";
 
 import { todayMoodDate } from "./date";
 import { getTeamMood } from "./server";
@@ -64,9 +65,10 @@ async function saveMood({ roomId, mood, comment }: z.infer<typeof submitMoodSche
       if (!member) return { error: "이 방에서 내 기분을 확인할 수 없어요." };
       savedComment = member.note;
     }
+    const request: components["schemas"]["MoodUpsertRequest"] = { mood, comment: savedComment };
     await api(`/api/v1/rooms/${roomId}/moods/me`, {
       method: "PUT",
-      json: { mood, comment: savedComment },
+      json: request,
       cache: "no-store",
     });
   }
