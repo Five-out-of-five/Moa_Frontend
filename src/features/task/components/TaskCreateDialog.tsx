@@ -20,15 +20,10 @@ import type {
   Sprint,
   TaskDetail,
   TaskPriority,
-  TaskStatus,
 } from "@/types/db";
 
 import { createTaskAction } from "../actions";
-import {
-  TASK_PRIORITY_LABEL,
-  TASK_STATUS_LABEL,
-  TASK_STATUS_ORDER,
-} from "../lib/labels";
+import { TASK_PRIORITY_LABEL } from "../lib/labels";
 
 interface Props {
   roomId: number;
@@ -43,8 +38,6 @@ interface Props {
    * ⚠️ BE 명세 확정 전까지는 **선택이 아니라 표시 전용** — 서버 호출엔 포함하지 않는다.
    */
   activeSprint: Sprint | null;
-  /** 생성 다이얼로그 기본 상태 — 칸 별 "+ 추가" 버튼이 생기면 쓸 수 있도록 prop 으로. */
-  defaultStatus?: TaskStatus;
   open: boolean;
   onOpenChange(open: boolean): void;
   /** 생성 성공 시 신규 상세를 부모에 올려 보낸다 — 상세 Sheet 자동 오픈용. */
@@ -61,9 +54,10 @@ const UNASSIGNED_VALUE = "__unassigned__";
 /**
  * 새 업무 생성 다이얼로그 — Figma Make "새 업무 추가" 디자인 그대로.
  *
- * ⚠️ 입력 필드: 제목(필수) · 설명 · 상태 · 담당자 · 우선순위 · 마감일.
- * ⚠️ 스프린트 선택은 **생략** — 명세 확정 전까지 서버가 현재 활성 스프린트에 자동 소속
- *    시킨다 (이슈 #40 범위 외).
+ * ⚠️ 입력 필드: 제목(필수) · 설명 · 담당자 · 우선순위 · 마감일. **상태 셀렉터는 제거**됐다
+ *    — BE `TaskCreateRequest` 가 status 를 받지 않고 서버가 TODO 로 고정 생성하기 때문.
+ *    사용자가 다른 칸을 원하면 생성 후 보드에서 드래그 또는 상세 Sheet 의 상태 변경으로.
+ * ⚠️ 스프린트 선택도 **생략** — 명세 확정 전까지 서버가 활성 스프린트에 자동 소속.
  * ⚠️ 담당자는 `<select>` + "미담당" 특수 옵션(`UNASSIGNED_VALUE`) 으로 다룬다. 서버엔
  *    `null` 로 전송.
  * ⚠️ 투표 생성과 같은 패턴: throw 하지 않고 `CreateTaskResult.kind` 로 분기, Server
@@ -76,7 +70,6 @@ export function TaskCreateDialog({
   members,
   defaultAssigneeAccountId,
   activeSprint,
-  defaultStatus = "TODO",
   open,
   onOpenChange,
   onCreated,
@@ -93,7 +86,6 @@ export function TaskCreateDialog({
 
   const [title, setTitle] = useState(sourceCard?.title ?? "");
   const [description, setDescription] = useState(sourceCard?.content ?? "");
-  const [status, setStatus] = useState<TaskStatus>(defaultStatus);
   const [priority, setPriority] = useState<TaskPriority>("NORMAL");
   const [assigneeAccountId, setAssigneeAccountId] = useState<number | null>(
     safeDefaultAssignee,
@@ -105,7 +97,6 @@ export function TaskCreateDialog({
 
   const titleInputId = useId();
   const descInputId = useId();
-  const statusInputId = useId();
   const assigneeInputId = useId();
   const priorityInputId = useId();
   const dueInputId = useId();
@@ -114,7 +105,6 @@ export function TaskCreateDialog({
   const resetState = () => {
     setTitle(sourceCard?.title ?? "");
     setDescription(sourceCard?.content ?? "");
-    setStatus(defaultStatus);
     setPriority("NORMAL");
     setAssigneeAccountId(safeDefaultAssignee);
     setDueDate("");
@@ -128,14 +118,6 @@ export function TaskCreateDialog({
     // resetState 는 매 렌더 재생성되지만 open 전환 시점에만 호출되므로 의도적 ignore.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-
-  // ⚠️ 보드의 "+ 추가" 버튼이 눌린 컬럼에 맞춰 호출부가 `defaultStatus` 를 바꾸지만,
-  //    `useState(defaultStatus)` 는 최초 마운트 때만 반영된다. Dialog 가 **다시 열릴 때마다**
-  //    최신 `defaultStatus` 로 상태를 다시 세팅해 "진행 중 + 추가" 를 눌러도 상태 셀렉터가
-  //    `할 일` 로 보이지 않게 한다 (CodeRabbit).
-  useEffect(() => {
-    if (open) setStatus(defaultStatus);
-  }, [open, defaultStatus]);
 
   // ⚠️ 제출 중에는 **모든 닫기 경로** 를 막아야 한다 (CodeRabbit). Dialog 의 기본 X·ESC·
   //    overlay 클릭으로 닫히면, 이전 요청의 성공 콜백이 새로 열린 Dialog 를 닫고 새 입력
@@ -159,7 +141,6 @@ export function TaskCreateDialog({
           sourceCardId: sourceCard?.id,
           title: title.trim(),
           description,
-          status,
           priority,
           assigneeAccountId,
           dueDate: dueDate.length > 0 ? dueDate : null,
@@ -187,7 +168,7 @@ export function TaskCreateDialog({
         <DialogHeader>
           <DialogTitle>새 업무 추가</DialogTitle>
           <DialogDescription>
-            담당자와 우선순위를 명확하게 지정하세요.
+            먼저 ‘할 일’ 로 만들어지고, 보드에서 다른 상태로 옮길 수 있어요.
           </DialogDescription>
         </DialogHeader>
 
@@ -226,22 +207,8 @@ export function TaskCreateDialog({
             />
           </div>
 
-          {/* 상태 · 담당자 */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor={statusInputId}>상태</Label>
-              <SelectNative
-                id={statusInputId}
-                value={status}
-                onChange={(v) => setStatus(v as TaskStatus)}
-              >
-                {TASK_STATUS_ORDER.map((s) => (
-                  <option key={s} value={s}>
-                    {TASK_STATUS_LABEL[s]}
-                  </option>
-                ))}
-              </SelectNative>
-            </div>
+          {/* 담당자 */}
+          <div className="grid grid-cols-1 gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor={assigneeInputId}>담당자</Label>
               <SelectNative
