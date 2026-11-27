@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -84,6 +85,14 @@ export function IdeaCardPanel({ card, accountId, canUpload, canEdit, locked, chi
         <div className="flex flex-wrap gap-2">
           <IdeaCardDialog roomId={roomId} sessionId={card.sessionId} card={fullCard} trigger={<Button variant="outline" disabled={locked}>카드 수정</Button>} />
           <DeleteIdeaDialog roomId={roomId} cardId={id} trigger={<Button variant="destructive">카드 삭제</Button>} />
+          {card.cardType === "AGENDA" && !card.linkedVote && (
+            // ⚠️ AGENDA(안건) 카드이면서 아직 연결된 투표가 없을 때만 "투표로 전환" 을 띄운다.
+            //    투표 페이지가 ?sourceCard=<id> 쿼리를 받으면 카드 title·content 를 prefill 한
+            //    상태로 VoteCreateDialog 를 자동으로 연다.
+            <Button asChild variant="outline" disabled={locked}>
+              <Link href={`/rooms/${roomId}/votes?sourceCard=${id}`}>투표로 전환</Link>
+            </Button>
+          )}
         </div>
       )}
       <IdeaCardLinks card={fullCard} canCreate={editable} accountId={accountId} />
