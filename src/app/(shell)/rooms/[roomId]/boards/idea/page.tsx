@@ -38,7 +38,8 @@ export default async function IdeaBoardPage({ params, searchParams }: {
   const conflicts = board.usesMockStream ? listMockConflicts(id) : [];
   const conflictByCard = Object.fromEntries(conflicts.filter(({ state }) => state === "OPEN")
     .flatMap((conflict) => [[conflict.leftCardId, conflict.id], [conflict.rightCardId, conflict.id]]));
-  const participants = selected?.participantCount ?? new Set(cards.map(({ author }) => author.accountId)).size;
+  const participants = selected?.participantCount ??
+    new Set(cards.map(({ author }) => author.accountId).filter((accountId) => accountId > 0)).size;
   const isClosed = selected?.state === "CLOSED";
   const href = `/rooms/${id}/boards/idea`;
   const historyHref = (page: number) => `${href}?${sessionId ? `session=${sessionId}&` : ""}historyPage=${page}`;

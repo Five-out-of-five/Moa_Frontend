@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -28,8 +28,21 @@ export function LeaveWorkspaceDialog({ id, name }: { id: number; name: string })
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [check, setCheck] = useState<Awaited<ReturnType<typeof checkRoomLeaveAction>>>();
-  const [isChecking, startChecking] = useTransition();
-  const handleCheck = () => startChecking(async () => setCheck(await checkRoomLeaveAction(id)));
+  const [isChecking, setIsChecking] = useState(false);
+  const checkRequest = useRef(0);
+  const handleCheck = async () => {
+    const request = ++checkRequest.current;
+    setCheck(undefined);
+    setIsChecking(true);
+    try {
+      const result = await checkRoomLeaveAction(id);
+      if (checkRequest.current === request) setCheck(result);
+    } catch {
+      if (checkRequest.current === request) setCheck({ error: "나가기 가능 여부를 확인하지 못했습니다." });
+    } finally {
+      if (checkRequest.current === request) setIsChecking(false);
+    }
+  };
   const [, action, pending] = useActionState(async () => {
     const next = await leaveRoomAction(id);
     if (next.success) {
@@ -44,9 +57,14 @@ export function LeaveWorkspaceDialog({ id, name }: { id: number; name: string })
 
   return (
     <AlertDialog open={isOpen} onOpenChange={(open) => {
-      if (pending || isChecking) return;
+      if (pending) return;
       setIsOpen(open);
-      if (open) { setCheck(undefined); handleCheck(); }
+      if (open) {
+        void handleCheck();
+      } else {
+        checkRequest.current++;
+        setIsChecking(false);
+      }
     }}>
       <AlertDialogTrigger asChild>
         <Button variant="outline" size="sm">

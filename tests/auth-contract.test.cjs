@@ -6,7 +6,7 @@ const vm = require("node:vm");
 const { test } = require("node:test");
 const ts = require("typescript");
 
-function fixture({ env = {}, fetch: backend = async () => { throw Error("예상하지 않은 BE 요청"); }, incoming = {}, signupAccount = async () => ({ provider: "GOOGLE", displayName: "테스트" }), document } = {}) {
+function fixture({ env = {}, fetch: backend = async () => { throw Error("예상하지 않은 BE 요청"); }, incoming = {}, signupAccount = async () => ({ provider: "GOOGLE", displayName: "테스트" }), document, moduleOverrides } = {}) {
   const values = new Map();
   const options = new Map();
   const jar = {
@@ -25,6 +25,7 @@ function fixture({ env = {}, fetch: backend = async () => { throw Error("예상�
     "next/cache": { revalidatePath: () => {} },
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
     "@/features/auth/server": { getSignupAccount: signupAccount },
+    ...moduleOverrides,
   };
   function load(name, parent = path.join(process.cwd(), "src")) {
     if (name in overrides) return overrides[name];
@@ -65,6 +66,27 @@ test("초대 입력은 실서버 코드와 목 UUID를 받고 로그인 복귀 �
     assert.equal(getInviteReturnPath(value, origin), null);
   }
   assert.equal(isInviteToken("code\n"), false);
+});
+
+test("초대 조회는 쿠키가 없으면 로그인 링크를 표시하고 인증 401이면 초대 경로를 보존한다", async () => {
+  const invitePath = "/invite/fixture?view=join";
+  const f = fixture({
+    env: { NEXT_PUBLIC_USE_MOCK: "false" },
+    incoming: { "x-moa-request-path": invitePath },
+    fetch: async (url) => {
+      assert.equal(new URL(url).pathname, "/api/v1/accounts/me");
+      return Response.json({ success: false, error: { code: "AUTH_INVALID_TOKEN", message: "세션 오류" } }, { status: 401 });
+    },
+  });
+  const { getRoomInvite } = f.load("@/features/room/management/server");
+  assert.equal((await getRoomInvite("fixture")).kind, "login");
+  f.jar.set("accessToken", "fixture-access");
+  await assert.rejects(getRoomInvite("fixture"), (error) => {
+    const login = new URL(error.location, "https://moa.invalid");
+    assert.equal(login.pathname, "/login");
+    assert.equal(login.searchParams.get("returnPath"), invitePath);
+    return true;
+  });
 });
 
 test("새 refresh 쿠키의 Strict·Secure·유효기간을 유지하고 액세스 토큰은 httpOnly로 저장한다", async () => {
@@ -296,6 +318,27 @@ test("최초 프로필 건너뛰기는 빈 객체로 방 프로필을 갱신한�
   await assert.rejects(f.load("@/features/room/first-profile/actions").completeFirstRoomProfileAction("3", {}, input), (error) => error.location === "/rooms/3");
 });
 
+test("멤버 프로필 DM 생성은 API 오류를 반환하고 재시도 성공 시 대화 화면으로 이동한다", async () => {
+  let attempts = 0;
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
+    const pathname = new URL(url).pathname;
+    if (pathname === "/api/v1/accounts/me") return ok({ accountId: 12, name: "테스트", provider: "GOOGLE", email: "", role: "USER", toneMode: "OFF", createdAt: "2026-11-01" });
+    if (pathname === "/api/v1/rooms/3") return ok({ roomId: 3, name: "테스트 방", myMembership: {} });
+    if (pathname === "/api/v1/rooms/3/members/15") return ok({ accountId: 15, canStartDirectMessage: true });
+    assert.equal(pathname, "/api/v1/rooms/3/direct-channels");
+    assert.equal(init.method, "POST");
+    assert.deepEqual(JSON.parse(init.body), { targetAccountId: 15 });
+    if (++attempts === 1) return Response.json({
+      success: false, error: { code: "DM_UNAVAILABLE", message: "대화를 시작할 수 없어요." },
+    }, { status: 409 });
+    return ok({ channelId: 27 });
+  } });
+  f.jar.set("accessToken", "fixture-access");
+  const { startRoomMemberDmAction } = f.load("@/features/room/profile/member-actions");
+  assert.equal((await startRoomMemberDmAction("3", "15")).error, "대화를 시작할 수 없어요.");
+  await assert.rejects(startRoomMemberDmAction("3", "15"), (error) => error.location === "/rooms/3/channels/27");
+});
+
 test("프로필 이름만 수정할 때 이미지와 역할 표시 키를 보내지 않는다", async () => {
   const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
     const path = new URL(url).pathname;
@@ -310,6 +353,28 @@ test("프로필 이름만 수정할 때 이미지와 역할 표시 키를 보내
   const input = new FormData();
   input.set("nickname", "새 이름");
   assert.equal((await f.load("@/features/room/profile/actions").updateRoomProfileAction("3", {}, input)).success, true);
+});
+
+test("같은 방의 열린 멤버 목록과 상세는 MEMBER_UPDATED 수신 시 갱신한다", () => {
+  const listeners = [];
+  const views = [
+    { eventTypes: ["MEMBER_UPDATED", "MEMBER_JOINED", "MEMBER_LEFT"], refreshes: 0 },
+    { eventTypes: ["MEMBER_UPDATED", "MEMBER_LEFT"], refreshes: 0 },
+  ];
+  for (const view of views) {
+    const { load } = fixture({ moduleOverrides: {
+      react: { useEffect: (effect) => effect() },
+      "next/navigation": { useRouter: () => ({ refresh: () => { view.refreshes++; } }) },
+      "./RoomRealtimeProvider": { useRoomRealtime: () => ({ listen: (listener) => { listeners.push(listener); } }) },
+    } });
+    load("@/features/realtime/RoomDataRefresh.tsx").RoomDataRefresh({ eventTypes: view.eventTypes });
+  }
+  const { parseRoomEvent } = fixture().load("@/features/realtime/room-event");
+  for (const type of ["MOOD_UPDATED", "MEMBER_UPDATED"]) {
+    const event = parseRoomEvent(JSON.stringify({ type, actorAccountId: 12, payload: { accountId: 12, displayName: "새 이름" } }));
+    for (const listener of listeners) listener(event);
+    assert.deepEqual(views.map(({ refreshes }) => refreshes), type === "MEMBER_UPDATED" ? [1, 1] : [0, 0]);
+  }
 });
 
 test("방 개설은 JSON multipart 파트를 보내고 서버가 반환한 방으로 이동한다", async () => {
@@ -427,6 +492,24 @@ test("위젯 제거와 레이아웃 초기화는 서버가 반환한 새 ID를 �
   assert.deepEqual(calls, [["DELETE", "/api/v1/rooms/3/dashboard/widgets/12"], ["POST", "/api/v1/rooms/3/dashboard/reset"]]);
 });
 
+test("방 파일 표시와 목 필터는 MIME과 무관하게 대소문자를 구분하지 않는 확장자로 분류한다", () => {
+  const { fileType, matchesFileType } = fixture().load("@/features/room-files/model");
+  const examples = [
+    ["회의록.TXT", "text/plain", "DOCUMENT"],
+    ["첨부.ZIP", "application/zip", "ARCHIVE"],
+    ["사진.JPEG", "application/octet-stream", "IMAGE"],
+    ["사진.svg", "image/svg+xml", "OTHER"],
+  ];
+  for (const [originalName, mimeType, expected] of examples) {
+    const file = { fileId: 1, originalName, mimeType };
+    assert.equal(fileType(file), expected);
+    assert.equal(matchesFileType(file, ""), true);
+    for (const filter of ["DOCUMENT", "ARCHIVE", "IMAGE"]) {
+      assert.equal(matchesFileType(file, filter), filter === expected);
+    }
+  }
+});
+
 test("다운로드는 매번 새 서명 URL을 발급받아 302로 이동한다", async () => {
   let calls = 0;
   const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
@@ -456,6 +539,24 @@ test("활성 공지 배너는 활성 목록의 종료 시각을 사용한다", a
   const result = await f.load("@/features/notice/server").getNoticeBanner();
   assert.equal(result.banner.noticeId, 9);
   assert.equal(result.refreshAt, Date.parse("2040-01-01T00:00:00Z"));
+});
+
+test("유효한 종료 시각이 없는 긴급 공지는 유효한 점검 공지로 대체한다", async () => {
+  const maintenance = { noticeId: 10, noticeType: "MAINTENANCE", displayEndsAt: "2040-01-01T00:00:00Z" };
+  const urgent = { noticeId: 9, noticeType: "URGENT", title: "긴급 공지" };
+  let notices;
+  const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async () => ok({ banner: urgent, notices }) });
+  const { getNoticeBanner } = f.load("@/features/notice/server");
+  for (const urgentItem of [null, urgent, { ...urgent, displayEndsAt: "invalid" }, { ...urgent, displayEndsAt: "2000-01-01T00:00:00Z" }]) {
+    notices = urgentItem ? [urgentItem, maintenance] : [maintenance];
+    const result = await getNoticeBanner();
+    assert.equal(result.banner.noticeId, 10);
+    assert.equal(result.refreshAt, Date.parse(maintenance.displayEndsAt));
+  }
+  notices = [urgent, { ...maintenance, displayEndsAt: "invalid" }];
+  const result = await getNoticeBanner();
+  assert.equal(result.banner, undefined);
+  assert.equal(result.refreshAt, null);
 });
 
 test("댓글과 메시지 신고는 명세 필드만 제출하고 서버의 중복 오류를 반환한다", async () => {

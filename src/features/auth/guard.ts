@@ -20,7 +20,12 @@ export const requireAuthSession = cache(async () => {
   }
   try { await api("/api/v1/accounts/me", { cache: "no-store" }); }
   catch (error) {
-    if (error instanceof ApiError && (error.status === 401 || error.code === "AUTH_ACCOUNT_SUSPENDED")) redirect(getAuthLoginHref(error.code === "AUTH_ACCOUNT_SUSPENDED" ? error.code : "session", getSuspendedUntil(error.data), error.traceId));
+    if (error instanceof ApiError && (error.status === 401 || error.code === "AUTH_ACCOUNT_SUSPENDED")) {
+      const returnPath = error.status === 401
+        ? getAuthReturnPath((await headers()).get("x-moa-request-path")) ?? undefined
+        : undefined;
+      redirect(getAuthLoginHref(error.code === "AUTH_ACCOUNT_SUSPENDED" ? error.code : "session", getSuspendedUntil(error.data), error.traceId, returnPath));
+    }
     throw error;
   }
 });

@@ -2,10 +2,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { Button } from "@/components/ui/button";
 import { RoomDataRefresh } from "@/features/realtime/RoomDataRefresh";
 import { startRoomMemberDmAction } from "@/features/room/profile/member-actions";
 import { getRoomMemberProfile } from "@/features/room/profile/member-server";
+import { RoomMemberDmForm } from "@/features/room/profile/RoomMemberDmForm";
 import { RoomMemberOnline } from "@/features/room/profile/RoomMemberPresence";
 
 export default async function MemberProfilePage({
@@ -40,9 +40,7 @@ export default async function MemberProfilePage({
         {profile.position && <p className="text-muted-foreground text-sm">{profile.position}</p>}
         {profile.accountId !== undefined && <RoomMemberOnline accountId={profile.accountId} online={profile.online} />}
         {profile.canStartDm && (
-            <form action={startRoomMemberDmAction.bind(null, roomId, accountId)}>
-              <Button type="submit" size="sm">1:1 대화</Button>
-            </form>
+          <RoomMemberDmForm action={startRoomMemberDmAction.bind(null, roomId, accountId)} />
         )}
       </div>
     </section>
