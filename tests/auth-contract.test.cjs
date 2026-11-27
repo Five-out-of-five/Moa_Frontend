@@ -851,7 +851,7 @@ test("AI 어시스턴트 SSE는 분할된 이벤트와 CRLF를 처리하고 이�
       hasNext: true, nextCursor: 30 });
   } });
   const { readAssistantEvents } = f.load("@/features/ai/assistant-events");
-  const bytes = new TextEncoder().encode('event:delta\r\ndata:{"text":"답변\\n둘째 줄"}\r\n\r\nevent:done\ndata:{"status":"PARTIAL","messageId":30}\n\n');
+  const bytes = new TextEncoder().encode('event:delta\r\ndata: {\r\ndata: "text":"답변\\n둘째 줄"}\r\n\r\nevent:done\ndata:{"status":"PARTIAL","messageId":30}\n\n');
   const body = new ReadableStream({ start(controller) {
     for (const byte of bytes) controller.enqueue(Uint8Array.of(byte));
     controller.close();
@@ -864,6 +864,23 @@ test("AI 어시스턴트 SSE는 분할된 이벤트와 CRLF를 처리하고 이�
   assert.equal(history.nextCursor, "30");
   assert.equal(history.items[0].state, "stopped");
   assert.equal(history.items[0].references.cards[0].id, 9);
+});
+
+test("AI 어시스턴트 SSE는 미완성 프레임이 너무 크면 스트림을 취소한다", async () => {
+  const { load } = fixture();
+  const { readAssistantEvents } = load("@/features/ai/assistant-events");
+  let canceled = false;
+  const body = new ReadableStream({
+    start(controller) {
+      const encoder = new TextEncoder();
+      controller.enqueue(encoder.encode("event:delta\ndata:" + "a".repeat(32 * 1024)));
+      controller.enqueue(encoder.encode("a".repeat(32 * 1024)));
+    },
+    cancel() { canceled = true; },
+  });
+  await assert.rejects(readAssistantEvents(body, () => {}).next(), /응답 프레임이 너무 커요/);
+  assert.equal(canceled, true);
+  assert.equal(body.locked, false);
 });
 
 test("AI 구성 추천은 위젯 ID 없이 적용하고 적용·되돌리기의 새 배치를 반환한다", async () => {
@@ -911,6 +928,24 @@ test("회의 요약은 목록·회차 생성·수정·카드 저장을 각 API �
   assert.equal((await actions.updateMeetingSummary(7, "9", "수정한 요약")).data.text, "수정한 요약");
   assert.equal((await actions.saveMeetingSummary(7, "9", "TRY", "회고 정리")).data, 51);
   assert.equal(operations.length, 0);
+});
+
+test("목 회의 요약 저장을 재시도하면 기존 카드 ID를 반환한다", async () => {
+  const { load } = fixture({ env: { AUTH_USE_MOCK: "true", NEXT_PUBLIC_USE_MOCK: "true" } });
+  const [room] = await load("@/features/room/server").listMyRooms();
+  const { account } = await load("@/features/ai/server").getAiContext(room.id);
+  const { aiMock } = load("@/features/ai/mock-state");
+  const { ideaCards } = load("@/mocks/db");
+  const { saveMeetingSummary } = load("@/features/ai/summary-actions");
+  const summary = { id: "123", text: "회의 요약", requestedBy: account.id, savedCardId: null };
+  aiMock.summaries.set(room.id, [summary]);
+  const initialCount = ideaCards.length;
+  const first = await saveMeetingSummary(room.id, summary.id, "TRY", "회고 정리");
+  const second = await saveMeetingSummary(room.id, summary.id, "TRY", "다시 저장");
+  assert.equal(first.ok, true, first.error);
+  assert.equal(second.ok, true, second.error);
+  assert.equal(second.data, first.data);
+  assert.equal(ideaCards.length, initialCount + 1);
 });
 
 test("톤앤매너는 명세 대상 코드와 채널 ID를 사용하고 1:1에서는 점검 요청을 생략한다", async () => {

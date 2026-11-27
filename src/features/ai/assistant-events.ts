@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const MAX_FRAME_LENGTH = 64 * 1024;
+
 const reference = z.object({ id: z.number().int().positive(), title: z.string() });
 const references = z.object({ cards: z.array(reference), tasks: z.array(reference), votes: z.array(reference) });
 const assistantEvent = z.discriminatedUnion("event", [
@@ -35,13 +37,20 @@ export async function* readAssistantEvents(body: ReadableStream<Uint8Array>, onC
       buffer += decoder.decode(value, { stream: true });
       let boundary: RegExpExecArray | null;
       while ((boundary = separator.exec(buffer))) {
+        if (boundary.index > MAX_FRAME_LENGTH) throw new Error("AI 응답 프레임이 너무 커요.");
         const block = buffer.slice(0, boundary.index);
         buffer = buffer.slice(boundary.index + boundary[0].length);
         const event = /^event:(.*)$/m.exec(block)?.[1]?.trim();
-        const data = /^data:(.*)$/m.exec(block)?.[1];
+        const data = Array.from(block.matchAll(/^data(?:: ?([^\r\n]*))?$/gm), (match) => match[1] ?? "").join("\n");
         if (!event || !data) continue;
         const parsed = assistantEvent.safeParse({ event, data: JSON.parse(data) });
         if (parsed.success) yield parsed.data;
+      }
+      if (buffer.length > MAX_FRAME_LENGTH) {
+        const partialSeparator = /(?:\r?\n\r?|\r)$/.exec(buffer)?.[0].length ?? 0;
+        if (buffer.length - partialSeparator > MAX_FRAME_LENGTH) {
+          throw new Error("AI 응답 프레임이 너무 커요.");
+        }
       }
     }
   } finally {
