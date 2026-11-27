@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, CheckCheck } from "lucide-react";
+import { Bell, CheckCheck, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 
@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import type { Notification, NotificationGroup } from "@/types/db";
 
 import {
+  deleteNotificationAction,
   loadMoreUnreadNotificationsAction,
   markAllNotificationsAsReadAction,
   markNotificationAsReadAction,
@@ -134,6 +135,27 @@ export function NotificationDropdown({
     if (!n.read) markOneRead(n.notificationId);
     setOpen(false);
     router.push(targetUrlOfNotification(n));
+  };
+
+  /**
+   * 알림 한 건 삭제 — 낙관적 제거 + 실패 시 복원. 미읽음 알림을 삭제하면 카운트도 함께 보정한다.
+   */
+  const removeOne = (id: number) => {
+    const prevRecent = recent;
+    const prevUnreadList = unreadList;
+    const prevUnreadCount = unreadCount;
+    const wasUnread = prevRecent.find((n) => n.notificationId === id)?.read === false
+      || prevUnreadList.some((n) => n.notificationId === id);
+    setRecent(prevRecent.filter((n) => n.notificationId !== id));
+    setUnreadList(prevUnreadList.filter((n) => n.notificationId !== id));
+    if (wasUnread) setUnreadCount(Math.max(0, prevUnreadCount - 1));
+    startTransition(() => {
+      deleteNotificationAction({ notificationId: id }).catch(() => {
+        setRecent(prevRecent);
+        setUnreadList(prevUnreadList);
+        setUnreadCount(prevUnreadCount);
+      });
+    });
   };
 
   const handleLoadMoreUnread = () => {
@@ -258,6 +280,7 @@ export function NotificationDropdown({
                         key={n.notificationId}
                         notification={n}
                         onClick={() => handleItemClick(n)}
+                        onDelete={() => removeOne(n.notificationId)}
                       />
                     ))}
                   </ul>
@@ -331,20 +354,24 @@ function TabButton({
 function NotificationItem({
   notification,
   onClick,
+  onDelete,
 }: {
   notification: Notification;
   onClick: () => void;
+  onDelete: () => void;
 }) {
   const Icon = iconForNotificationGroup(notification.group);
   const isUnread = !notification.read;
 
   return (
-    <li>
+    // ⚠️ 삭제 버튼을 아이템 **본문 버튼 안**에 두면 button 중첩이 금지되어 렌더 경고가 뜬다.
+    //    group 호버에 맞춰 우상단에 absolute 로 띄우고 클릭 전파만 차단한다.
+    <li className="group relative">
       <button
         type="button"
         onClick={onClick}
         className={cn(
-          "border-border-soft hover:bg-secondary flex w-full items-start gap-3 border-b px-5 py-3 text-left transition-colors last:border-b-0",
+          "border-border-soft hover:bg-secondary flex w-full items-start gap-3 border-b px-5 py-3 pr-10 text-left transition-colors last:border-b-0",
           isUnread && "bg-background",
         )}
       >
@@ -378,6 +405,17 @@ function NotificationItem({
             {notification.room.name} · {formatRelativeTime(notification.createdAt)}
           </p>
         </div>
+      </button>
+      <button
+        type="button"
+        aria-label="알림 삭제"
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
+        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 focus-visible:text-destructive absolute right-3 top-3 grid size-6 place-items-center rounded-md opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+      >
+        <X className="size-3.5" />
       </button>
     </li>
   );
