@@ -45,6 +45,7 @@ import {
   TASK_STATUS_LABEL,
   TASK_STATUS_ORDER,
 } from "../lib/labels";
+import { TaskAttachmentsSection } from "./TaskAttachmentsSection";
 import { TaskEditDialog } from "./TaskEditDialog";
 
 interface Props {
@@ -389,6 +390,13 @@ export function TaskDetailSheet({
                     </p>
                   </section>
                 )}
+
+                <TaskAttachmentsSection
+                  roomId={roomId}
+                  taskId={local.taskId}
+                  files={local.files}
+                  canEdit={canEdit}
+                />
 
                 <section>
                   <h3 className="text-muted-foreground mb-1.5 inline-flex items-center gap-1.5 text-xs font-medium">
