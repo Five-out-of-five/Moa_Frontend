@@ -2472,7 +2472,8 @@ export interface components {
         MoodUpsertRequest: {
             /** @enum {string} */
             mood: "VERY_GOOD" | "GOOD" | "NORMAL" | "TIRED" | "EXHAUSTED";
-            comment?: string;
+            /** @description 한마디(50자). null 이거나 생략하면 한마디를 지운다. 기분만 바꿀 때도 기존 한마디를 다시 보내야 남는다. 빈 문자열은 빈 문자열로 저장되므로 지울 때는 null 로 보낸다. */
+            comment?: string | null;
         };
         ApiResponseMoodResponse: {
             success?: boolean;
