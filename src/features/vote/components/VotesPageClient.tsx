@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowLeft, Calendar, Plus, Search, Users } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,11 @@ interface Props {
    * 페이지가 mount 된 뒤 바뀌어도(동일 라우트에서 쿼리만 변경) 다시 반영된다.
    */
   initialOpenVoteId?: number | null;
+  /**
+   * 아이디어 카드에서 "투표로 전환" 눌러 넘어온 경우 서버가 prefetch 해 전달한 카드 요약.
+   * 넘어왔다면 VoteCreateDialog 를 자동으로 열고 sourceCard 로 prefill 한다.
+   */
+  sourceCard?: { id: number; title: string; content: string } | null;
 }
 
 type TabKey = "OPEN" | "CLOSED";
@@ -47,11 +53,15 @@ export function VotesPageClient({
   details,
   meAccountId,
   initialOpenVoteId = null,
+  sourceCard = null,
 }: Props) {
+  const router = useRouter();
+  const pathname = usePathname();
   const [tab, setTab] = useState<TabKey>("OPEN");
   const [query, setQuery] = useState("");
   const [openVoteId, setOpenVoteId] = useState<number | null>(initialOpenVoteId);
-  const [createOpen, setCreateOpen] = useState(false);
+  // sourceCard 가 있으면 mount 시점에 Dialog 자동 open.
+  const [createOpen, setCreateOpen] = useState<boolean>(Boolean(sourceCard));
 
   // 생성 직후 revalidate 응답이 돌아오기 전까지 UI 공백을 메우기 위해 로컬 보강 상태를
   // 둔다. props 로 들어온 서버 데이터가 바뀌면 (`revalidatePath` 완료) 그 값으로
@@ -218,8 +228,14 @@ export function VotesPageClient({
 
       <VoteCreateDialog
         roomId={roomId}
+        sourceCard={sourceCard ?? undefined}
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        onOpenChange={(next) => {
+          setCreateOpen(next);
+          // 생성 Dialog 가 닫히면 ?sourceCard= 쿼리를 정리해 뒤로가기/새로고침에서 Dialog 가
+          // 다시 열리지 않게 한다. 다른 쿼리는 유지하지 않고 단순 base 경로로 교체.
+          if (!next && sourceCard) router.replace(pathname);
+        }}
         onCreated={handleCreated}
       />
     </div>

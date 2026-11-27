@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getMyAccount } from "@/features/account/server";
 import { BriefingFocus } from "@/features/briefing/BriefingFocus";
 import { readBriefingFocus } from "@/features/briefing/model";
+import { loadIdeaCardDetail } from "@/features/idea/discussion-actions";
 import { listMyRooms } from "@/features/room/server";
 import { VotesPageClient } from "@/features/vote/components/VotesPageClient";
 import { getVoteDetail, listVotesInRoom } from "@/features/vote/server";
@@ -10,7 +11,12 @@ import type { VoteDetail } from "@/types/db";
 
 interface Props {
   params: Promise<{ roomId: string }>;
-  searchParams: Promise<{ open?: string | string[]; briefingFocus?: string }>;
+  searchParams: Promise<{
+    open?: string | string[];
+    briefingFocus?: string;
+    /** 아이디어 카드에서 "투표로 전환" 눌러 넘어온 경우. VoteCreateDialog 를 자동으로 연다. */
+    sourceCard?: string;
+  }>;
 }
 
 /**
@@ -22,7 +28,7 @@ interface Props {
  */
 export default async function RoomVotesPage({ params, searchParams }: Props) {
   const { roomId: roomIdParam } = await params;
-  const { open: openRaw, briefingFocus } = await searchParams;
+  const { open: openRaw, briefingFocus, sourceCard: sourceCardParam } = await searchParams;
   const roomId = Number(roomIdParam);
   if (!Number.isFinite(roomId)) notFound();
 
@@ -33,6 +39,26 @@ export default async function RoomVotesPage({ params, searchParams }: Props) {
     openParam && Number.isFinite(Number(openParam))
       ? Number(openParam)
       : null;
+
+  // 아이디어 카드 → 투표 전환 쿼리. 카드 title·content 를 prefill 로 넘긴다.
+  const sourceCardId =
+    sourceCardParam && Number.isFinite(Number(sourceCardParam))
+      ? Number(sourceCardParam)
+      : null;
+  const sourceCard = sourceCardId != null
+    ? await (async () => {
+        try {
+          const detail = await loadIdeaCardDetail(roomId, sourceCardId);
+          if (!("card" in detail) || !detail.card) return null;
+          const { card } = detail;
+          if (card.cardId == null || !card.title) return null;
+          return { id: card.cardId, title: card.title, content: card.content ?? "" };
+        } catch (e) {
+          console.error(`RoomVotesPage loadIdeaCardDetail failed (cardId=${sourceCardId}):`, e);
+          return null;
+        }
+      })()
+    : null;
 
   // listMyRooms 는 사이드바·헤더 작업에서 이미 공용으로 쓰이는 조회 — 방 이름만 뽑아 쓴다.
   const rooms = await listMyRooms();
@@ -84,6 +110,7 @@ export default async function RoomVotesPage({ params, searchParams }: Props) {
       details={details}
       meAccountId={meResult}
       initialOpenVoteId={openVoteId}
+      sourceCard={sourceCard}
     />
     </>
   );
