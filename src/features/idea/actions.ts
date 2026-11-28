@@ -28,7 +28,12 @@ async function mutateIdea(roomId: number, path: string, method: string, json?: u
     return refreshIdeaBoard(roomId);
   } catch (error) {
     unstable_rethrow(error);
-    return { error: error instanceof ApiError ? error.message : "변경 사항을 저장하지 못했어요." };
+    const rejected = error instanceof ApiError && error.status >= 400 && error.status < 500 &&
+      error.status !== 408 && error.code !== "API_RESPONSE_INVALID";
+    return {
+      error: error instanceof ApiError ? error.message : "변경 사항을 저장하지 못했어요.",
+      ...(path === "/idea-cards" && method === "POST" && !rejected ? { outcomeUnknown: true } : {}),
+    };
   }
 }
 
@@ -85,18 +90,11 @@ export async function saveIdeaCard(
     if (fileIds.length > 5 || !fileIds.every(isRoomId) || new Set(fileIds).size !== fileIds.length) {
       return { error: "첨부 파일을 확인해 주세요. 최대 5개까지 추가할 수 있어요." };
     }
-    if (cardId === null) {
-      try {
-        const current = await ideaApi<IdeaSchemas["SessionResponse"] | null>(roomId, "/sessions/current");
-        if (current?.sessionId !== sessionId) return { error: "회차가 바뀌었어요. 보드를 새로고침해 주세요." };
-      } catch (error) {
-        unstable_rethrow(error);
-        return { error: error instanceof ApiError ? error.message : "진행 중인 회차를 확인하지 못했어요." };
-      }
-    }
-    return cardId === null
-      ? mutateIdea(roomId, "/idea-cards", "POST", { cardType, title, content, fileIds })
-      : mutateIdea(roomId, `/idea-cards/${cardId}`, "PATCH", { title, content });
+    if (cardId !== null) return mutateIdea(roomId, `/idea-cards/${cardId}`, "PATCH", { title, content });
+    const requestId = z.string().uuid().optional().safeParse(form.get("requestId") ?? undefined);
+    if (!requestId.success) return { error: "카드 저장 요청을 확인해 주세요." };
+    const request: IdeaSchemas["IdeaCardCreateRequest"] = { cardType, title, content, fileIds, sessionId, requestId: requestId.data };
+    return mutateIdea(roomId, "/idea-cards", "POST", request);
   }
   const context = await authorize(roomId);
   if (!context) return { error: "이 방의 카드를 저장할 수 없어요." };

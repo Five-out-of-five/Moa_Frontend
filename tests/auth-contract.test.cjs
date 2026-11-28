@@ -37,7 +37,7 @@ function fixture({ env = {}, fetch: backend = async () => { throw Error("예상�
     const record = { exports: {} };
     modules.set(file, record);
     const output = ts.transpileModule(fs.readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
-    vm.runInNewContext(output, { module: record, exports: record.exports, require: (id) => load(id, path.dirname(file)), process: { env: { AUTH_USE_MOCK: "false", NODE_ENV: "test", ...env } }, fetch: backend, Headers, Request, Response, URL, URLSearchParams, FormData, Blob, File, Buffer, AbortController, AbortSignal, ReadableStream, TextEncoder, TextDecoder, setTimeout, clearTimeout, document }, { filename: file });
+    vm.runInNewContext(output, { module: record, exports: record.exports, require: (id) => load(id, path.dirname(file)), process: { env: { AUTH_USE_MOCK: "false", NODE_ENV: "test", ...env } }, fetch: backend, Headers, Request, Response, URL, URLSearchParams, FormData, Blob, File, Buffer, AbortController, AbortSignal, ReadableStream, TextEncoder, TextDecoder, crypto: globalThis.crypto, setTimeout, clearTimeout, document }, { filename: file });
     return record.exports;
   }
   return { load, jar, values, options };
@@ -742,13 +742,18 @@ test("아이디어 카드 이동 충돌은 서버가 제공한 최신 순서와 
   assert.equal(result.cards[0].version, 3);
 });
 
-test("새 아이디어 카드에는 활성 회차를 확인하고 업로드한 파일 ID를 보낸다", async () => {
+test("새 아이디어 카드는 회차와 첨부, 재시도 키를 생성 API로 보내고 회차 오류를 돌려준다", async () => {
+  const requestId = "123e4567-e89b-42d3-a456-426614174000";
+  const sessions = [3, 2];
   const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
     const path = new URL(url).pathname;
-    if (path.endsWith("/sessions/current")) return ok({ sessionId: 3 });
     assert.equal(path, "/api/v1/rooms/7/idea-cards");
     assert.equal(init.method, "POST");
-    assert.deepEqual(JSON.parse(init.body), { cardType: "AGENDA", title: "회고", content: "의견", fileIds: [41, 42] });
+    const sessionId = sessions.shift();
+    assert.deepEqual(JSON.parse(init.body), { cardType: "AGENDA", title: "회고", content: "의견", fileIds: [41, 42], sessionId, requestId });
+    if (sessionId === 2) return Response.json({
+      success: false, error: { code: "CARD_SESSION_CLOSED", message: "마감된 회차에는 카드를 추가하거나 변경할 수 없습니다" },
+    }, { status: 409 });
     return ok({ cardId: 31 });
   } });
   f.jar.set("accessToken", "fixture-access");
@@ -758,9 +763,58 @@ test("새 아이디어 카드에는 활성 회차를 확인하고 업로드한 �
   form.set("content", "의견");
   form.append("fileId", "41");
   form.append("fileId", "42");
+  form.set("requestId", requestId);
   const { saveIdeaCard } = f.load("@/features/idea/actions");
   assert.equal((await saveIdeaCard(7, 3, null, {}, form)).saved, true);
-  assert.match((await saveIdeaCard(7, 2, null, {}, form)).error, /회차가 바뀌었어요/);
+  const rejected = await saveIdeaCard(7, 2, null, {}, form);
+  assert.match(rejected.error, /마감된 회차/);
+  assert.equal(rejected.outcomeUnknown, undefined);
+});
+
+test("카드 응답 유실 후에는 같은 본문과 첨부로 재시도하고 명시적 거부 때만 파일을 정리한다", async () => {
+  const bodies = [];
+  const discarded = [];
+  let uploads = 0;
+  const f = fixture({
+    env: { NEXT_PUBLIC_USE_MOCK: "false" },
+    moduleOverrides: { "./file-actions": {
+      stageIdeaFile: async () => ({ fileId: ++uploads + 40 }),
+      discardIdeaFile: async (_roomId, id) => { discarded.push(id); },
+    } },
+    fetch: async (url, init) => {
+      assert.equal(new URL(url).pathname, "/api/v1/rooms/7/idea-cards");
+      bodies.push(init.body);
+      if (bodies.length === 2) return ok({ cardId: 31 });
+      const uncertain = bodies.length === 1;
+      return Response.json({
+        success: false, error: { code: uncertain ? "INTERNAL_SERVER_ERROR" : "CARD_SESSION_CLOSED", message: "저장 실패" },
+      }, { status: uncertain ? 500 : 409 });
+    },
+  });
+  const { saveIdeaDraft } = f.load("@/features/idea/save-idea-draft");
+  const draft = () => {
+    const form = new FormData();
+    form.set("type", "AGENDA");
+    form.set("title", "회고");
+    form.set("content", "의견");
+    form.set("attachment", new File(["첨부"], "note.txt"));
+    return form;
+  };
+  const first = await saveIdeaDraft(7, 3, null, {}, draft(), null);
+  assert.equal(first.result.outcomeUnknown, true);
+  assert.deepEqual(discarded, []);
+  const expired = await saveIdeaDraft(7, 3, null, {}, new FormData(), { ...first.retry, expiresAt: 0 });
+  assert.match(expired.result.error, /재시도 시간이 지났어요/);
+  assert.equal(bodies.length, 1);
+  const second = await saveIdeaDraft(7, 3, null, {}, new FormData(), first.retry);
+  assert.equal(second.result.saved, true);
+  assert.equal(second.retry, null);
+  assert.equal(bodies[0], bodies[1]);
+  assert.equal(uploads, 1);
+  assert.deepEqual(discarded, []);
+  const rejected = await saveIdeaDraft(7, 3, null, {}, draft(), null);
+  assert.equal(rejected.retry, null);
+  assert.deepEqual(discarded, [42]);
 });
 
 test("아이디어 상세 흐름은 편집 잠금과 댓글·리액션에 각각 명세 메서드를 사용한다", async () => {
@@ -795,7 +849,7 @@ test("아이디어 상세 흐름은 편집 잠금과 댓글·리액션에 각각
 test("목 보드는 댓글과 리액션을 저장하고 마감 후에도 카드 이동을 허용한다", async () => {
   const f = fixture({ env: { AUTH_USE_MOCK: "true", NEXT_PUBLIC_USE_MOCK: "true" } });
   const [room] = await f.load("@/features/room/server").listMyRooms();
-  const { getIdeaBoard } = f.load("@/features/idea/server");
+  const { getIdeaBoard, getIdeaDiscussions } = f.load("@/features/idea/server");
   const { saveIdeaCard, startIdeaSession, closeIdeaSession } = f.load("@/features/idea/actions");
   const { moveIdeaCard } = f.load("@/features/idea/position-actions");
   const { changeIdeaComment, setIdeaReaction, loadIdeaCardDetail } = f.load("@/features/idea/discussion-actions");
@@ -817,6 +871,10 @@ test("목 보드는 댓글과 리액션을 저장하고 마감 후에도 카드 
   const detail = await loadIdeaCardDetail(room.id, card.id);
   assert.equal(detail.discussion.comments[0].text, "새 댓글");
   assert.equal(detail.discussion.reactions[0].count, 1);
+  const projectedCard = { ...card, linkedVote: { id: 1, status: "OPEN" } };
+  const projectedDiscussion = getIdeaDiscussions([projectedCard], [])[card.id];
+  assert.equal(projectedDiscussion.comments[0].text, "새 댓글");
+  assert.equal(projectedDiscussion.reactions[0].users.length, 1);
   assert.equal((await closeIdeaSession(room.id, active.id)).saved, true);
   assert.equal((await changeIdeaComment(room.id, card.id, "add", null, "차단")).saved, undefined);
   assert.equal((await moveIdeaCard(room.id, card.id, { cardType: "TRY", toIndex: 0, version: 0 })).saved, true);

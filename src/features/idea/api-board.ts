@@ -32,7 +32,7 @@ export async function readIdeaBoard(roomId: number, requestedId?: number, page?:
   const active = current && toSession(roomId, current);
   const selected = requestedId === undefined ? active : requested?.status === "CLOSED" ? toSession(roomId, requested) : null;
   const entries = selected
-    ? await ideaApi<(IdeaSchemas["IdeaCardSummaryResponse"] & { content?: string | null })[]>(
+    ? await ideaApi<IdeaSchemas["IdeaCardSummaryResponse"][]>(
         roomId, requestedId === undefined ? "/idea-cards" : `/idea-cards?sessionId=${selected.id}`,
       )
     : [];

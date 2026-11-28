@@ -24,7 +24,7 @@ export function parseIdeaDeadline(value: string) {
   return normalized === value ? instant.toISOString() : null;
 }
 
-export type IdeaFormResult = { saved?: boolean; error?: string };
+export type IdeaFormResult = { saved?: boolean; error?: string; outcomeUnknown?: boolean };
 export type IdeaMovedCard = { id: number; cardType: IdeaCardType; sortOrder: number; version: number; title?: string; content?: string | null };
 export type IdeaMoveResult = IdeaFormResult & { cards?: IdeaMovedCard[] };
 

@@ -9,23 +9,23 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { Input } from "@/components/ui/input";
 import type { IdeaCard, IdeaCardType } from "@/types/db";
 
-import { closeIdeaSession, deleteIdeaCard, saveIdeaCard, startIdeaSession } from "./actions";
-import { discardIdeaFile, stageIdeaFile } from "./file-actions";
+import { closeIdeaSession, deleteIdeaCard, startIdeaSession } from "./actions";
 import { IdeaCardFields } from "./IdeaCardFields";
 import { IDEA_COLUMNS, type IdeaFormResult } from "./model";
+import { type IdeaCardRetry, saveIdeaDraft } from "./save-idea-draft";
 import { useIdeaEditLock } from "./useIdeaEditLock";
 
 type FormAction = (state: IdeaFormResult, data: FormData) => Promise<IdeaFormResult>;
 
 function IdeaDialog({
-  trigger, title, description, action, children, submit, lockRoomId, lockCardId,
+  trigger, title, description, action, children, submit, lockRoomId, lockCardId, isRetrying = false,
 }: {
   trigger: ReactElement; title: string; description: string; action: FormAction;
   children?: ReactNode; submit: string;
-  lockRoomId?: number; lockCardId?: number;
+  lockRoomId?: number; lockCardId?: number; isRetrying?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const { lock, resetLock } = useIdeaEditLock(open, lockRoomId, lockCardId);
+  const { lock, resetLock, retryLock } = useIdeaEditLock(open, lockRoomId, lockCardId);
   const submitting = useRef(false);
 
   function changeOpen(next: boolean) {
@@ -39,24 +39,35 @@ function IdeaDialog({
       <DialogContent className="max-h-[90dvh] overflow-auto sm:max-w-md">
         <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{description}</DialogDescription></DialogHeader>
         {open && lockCardId !== undefined && !lock.ready && (
-          <p role={lock.error ? "alert" : "status"} className="text-sm">{lock.error ?? "편집 잠금을 확인하고 있어요."}</p>
+          <div className="space-y-2">
+            <p role={lock.error ? "alert" : "status"} className="text-sm">{lock.error ?? "편집 잠금을 확인하고 있어요."}</p>
+            {lock.error && <Button type="button" variant="outline" onClick={retryLock}>잠금 다시 확인</Button>}
+          </div>
         )}
-        {open && (lockCardId === undefined || lock.ready) && <IdeaDialogForm action={action} submit={submit} submitting={submitting} onSaved={() => setOpen(false)}>{children}</IdeaDialogForm>}
+        {open && (lockCardId === undefined || lock.acquired) && (
+          <IdeaDialogForm action={action} submit={submit} submitting={submitting}
+            lockedOut={lockCardId !== undefined && !lock.ready} isRetrying={isRetrying} onSaved={() => setOpen(false)}>
+            {children}
+          </IdeaDialogForm>
+        )}
       </DialogContent>
     </Dialog>
   );
 }
 
 function IdeaDialogForm({
-  action, submit, children, onSaved, submitting,
+  action, submit, children, onSaved, submitting, lockedOut, isRetrying,
 }: {
   action: FormAction; submit: string; children: ReactNode; onSaved: () => void;
-  submitting: RefObject<boolean>;
+  submitting: RefObject<boolean>; lockedOut: boolean; isRetrying: boolean;
 }) {
-  const [result, submitAction, pending] = useActionState(action, {});
-  useEffect(() => {
-    if (!pending) submitting.current = false;
-  }, [pending, submitting]);
+  const [result, submitAction, pending] = useActionState(async (previous: IdeaFormResult, data: FormData) => {
+    try {
+      return await action(previous, data);
+    } finally {
+      submitting.current = false;
+    }
+  }, {});
   useEffect(() => {
     if (!result.saved) return;
     toast.success("변경 사항을 반영했어요.");
@@ -65,17 +76,18 @@ function IdeaDialogForm({
   return (
     <form onSubmit={(event) => {
       event.preventDefault();
-      if (submitting.current) return;
-      submitting.current = true;
+      if (lockedOut || pending || submitting.current) return;
       const data = new FormData(event.currentTarget);
+      submitting.current = true;
       startTransition(() => submitAction(data));
     }} className="space-y-4">
-      {children}
+      <fieldset disabled={lockedOut || isRetrying} className="space-y-4">{children}</fieldset>
+      {isRetrying && <p role="status" className="text-muted-foreground text-sm">저장 결과를 확인하지 못했어요. 이전 입력과 첨부로 다시 저장할 수 있어요.</p>}
       {result.error && <p role="alert" className="text-destructive text-sm">{result.error}</p>}
       <DialogFooter>
         <DialogClose asChild><Button type="button" variant="outline" disabled={pending}>취소</Button></DialogClose>
-        <Button type="submit" disabled={pending}>
-          {pending ? "처리 중…" : submit}
+        <Button type="submit" disabled={pending || lockedOut}>
+          {pending ? "처리 중…" : isRetrying ? "다시 저장하기" : submit}
         </Button>
       </DialogFooter>
     </form>
@@ -140,33 +152,15 @@ export function CloseIdeaDialog({ roomId, sessionId, trigger }: { roomId: number
 export function IdeaCardDialog({ roomId, sessionId, trigger, defaultType = "AGENDA", card, canUpload = false }: {
   roomId: number; sessionId: number; trigger: ReactElement; defaultType?: IdeaCardType; card?: IdeaCard; canUpload?: boolean;
 }) {
+  const [retry, setRetry] = useState<IdeaCardRetry | null>(null);
   async function save(previous: IdeaFormResult, form: FormData) {
-    const files = form.getAll("attachment").filter((file): file is File => file instanceof File && file.size > 0);
-    form.delete("attachment");
-    if (files.length > 5) return { error: "파일은 최대 5개까지 첨부할 수 있어요." };
-    const staged: number[] = [];
-    let saved = false;
-    try {
-      for (const file of files) {
-        const uploadData = new FormData();
-        uploadData.set("file", file);
-        const result = await stageIdeaFile(roomId, uploadData);
-        if (!result.fileId) return { error: result.error };
-        staged.push(result.fileId);
-        form.append("fileId", String(result.fileId));
-      }
-      const result = await saveIdeaCard(roomId, sessionId, card?.id ?? null, previous, form);
-      saved = result.saved === true;
-      return result;
-    } catch {
-      return { error: "카드에 변경 사항을 저장하지 못했어요. 다시 시도해 주세요." };
-    } finally {
-      if (!saved) await Promise.allSettled(staged.map((id) => discardIdeaFile(roomId, id)));
-    }
+    const next = await saveIdeaDraft(roomId, sessionId, card?.id ?? null, previous, form, retry);
+    setRetry(next.retry);
+    return next.result;
   }
   return (
     <IdeaDialog trigger={trigger} title={card ? "카드 수정" : "새 카드 추가"} description="핵심 내용을 짧고 명확하게 작성해 주세요."
-      action={save} submit={card ? "저장하기" : "추가하기"}
+      action={save} submit={card ? "저장하기" : "추가하기"} isRetrying={retry !== null}
       lockRoomId={card ? roomId : undefined} lockCardId={card?.id}>
       <fieldset className="space-y-2">
         <legend className="text-sm font-medium">분류</legend>

@@ -24,13 +24,24 @@ export function IdeaBoard({ session, cards, accountId, editable, canUpload, conf
   if (selection.requested !== openCardId) setSelection({ requested: openCardId, current: openCardId });
   const locks = useIdeaCardLocks();
   const [position, setPosition] = useState<{ base: IdeaCard[]; cards: IdeaMovedCard[] }>({ base: cards, cards: [] });
+  if (position.base !== cards) setPosition({ base: cards, cards: [] });
   const moved = new Map(position.base === cards ? position.cards.map((card) => [card.id, card]) : []);
   const displayed = cards.map((card) => {
     const update = moved.get(card.id);
     if (!update || (card.version ?? 0) > update.version) return card;
     return { ...card, ...update, title: update.title ?? card.title, content: update.content === undefined ? card.content : update.content ?? "" };
   });
-  function applyMoved(next: IdeaMovedCard[]) { setPosition({ base: cards, cards: next }); }
+  function applyMoved(next: IdeaMovedCard[]) {
+    setPosition((previous) => {
+      if (previous.base !== cards) return previous;
+      const merged = new Map(previous.cards.map((card) => [card.id, card]));
+      for (const card of next) {
+        const current = merged.get(card.id);
+        if (!current || card.version > current.version) merged.set(card.id, card);
+      }
+      return { base: cards, cards: [...merged.values()] };
+    });
+  }
   return (
     <>
       {cards.length === 0 && (

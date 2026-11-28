@@ -1,39 +1,56 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { setIdeaEditLock } from "./discussion-actions";
 
 export function useIdeaEditLock(open: boolean, lockRoomId?: number, lockCardId?: number) {
-  const [lock, setLock] = useState<{ ready?: boolean; error?: string }>({});
-
+  const [lock, setLock] = useState<{ ready?: boolean; acquired?: boolean; error?: string }>({});
+  const retry = useRef<(() => void) | null>(null);
+  const release = useRef<Promise<unknown> | null>(null);
 
   useEffect(() => {
     if (!open || lockRoomId === undefined || lockCardId === undefined) return;
     let active = true;
     let acquired = false;
+    let request: Promise<void> | null = null;
     let timer: ReturnType<typeof setTimeout>;
     async function renew(roomId: number, cardId: number) {
       try {
         const result = await setIdeaEditLock(roomId, cardId, true);
-        acquired = result.saved === true;
-        if (!active) {
-          if (acquired) void setIdeaEditLock(roomId, cardId, false).catch(() => {});
-          return;
-        }
-        setLock({ ready: acquired, error: result.error });
-        if (acquired) timer = setTimeout(() => void renew(roomId, cardId), 20_000);
+        const ready = result.saved === true;
+        acquired ||= ready;
+        if (!active) return;
+        setLock({ ready, acquired, error: ready ? undefined : result.error ?? "편집 잠금을 확인하지 못했어요." });
+        if (ready) timer = setTimeout(start, 20_000);
       } catch {
-        if (active) setLock({ error: "편집 잠금을 확인하지 못했어요." });
+        if (active) setLock({ acquired, error: "편집 잠금을 확인하지 못했어요." });
+      } finally {
+        request = null;
       }
     }
-    void renew(lockRoomId, lockCardId);
+    const previousRelease = release.current;
+    const start = () => {
+      if (!active || request) return;
+      request = Promise.resolve(previousRelease).then(() => {
+        if (active) return renew(lockRoomId, lockCardId);
+      });
+    };
+    retry.current = () => {
+      if (request) return;
+      setLock({ acquired });
+      start();
+    };
+    start();
     return () => {
       active = false;
+      retry.current = null;
       clearTimeout(timer);
-      if (acquired) void setIdeaEditLock(lockRoomId, lockCardId, false).catch(() => {});
+      release.current = Promise.resolve(request).then(() => {
+        if (acquired) return setIdeaEditLock(lockRoomId, lockCardId, false);
+      }).catch(() => {});
     };
   }, [open, lockRoomId, lockCardId]);
 
-  return { lock, resetLock: () => setLock({}) };
+  return { lock, resetLock: () => setLock({}), retryLock: () => retry.current?.() };
 }

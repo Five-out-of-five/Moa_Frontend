@@ -72,10 +72,11 @@ export function getIdeaDiscussions(
     "다음 회차에서 결과도 공유해 주세요.",
   ];
   const emoji = ["THUMBS_UP", "CLAP", "THINKING"];
+  const originals = new Map(ideaCards.map((card) => [card.id, card]));
   return Object.fromEntries(
     cards.map((card) => [
       card.id,
-      readMockDiscussion(card, () => ({
+      readMockDiscussion(originals.get(card.id) ?? card, () => ({
         comments: comments.slice(0, card.commentCount).map((text, index) => {
           const author = members[(card.id + index) % members.length] ?? card.author;
           return { id: card.id * 10 + index + 1, text, author: author.displayName, authorId: author.accountId };

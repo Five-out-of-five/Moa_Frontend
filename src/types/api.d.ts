@@ -2983,6 +2983,10 @@ export interface components {
             title: string;
             content?: string;
             fileIds?: number[];
+            /** Format: int64 */
+            sessionId?: number;
+            /** Format: uuid */
+            requestId?: string;
         };
         ApiResponseIdeaCardDetailResponse: {
             success?: boolean;
@@ -3057,6 +3061,7 @@ export interface components {
             conflictCount?: number;
             /** Format: date-time */
             createdAt?: string;
+            content?: string;
         };
         LinkedVote: {
             /** Format: int64 */
