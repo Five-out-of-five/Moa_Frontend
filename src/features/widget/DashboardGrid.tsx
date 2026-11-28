@@ -47,6 +47,7 @@ export function DashboardGrid({
 
   const { grid, preview, start, move, end, keyDown } = useWidgetGesture(widgets, setEditing, save);
   const projected = preview ?? pending;
+  const placements = new Map(projected?.map((change) => [change.widgetId, change]));
   const placed = new Set(widgets.map(({ widgetType }) => widgetType));
   const canAdd = placed.size < Object.keys(WIDGET_TITLES).length;
   const handlers = {
@@ -89,7 +90,7 @@ export function DashboardGrid({
         }
       >
         {widgets.map((widget) => {
-          const placement = projected?.id === widget.id ? projected.placement : widget;
+          const placement = placements.get(widget.id) ?? widget;
           const title = WIDGET_TITLES[widget.widgetType];
           const Icon = WIDGET_ICONS[widget.widgetType];
           const href = getWidgetDetailHref(roomId, widget.widgetType);
@@ -196,7 +197,7 @@ export function DashboardGrid({
             placed={placed}
             onAdded={applySnapshot}
             placement={findOpenPlacement(
-              widgets.map((widget) => (projected?.id === widget.id ? projected.placement : widget)),
+              widgets.map((widget) => placements.get(widget.id) ?? widget),
               6,
               3,
               3,

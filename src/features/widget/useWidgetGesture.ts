@@ -5,13 +5,14 @@ import { type KeyboardEvent, type PointerEvent, useEffect, useRef, useState } fr
 import type { RoomWidget } from "@/types/db";
 
 import {
-  canPlaceWidget,
+  areWidgetPlacementsValid,
+  getWidgetMove,
   GRID_COLUMNS,
   GRID_GAP,
   GRID_MAX_HEIGHT,
   GRID_ROW_HEIGHT,
   WIDGET_MINIMUM,
-  type WidgetPlacement,
+  type WidgetPlacementChange,
 } from "./grid";
 
 type Gesture = {
@@ -21,7 +22,7 @@ type Gesture = {
   startX: number;
   startY: number;
   columnStep: number;
-  placement: WidgetPlacement;
+  changes: WidgetPlacementChange[];
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -54,12 +55,12 @@ function adjustPlacement(widget: RoomWidget, kind: Gesture["kind"], dx: number, 
 export function useWidgetGesture(
   widgets: RoomWidget[],
   onEdit: (widgetId: number | null) => void,
-  onSave: (id: number, next: WidgetPlacement) => Promise<void>,
+  onSave: (changes: WidgetPlacementChange[]) => Promise<void>,
 ) {
   const grid = useRef<HTMLDivElement>(null);
   const active = useRef<Gesture | null>(null);
   const saving = useRef(false);
-  const [preview, setPreview] = useState<{ id: number; placement: WidgetPlacement } | null>(null);
+  const [preview, setPreview] = useState<WidgetPlacementChange[] | null>(null);
 
   useEffect(() => {
     const gesture = active.current;
@@ -80,9 +81,9 @@ export function useWidgetGesture(
       startX: event.clientX,
       startY: event.clientY,
       columnStep: (grid.current.clientWidth + GRID_GAP) / GRID_COLUMNS,
-      placement: widget,
+      changes: [],
     };
-    setPreview({ id: widget.id, placement: widget });
+    setPreview([]);
     onEdit(widget.id);
   }
 
@@ -93,9 +94,12 @@ export function useWidgetGesture(
     const dx = Math.round((event.clientX - startX) / columnStep);
     const dy = Math.round((event.clientY - startY) / (GRID_ROW_HEIGHT + GRID_GAP));
     const placement = adjustPlacement(widget, kind, dx, dy);
-    if (!canPlaceWidget(widget, placement, widgets)) return;
-    gesture.placement = placement;
-    setPreview({ id: widget.id, placement });
+    const changes = kind === "move"
+      ? getWidgetMove(widget, placement, widgets)
+      : [{ widgetId: widget.id, ...placement }];
+    if (!changes || (kind === "resize" && !areWidgetPlacementsValid(widgets, changes))) return;
+    gesture.changes = changes;
+    setPreview(changes);
   }
 
   function end(event: PointerEvent<HTMLButtonElement>, shouldSave: boolean) {
@@ -103,22 +107,23 @@ export function useWidgetGesture(
     if (!gesture || gesture.pointer !== event.pointerId) return;
     active.current = null;
     setPreview(null);
-    const { widget, placement } = gesture;
-    if (shouldSave) void savePlacement(widget, placement, true);
+    if (shouldSave) void savePlacement(gesture.widget.id, gesture.changes, true);
     else onEdit(null);
   }
 
-  async function savePlacement(widget: RoomWidget, placement: WidgetPlacement, editing = false) {
-    const changed = placement.x !== widget.x || placement.y !== widget.y ||
-      placement.width !== widget.width || placement.height !== widget.height;
-    if (!changed || !canPlaceWidget(widget, placement, widgets)) {
+  async function savePlacement(widgetId: number, changes: WidgetPlacementChange[], editing = false) {
+    const changed = changes.some(({ widgetId, x, y, width, height }) => {
+      const widget = widgets.find(({ id }) => id === widgetId);
+      return widget && (x !== widget.x || y !== widget.y || width !== widget.width || height !== widget.height);
+    });
+    if (!changed || !areWidgetPlacementsValid(widgets, changes)) {
       if (editing) onEdit(null);
       return;
     }
     saving.current = true;
     try {
-      if (!editing) onEdit(widget.id);
-      await onSave(widget.id, placement);
+      if (!editing) onEdit(widgetId);
+      await onSave(changes);
     } finally {
       saving.current = false;
       onEdit(null);
@@ -130,7 +135,7 @@ export function useWidgetGesture(
     event.preventDefault();
     if (active.current || saving.current || event.repeat) return;
     const [dx, dy] = ARROW_OFFSETS[event.key as keyof typeof ARROW_OFFSETS];
-    void savePlacement(widget, adjustPlacement(widget, kind, dx, dy));
+    void savePlacement(widget.id, [{ widgetId: widget.id, ...adjustPlacement(widget, kind, dx, dy) }]);
   }
 
   return { grid, preview, start, move, end, keyDown };

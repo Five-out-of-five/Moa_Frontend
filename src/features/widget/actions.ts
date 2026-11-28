@@ -12,16 +12,19 @@ import type { WidgetType } from "@/types/db";
 
 import { changeApiLayout, type LayoutResult } from "./api-layout";
 import { DEFAULT_WIDGET_LAYOUT } from "./default-layout";
-import { canPlaceWidget, findOpenPlacement, WIDGET_MINIMUM, type WidgetPlacement } from "./grid";
+import { areWidgetPlacementsValid, findOpenPlacement, WIDGET_MINIMUM, type WidgetPlacementChange } from "./grid";
 import { getMockDashboardSnapshot, getMockLayout, setMockEditing } from "./mock-layout";
 import { getDashboardSnapshot } from "./server";
 
-const placementSchema = z.object({
+const placementChangesSchema = z.array(z.object({
+  widgetId: z.number().refine(isRoomId),
   x: z.number().int().nonnegative(),
   y: z.number().int().nonnegative(),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
-});
+})).min(1).max(Object.keys(WIDGET_MINIMUM).length).refine(
+  (changes) => new Set(changes.map(({ widgetId }) => widgetId)).size === changes.length,
+);
 
 export async function addWidgetAction(roomId: number, type: WidgetType): Promise<LayoutResult> {
   if (!isRoomId(roomId) || (isMock && !(await getManagedRoom(roomId)))) {
@@ -56,25 +59,31 @@ export async function addWidgetAction(roomId: number, type: WidgetType): Promise
 
 export async function saveWidgetPlacementAction(
   roomId: number,
-  widgetId: number,
-  placement: WidgetPlacement,
+  changes: WidgetPlacementChange[],
 ): Promise<LayoutResult> {
-  if (!isRoomId(roomId) || !isRoomId(widgetId) || (isMock && !(await getManagedRoom(roomId)))) {
+  if (!isRoomId(roomId) || (isMock && !(await getManagedRoom(roomId)))) {
     return { ok: false as const, message: "이 대시보드의 배치를 저장할 수 없습니다." };
   }
-  const parsed = placementSchema.safeParse(placement);
+  const parsed = placementChangesSchema.safeParse(changes);
   if (!parsed.success) return { ok: false, message: "위젯 위치와 크기를 확인해 주세요." };
-  const { x, y, width, height } = parsed.data;
   if (!isMock) return changeApiLayout(roomId, () => ({
     path: "layout",
-    init: { method: "PUT", json: { widgets: [{ widgetId, x, y, w: width, h: height }] } },
+    init: {
+      method: "PUT",
+      json: { widgets: parsed.data.map(({ widgetId, x, y, width, height }) => ({
+        widgetId, x, y, w: width, h: height,
+      })) },
+    },
   }));
   const widgets = roomWidgets.filter((widget) => widget.roomId === roomId);
-  const widget = widgets.find(({ id }) => id === widgetId);
-  if (!widget || !placement || !canPlaceWidget(widget, placement, widgets)) {
+  if (!areWidgetPlacementsValid(widgets, parsed.data)) {
     return { ok: false as const, message: "배치를 저장할 수 없습니다. 위젯 위치와 크기를 확인해 주세요." };
   }
-  Object.assign(widget, { x, y, width, height });
+  const placements = new Map(parsed.data.map(({ widgetId, ...placement }) => [widgetId, placement]));
+  for (const widget of widgets) {
+    const placement = placements.get(widget.id);
+    if (placement) Object.assign(widget, placement);
+  }
   getMockLayout(roomId).revision += 1;
   revalidatePath(`/rooms/${roomId}`);
   return { ok: true as const, snapshot: getMockDashboardSnapshot(roomId) };

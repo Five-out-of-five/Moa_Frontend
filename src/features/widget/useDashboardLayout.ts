@@ -7,7 +7,7 @@ import { z } from "zod";
 import type { RoomWidget } from "@/types/db";
 
 import { saveWidgetPlacementAction, setWidgetEditingAction } from "./actions";
-import { WIDGET_MINIMUM, type WidgetPlacement } from "./grid";
+import { WIDGET_MINIMUM, type WidgetPlacementChange } from "./grid";
 import { WIDGET_EDIT_HEARTBEAT } from "./live-editing";
 import type { DashboardSnapshot } from "./live-types";
 import { useDashboardRealtime } from "./useDashboardRealtime";
@@ -39,7 +39,7 @@ function parseSnapshot(data: string) {
 
 export function useDashboardLayout(roomId: number, accountId: number, initialSnapshot: DashboardSnapshot, shouldOpenMockStream: boolean) {
   const [layout, setLayout] = useState(initialSnapshot);
-  const [pending, setPending] = useState<{ id: number; placement: WidgetPlacement } | null>(null);
+  const [pending, setPending] = useState<WidgetPlacementChange[] | null>(null);
   const session = useRef<string | null>(null);
   const activeWidget = useRef<number | null>(null);
   const heartbeat = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
@@ -89,10 +89,10 @@ export function useDashboardLayout(roomId: number, accountId: number, initialSna
     if (activeWidget.current !== null) setEditing(null);
   }, [setEditing]);
 
-  async function save(id: number, placement: WidgetPlacement) {
-    setPending({ id, placement });
+  async function save(changes: WidgetPlacementChange[]) {
+    setPending(changes);
     try {
-      const result = await saveWidgetPlacementAction(roomId, id, placement);
+      const result = await saveWidgetPlacementAction(roomId, changes);
       if (result.snapshot) applySnapshot(result.snapshot);
       if (!result.ok) toast.error(result.message);
     } catch {
