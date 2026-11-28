@@ -126,7 +126,7 @@ export async function confirmMockBriefing(roomId: number, eventType?: BriefingEv
   const selected = eventType ? unseen.filter((item) => item.eventType === eventType) : unseen;
   if (eventType && !selected.length) return true;
   for (const item of selected) read.add(item.key);
-  if (!eventType || unseen.every((item) => !item.eventType || read.has(item.key))) {
+  if (!eventType || unseen.every((item) => read.has(item.key))) {
     room.membership.lastBriefingCheckedAt = new Date().toISOString();
     read.clear();
   }

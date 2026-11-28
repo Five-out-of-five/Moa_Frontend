@@ -13,7 +13,7 @@ import { CloseIdeaDialog, IdeaCardDialog, StartIdeaDialog } from "@/features/ide
 import { ideaDateTime } from "@/features/idea/model";
 import { IDEA_BOARD_EVENTS } from "@/features/idea/realtime-events";
 import { getIdeaBoard } from "@/features/idea/server";
-import { listMockConflicts } from "@/features/mediation/server";
+import { getIdeaConflictIdsByCard } from "@/features/mediation/server";
 import { RoomDataRefresh } from "@/features/realtime/RoomDataRefresh";
 import { getReportViewerAccountId } from "@/features/report/server";
 import { getFirstRoomProfile } from "@/features/room/first-profile/server";
@@ -35,9 +35,7 @@ export default async function IdeaBoardPage({ params, searchParams }: {
   if (query.session && !selected) notFound();
   const cards = selected ? board.cards.filter(({ sessionId }) => sessionId === selected.id) : [];
   const openCardId = cards.find(({ id }) => String(id) === query.open)?.id;
-  const conflicts = board.usesMockStream ? listMockConflicts(id) : [];
-  const conflictByCard = Object.fromEntries(conflicts.filter(({ state }) => state === "OPEN")
-    .flatMap((conflict) => [[conflict.leftCardId, conflict.id], [conflict.rightCardId, conflict.id]]));
+  const conflictByCard = getIdeaConflictIdsByCard(id);
   const participants = selected?.participantCount ??
     new Set(cards.map(({ author }) => author.accountId).filter((accountId) => accountId > 0)).size;
   const isClosed = selected?.state === "CLOSED";

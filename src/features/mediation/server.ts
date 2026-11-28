@@ -14,17 +14,23 @@ import type { CardConflict, IdeaCard } from "@/types/db";
 import { ideaMediationHref, type MediationCard, type MediationDetail, type MediationItem, type MediationStatus } from "./model";
 
 type Schemas = components["schemas"];
-type ConflictSummary = Schemas["ConflictSummaryResponse"] & { adoptedCardId?: number | null };
 
 function hasMediationWidget(roomId: number) {
   return roomWidgets.some((item) => item.roomId === roomId && item.widgetType === "MEDIATION");
 }
 
-export function listMockConflicts(roomId: number) {
+function listMockConflicts(roomId: number) {
   if (!hasMediationWidget(roomId)) return [];
   return conflicts.filter((conflict) => conflict.roomId === roomId &&
     ideaCards.some((card) => card.roomId === roomId && card.id === conflict.leftCardId) &&
     ideaCards.some((card) => card.roomId === roomId && card.id === conflict.rightCardId));
+}
+
+export function getIdeaConflictIdsByCard(roomId: number): Record<number, number> {
+  // 실서버 보드는 카드 목록 응답의 conflictCount로 충돌을 표시한다.
+  if (!isMock) return {};
+  return Object.fromEntries(listMockConflicts(roomId).filter(({ state }) => state === "OPEN")
+    .flatMap(({ id, leftCardId, rightCardId }) => [[leftCardId, id], [rightCardId, id]]));
 }
 
 function mockSummary(conflict: CardConflict): MediationItem {
@@ -52,7 +58,7 @@ export async function getMediationBoard(roomId: number, status?: MediationStatus
   }
   try {
     const query = status ? `?status=${status}` : "";
-    const response = await api<ConflictSummary[]>(`/api/v1/rooms/${roomId}/conflicts${query}`, { cache: "no-store" });
+    const response = await api<Schemas["ConflictSummaryResponse"][]>(`/api/v1/rooms/${roomId}/conflicts${query}`, { cache: "no-store" });
     const items = response.flatMap(({ conflictId, status, cardA, cardB, detectedAt, adoptedCardId }): MediationItem[] =>
       conflictId && status ? [{ id: conflictId, status, leftCardTitle: cardA?.title ?? "제목 없음",
         rightCardTitle: cardB?.title ?? "제목 없음", detectedAt: detectedAt ?? null, adoptedCardId: adoptedCardId ?? null }] : []);
