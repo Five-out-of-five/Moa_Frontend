@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/sheet";
 import { MemberProfileLink } from "@/features/room/profile/MemberProfileLink";
 import { cn } from "@/lib/utils";
-import type { MemberRef, TaskDetail, TaskStatus } from "@/types/db";
+import type { MemberRef, TaskDetail, TaskStatus, TaskSummary } from "@/types/db";
 
 import {
   changeTaskStatusAction,
@@ -61,6 +61,12 @@ interface Props {
   onTaskUpdated?(task: TaskDetail): void;
   /** 삭제 결과 — 상위 리스트에서 제거 + Sheet 닫기. */
   onTaskDeleted?(taskId: number): void;
+  /**
+   * 상태 변경 응답으로 BE 가 돌려 준 **재정렬된 room 전체 Summary 리스트** 를 상위 보드에
+   * 그대로 반영한다. `onTaskUpdated` 가 "한 업무만" 덮는 데 비해, 이쪽은 다른 카드의
+   * sortOrder 플리커까지 제거한다 (명세 `/tasks/{taskId}/status` 응답을 그대로 캐시화).
+   */
+  onBoardSummariesUpdated?(summaries: TaskSummary[]): void;
 }
 
 /**
@@ -86,6 +92,7 @@ export function TaskDetailSheet({
   onOpenChange,
   onTaskUpdated,
   onTaskDeleted,
+  onBoardSummariesUpdated,
 }: Props) {
   const [local, setLocal] = useState<TaskDetail | null>(task);
   const [pending, startTransition] = useTransition();
@@ -159,9 +166,16 @@ export function TaskDetailSheet({
           setLocal(result.task);
           // 상위 리스트 (요약 + 상세) 동기화
           onTaskUpdated?.(result.task);
+          // BE 가 돌려 준 재정렬된 room 전체 Summary 리스트를 그대로 반영해 다른 카드의
+          // sortOrder 플리커를 없앤다.
+          onBoardSummariesUpdated?.(result.summaries);
+          return;
+        case "ok_detail_stale":
+          // Detail GET 만 실패 — 보드 Summary 는 정상이므로 반영하고 에러만 노출.
+          onBoardSummariesUpdated?.(result.summaries);
+          setError(result.message);
           return;
         case "conflict":
-        case "ok_detail_stale":
         case "error":
           setError(result.message);
           return;
