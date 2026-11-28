@@ -115,9 +115,8 @@ export function TaskCreateDialog({
   // Dialog 를 닫으면 상태 초기화. 투표 생성 다이얼로그와 같은 UX.
   useEffect(() => {
     if (!open) resetState();
-    // resetState 는 매 렌더 재생성되지만 open 전환 시점에만 호출되므로 의도적 ignore.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, sourceCard?.title, sourceCard?.content]);
 
   // ⚠️ 제출 중에는 **모든 닫기 경로** 를 막아야 한다 (CodeRabbit). Dialog 의 기본 X·ESC·
   //    overlay 클릭으로 닫히면, 이전 요청의 성공 콜백이 새로 열린 Dialog 를 닫고 새 입력
