@@ -6,6 +6,7 @@ export const GRID_GAP = 12;
 export const GRID_MAX_HEIGHT = 8;
 
 export type WidgetPlacement = Pick<RoomWidget, "x" | "y" | "width" | "height">;
+export type WidgetPlacementChange = WidgetPlacement & { widgetId: number };
 
 export const WIDGET_MINIMUM = {
   MOOD: [3, 3],
@@ -60,4 +61,29 @@ export function canPlaceWidget(
     height >= minHeight && height <= GRID_MAX_HEIGHT &&
     !widgets.some((other) => other.id !== widget.id && overlaps(next, other))
   );
+}
+
+export function areWidgetPlacementsValid(widgets: RoomWidget[], changes: WidgetPlacementChange[]) {
+  const byId = new Map(changes.map(({ widgetId, ...placement }) => [widgetId, placement]));
+  if (!changes.length || byId.size !== changes.length) return false;
+
+  const projected = widgets.map((widget) => ({ ...widget, ...byId.get(widget.id) }));
+  return changes.every(({ widgetId }) => {
+    const widget = projected.find(({ id }) => id === widgetId);
+    return widget !== undefined && canPlaceWidget(widget, widget, projected);
+  });
+}
+
+export function getWidgetMove(widget: RoomWidget, next: WidgetPlacement, widgets: RoomWidget[]) {
+  const change = { widgetId: widget.id, ...next };
+  const collisions = widgets.filter((other) => other.id !== widget.id && overlaps(next, other));
+  if (collisions.length === 0) return canPlaceWidget(widget, next, widgets) ? [change] : null;
+  if (collisions.length !== 1) return null;
+
+  const [other] = collisions;
+  const changes = [
+    { ...change, x: other.x, y: other.y },
+    { widgetId: other.id, x: widget.x, y: widget.y, width: other.width, height: other.height },
+  ];
+  return areWidgetPlacementsValid(widgets, changes) ? changes : null;
 }
