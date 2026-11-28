@@ -3200,6 +3200,8 @@ export interface components {
             cardB?: components["schemas"]["CardRef"];
             /** Format: date-time */
             detectedAt?: string;
+            /** Format: int64 */
+            adoptedCardId?: number;
         };
         ApiResponseCompromiseDraftResponse: {
             success?: boolean;

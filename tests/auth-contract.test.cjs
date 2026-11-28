@@ -852,6 +852,29 @@ test("브리핑은 소식 전체 건수를 유지하며 확인과 유형별 소�
   ]);
 });
 
+test("목 브리핑 유형별 확인은 개인 댓글이 남아 있으면 마지막 확인 시각을 유지한다", async () => {
+  const membership = { id: 1, accountId: 12, lastBriefingCheckedAt: null };
+  const createdAt = new Date(Date.now() - 1000).toISOString();
+  const common = { roomId: 7, actor: { accountId: 13 }, summary: "새 소식", createdAt };
+  const events = [
+    { ...common, key: "task", kind: "TASK_CREATED", targetType: "TASK", targetId: 1 },
+    { ...common, key: "comment", kind: "IDEA_CARD_COMMENTED", targetType: "IDEA_CARD", targetId: 2 },
+  ];
+  const { load } = fixture({
+    env: { NEXT_PUBLIC_USE_MOCK: "true" },
+    moduleOverrides: {
+      "@/features/room/management/server": { getManagedRoom: async () => ({ membership }) },
+      "@/mocks/db": { ideaCards: [{ id: 2, roomId: 7, author: { accountId: 12 } }], tasks: [], boardSessions: [] },
+      "./mock-events": { readMockBriefingEvents: async () => events },
+    },
+  });
+  const { confirmMockBriefing } = load("@/features/briefing/server");
+  assert.equal(await confirmMockBriefing(7, "TASK_CREATED"), true);
+  assert.equal(membership.lastBriefingCheckedAt, null);
+  assert.equal(await confirmMockBriefing(7), true);
+  assert.ok(Date.parse(membership.lastBriefingCheckedAt) > Date.parse(createdAt));
+});
+
 test("중재는 상태 필터와 목록 정렬을 적용하고 해제된 충돌의 열린 초안을 보여 준다", async () => {
   const root = "/api/v1/rooms/7/conflicts";
   const f = fixture({ env: { NEXT_PUBLIC_USE_MOCK: "false" }, fetch: async (url, init) => {
@@ -873,12 +896,31 @@ test("중재는 상태 필터와 목록 정렬을 적용하고 해제된 충돌�
   const { needsMediation } = f.load("@/features/mediation/model");
   const board = await getMediationBoard(7, "PROPOSED");
   assert.deepEqual(Array.from(board.items, ({ id }) => id), [8, 7]);
+  assert.deepEqual(Array.from(board.items, ({ adoptedCardId }) => adoptedCardId), [null, 31]);
   assert.equal(board.items.filter(needsMediation).length, 1);
   assert.equal((await getMediationBoard(7)).enabled, false);
   const detail = await getMediationDetail(7, 9);
   assert.equal(detail.status, "DISMISSED");
   assert.equal(detail.draft.title, "절충");
   assert.equal(detail.left.href, "/rooms/7/boards/idea?session=3&open=41&briefingFocus=41");
+});
+
+test("실서버 중재 화면의 갱신은 충돌 변경과 카드 삭제 이벤트에 반응한다", () => {
+  let listener;
+  let refreshes = 0;
+  const { load } = fixture({ moduleOverrides: {
+    react: { useEffect: (effect) => effect() },
+    "next/navigation": { useRouter: () => ({ refresh: () => { refreshes++; } }) },
+    "./RoomRealtimeProvider": { useRoomRealtime: () => ({ listen: (callback) => { listener = callback; } }) },
+  } });
+  const { MEDIATION_EVENTS } = load("@/features/mediation/model");
+  load("@/features/realtime/RoomDataRefresh.tsx").RoomDataRefresh({ eventTypes: MEDIATION_EVENTS });
+  listener({ type: "MOOD_UPDATED" });
+  assert.equal(refreshes, 0);
+  listener({ type: "CONFLICT_CHANGED" });
+  assert.equal(refreshes, 1);
+  listener({ type: "CARD_DELETED" });
+  assert.equal(refreshes, 2);
 });
 
 test("중재 변경은 명세의 POST 경로와 본문을 사용하고 AI 한도 오류를 전달한다", async () => {
