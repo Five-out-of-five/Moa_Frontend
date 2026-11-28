@@ -147,6 +147,13 @@ export function TaskBoardPageClient({
     );
   };
 
+  // ⚠️ BE `/tasks/{taskId}/status` 응답은 **재정렬된 room 전체 Summary 리스트**.
+  //    상태 변경 직후 다른 카드의 sortOrder 가 stale 하게 보이지 않도록 받은 리스트로
+  //    보드 Summary 를 통째 교체한다 (progress·workload 는 revalidatePath 로 별도 리프레시).
+  const handleBoardSummariesUpdated = (next: readonly TaskSummary[]) => {
+    setLocalSummaries(next);
+  };
+
   const handleTaskDeleted = (taskId: number) => {
     setLocalDetails((prev) => {
       const next = { ...prev };
@@ -305,6 +312,7 @@ export function TaskBoardPageClient({
         }}
         onTaskUpdated={handleTaskUpdated}
         onTaskDeleted={handleTaskDeleted}
+        onBoardSummariesUpdated={handleBoardSummariesUpdated}
       />
 
       <TaskCreateDialog

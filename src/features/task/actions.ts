@@ -7,9 +7,46 @@ import { api, ApiError } from "@/lib/api";
 import { isNextControlFlowError } from "@/lib/next-redirect";
 import { isMock } from "@/mocks/config";
 import { accounts, ideaCards, roomMembers, sprints, tasks } from "@/mocks/db";
-import type { MemberRef, TaskDetail, TaskStatus } from "@/types/db";
+import type { MemberRef, TaskDetail, TaskStatus, TaskSummary } from "@/types/db";
 
 import { computeDDay, computeOverdue } from "./lib/d-day";
+
+/**
+ * TaskDetail → TaskSummary. `server.ts` 의 동일 매퍼와 shape 일치. 액션 내부에서 mock
+ * 분기 응답을 조립할 때 쓴다.
+ */
+function toSummary(t: TaskDetail): TaskSummary {
+  return {
+    taskId: t.taskId,
+    title: t.title,
+    status: t.status,
+    priority: t.priority,
+    dueDate: t.dueDate,
+    dDay: t.dDay,
+    overdue: t.overdue,
+    sortOrder: t.sortOrder,
+    version: t.version,
+    registrant: t.registrant,
+    assignee: t.assignee,
+    source: t.source,
+    sprintId: t.sprintId,
+    fileCount: t.fileCount,
+  };
+}
+
+/**
+ * BE PATCH `/tasks/{taskId}/status` 응답 (`ApiResponseListTaskSummaryResponse.data`) → FE `TaskSummary[]`.
+ * FE `TaskSummary` 와 shape 자체는 동일하지만 선택 필드 (`dDay`, `dueDate`, `assignee` 등) 를
+ * 리더에서 한번 더 정규화하고 `dDay`·`overdue` 를 로컬 시간대 기준으로 재계산한다 (`server.ts`
+ * `withFreshDDay` 와 같은 이유).
+ */
+function freshenSummary(t: TaskSummary): TaskSummary {
+  return {
+    ...t,
+    dDay: computeDDay(t.dueDate),
+    overdue: computeOverdue(t.dueDate, t.status),
+  };
+}
 
 /**
  * 목 저장 shape → 외부 Detail. `roomId` 는 경로 변수라서 응답에 안 들어가고,
@@ -107,9 +144,9 @@ export type CreateTaskResult =
  * - `error` : 그 외 실패
  */
 export type ChangeTaskStatusResult =
-  | { kind: "ok"; task: TaskDetail }
+  | { kind: "ok"; task: TaskDetail; summaries: TaskSummary[] }
   | { kind: "conflict"; message: string }
-  | { kind: "ok_detail_stale"; message: string }
+  | { kind: "ok_detail_stale"; message: string; summaries: TaskSummary[] }
   | { kind: "error"; message: string };
 
 const CONFLICT_MSG =
@@ -190,18 +227,28 @@ export async function changeTaskStatusAction(
       }
     }
 
+    // mock 도 BE 처럼 재정렬 완료된 room 전체 summaries 를 함께 돌려 준다 — 보드가 sortOrder
+    // 플리커 없이 바로 반영하도록 (액션 결과만으로 다른 카드까지 최신 순서로 표시).
+    const summaries = tasks
+      .filter((x) => x.roomId === roomId)
+      .map((x) => toSummary(toDetail(x)));
     revalidatePath(`/rooms/${roomId}/boards/task`, "page");
-    return { kind: "ok", task: toDetail(t) };
+    return { kind: "ok", task: toDetail(t), summaries };
   }
 
+  // ⚠️ BE 는 재정렬된 칸반 전체 Summary 리스트를 돌려준다. 보드가 PATCH 이후 다른 카드의
+  //    sortOrder 가 stale 하게 보이지 않도록 **그 리스트를 그대로 결과에 실어** 보낸다.
+  //    Detail GET 과 revalidatePath 는 유지 — Sheet 최신화 + progress·workload 리프레시용.
+  let summaries: TaskSummary[];
   try {
-    // ⚠️ BE 는 재정렬된 칸반 전체 Summary 리스트를 돌려준다. 이번 범위에선 Detail GET 재조회
-    //    흐름을 유지하되, 응답 타입만 명시화해 돌려받는 shape 를 코드로 고정한다 (TODO:
-    //    Phase 2 에서 List 응답으로 캐시 반영해 round-trip 제거 — [[업무 보드 그리드]]).
-    await api<unknown[]>(`/api/v1/rooms/${roomId}/tasks/${taskId}/status`, {
-      method: "PATCH",
-      json: { status, toIndex: insertAt, version },
-    });
+    const list = await api<TaskSummary[]>(
+      `/api/v1/rooms/${roomId}/tasks/${taskId}/status`,
+      {
+        method: "PATCH",
+        json: { status, toIndex: insertAt, version },
+      },
+    );
+    summaries = list.map(freshenSummary);
   } catch (e) {
     if (e instanceof ApiError && e.status === 409) {
       return { kind: "conflict", message: CONFLICT_MSG };
@@ -228,9 +275,12 @@ export async function changeTaskStatusAction(
         dDay: computeDDay(detail.dueDate),
         overdue: computeOverdue(detail.dueDate, detail.status),
       },
+      summaries,
     };
   } catch {
-    return { kind: "ok_detail_stale", message: DETAIL_STALE_MSG };
+    // Detail GET 이 실패해도 Summary 리스트는 이미 들어왔으므로 보드는 최신 순서로 반영
+    // 가능하다. Sheet 만 재조회가 필요하다는 안내로 분리.
+    return { kind: "ok_detail_stale", message: DETAIL_STALE_MSG, summaries };
   }
 }
 
@@ -689,10 +739,11 @@ export async function updateTaskAction(
       );
     }
     if (statusChanged) {
-      // 상태 변경은 `/status` 로. 응답은 재정렬된 리스트지만 이번 범위에선 그대로 두고 상세를
-      // 한 번 더 조회해 UI 가 최신 Detail 을 얻도록 한다. (TODO: Phase 2 — [[업무 보드 그리드]])
+      // 상태 변경은 `/status` 로. 응답은 재정렬된 Summary 리스트 — Dialog 수정 흐름은
+      // revalidatePath 로 보드 전체가 재조회되어 그 리스트를 따로 반영하지 않아도 정합하다.
+      // (칸반 버튼으로 직접 상태를 바꾸는 흐름은 changeTaskStatusAction 에서 List 반영 처리.)
       try {
-        await api<unknown[]>(
+        await api<TaskSummary[]>(
           `/api/v1/rooms/${roomId}/tasks/${taskId}/status`,
           {
             method: "PATCH",
